@@ -1,0 +1,88 @@
+package dev.wikilens.api
+
+import dev.wikilens.acl.AclRegistry
+import dev.wikilens.config.WikiLensProperties
+import dev.wikilens.index.LuceneIndex
+import dev.wikilens.learn.TrajectoryStore
+import dev.wikilens.vault.VaultReader
+import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.web.bind.annotation.*
+import org.springframework.web.server.ResponseStatusException
+import java.nio.file.Path
+
+/**
+ * 서버판 API.
+ *
+ * 클라이언트에 볼트를 배포하지 않는다. 배포된 사본은 회수할 수 없어 권한 취소가
+ * 불가능해지기 때문이다. 서버가 검색·읽기·grep 을 전부 서빙하고 매 요청마다
+ * ACL 을 확인한다.
+ *
+ * 그래서 관측 훅이 필요 없다 — 읽기가 서버를 거치므로 서버가 궤적을 직접 본다.
+ * `sessionId` 는 MCP 프록시 프로세스 하나당 하나이며, 그것이 곧 세션 경계다.
+ */
+@RestController
+@RequestMapping("/api", produces = [MediaType.APPLICATION_JSON_VALUE])
+class Controller(
+    private val searchService: SearchService,
+    private val content: ContentService,
+    private val store: TrajectoryStore,
+    private val index: LuceneIndex,
+    private val vault: VaultReader,
+    private val acl: AclRegistry,
+    private val props: WikiLensProperties,
+) {
+
+    @PostMapping("/search")
+    fun search(@RequestBody req: SearchRequest): SearchResponse {
+        val res = searchService.search(req)
+        // 질의 관측. 별도 훅 없이 도구 호출 자체가 궤적이 된다.
+        req.sessionId?.let { store.onQuery(it, req.query, res.terms) }
+        return res
+    }
+
+    @PostMapping("/read")
+    fun read(@RequestBody req: ReadRequest): ReadResponse {
+        val r = content.read(req.pageId, req.userKey)
+            // 권한이 없으면 404 다. 403 은 "존재하지만 못 본다"를 알려주므로 유출이다.
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+        req.sessionId?.let { store.onRead(it, req.pageId) }
+        return r
+    }
+
+    @PostMapping("/grep")
+    fun grep(@RequestBody req: GrepRequest): GrepResponse =
+        content.grep(req.pattern, req.userKey, req.limit, req.regex)
+
+    /** MCP 프록시가 종료 시 호출한다. 놓쳐도 sweep 이 처리한다. */
+    @PostMapping("/session/end")
+    fun endSession(@RequestBody req: SessionEndRequest): Map<String, Any> =
+        mapOf("finalized" to store.onEnd(req.sessionId))
+
+    @PostMapping("/admin/reindex")
+    fun reindex(): Map<String, Any> {
+        val pages = vault.read(Path.of(props.vaultRoot), acl)
+        index.rebuild(pages)
+        return mapOf("indexed" to pages.size, "aclPages" to acl.pageCount())
+    }
+
+    @PostMapping("/admin/acl/user")
+    fun putUser(@RequestParam userKey: String, @RequestBody tokens: List<String>): Map<String, Any> {
+        acl.putUser(userKey, tokens)
+        return mapOf("userKey" to userKey, "tokens" to tokens.size)
+    }
+
+    @PostMapping("/admin/sweep")
+    fun sweep(): Map<String, Any> = mapOf("finalized" to store.sweep())
+
+    @GetMapping("/stats")
+    fun stats(): Map<String, Any?> =
+        store.stats() + mapOf(
+            "indexedDocs" to index.docCount,
+            "aclPages" to acl.pageCount(),
+            "aclUsers" to acl.userCount(),
+        )
+
+    @GetMapping("/health")
+    fun health() = mapOf("ok" to true)
+}
