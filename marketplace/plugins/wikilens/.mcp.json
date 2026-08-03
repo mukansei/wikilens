@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "wikilens": {
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/wikilens_mcp.py"],
+      "env": {
+        "WIKILENS_SERVER": "${WIKILENS_SERVER}",
+        "WIKILENS_USER": "${WIKILENS_USER}"
+      }
+    }
+  }
+}

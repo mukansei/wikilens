@@ -1,0 +1,357 @@
+"""
+계약 불변식 테스트.
+
+여기서 지키는 것들은 나중에 서버판으로 갈 때 재크롤을 강제하는 항목들이다.
+포맷이 흔들리면 두 판의 호환이 깨진다.
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from wikilens import layout
+from wikilens.build import build, transpose
+from wikilens.convert import extract_cross_space_refs, parse, render_page_file
+from wikilens.models import Link, StructureSignature, canonical_json
+
+
+# --------------------------------------------------------------- 픽스처
+
+def make_vault(tmp_path: Path) -> Path:
+    """
+    작은 합성 위키. 어휘 격차를 의도적으로 심는다 —
+    제목은 공식 용어, 앵커는 구어체.
+    """
+    pages = {
+        "100000001": {
+            "title": "OAuth 2.0 인가 코드 흐름",
+            "space": "PLATFORM",
+            "version": 3,
+            "xhtml": """
+                <h1>개요</h1><h2>토큰 갱신</h2>
+                <p>세션은 <ac:link><ri:page ri:content-title="세션 저장소"/>
+                <ac:plain-text-link-body><![CDATA[세션 보관]]></ac:plain-text-link-body></ac:link>에 있다.</p>
+            """,
+        },
+        "100000002": {
+            "title": "세션 저장소",
+            "space": "PLATFORM",
+            "version": 1,
+            "xhtml": """
+                <h1>구조</h1>
+                <p>인증은 <ac:link><ri:page ri:content-title="OAuth 2.0 인가 코드 흐름"/>
+                <ac:plain-text-link-body><![CDATA[로그인 붙이는 법]]></ac:plain-text-link-body></ac:link> 참고.</p>
+            """,
+        },
+        "100000003": {
+            "title": "온보딩 가이드",
+            "space": "PLATFORM",
+            "version": 7,
+            "xhtml": """
+                <p>먼저 <ac:link><ri:page ri:content-title="OAuth 2.0 인가 코드 흐름"/>
+                <ac:plain-text-link-body><![CDATA[로그인 붙이는 법]]></ac:plain-text-link-body></ac:link>을 읽고,
+                <a href="/wiki/spaces/PLATFORM/pages/100000002/Session">세션 얘기</a>도 보세요.</p>
+            """,
+        },
+        "100000004": {
+            "title": "아무도 링크하지 않는 문서",
+            "space": "PLATFORM",
+            "version": 1,
+            "xhtml": "<p>고아입니다.</p>",
+        },
+    }
+
+    root = tmp_path / "vault"
+    state = {"cursor": None, "pages": {}}
+    for pid, m in pages.items():
+        p = layout.ensure_parent(layout.raw_path(root, pid))
+        p.write_text(m["xhtml"], encoding="utf-8")
+        state["pages"][pid] = {
+            "title": m["title"], "space": m["space"],
+            "version": m["version"], "updated": "",
+        }
+    layout.ensure_parent(layout.sync_state_path(root)).write_text(
+        json.dumps(state, ensure_ascii=False), encoding="utf-8"
+    )
+    return root
+
+
+# --------------------------------------------------------------- 레이아웃
+
+def test_shard_is_stable_and_padded():
+    assert layout.shard("123456789") == "12/34"
+    assert layout.shard("7") == "00/07"   # 4자리로 좌측 0 패딩
+    assert layout.rel_page_path("123456789") == "mirror/pages/12/34/123456789.md"
+
+
+def test_page_id_is_the_identifier_not_title():
+    """제목이 바뀌어도 경로가 유지되어야 한다."""
+    a = layout.rel_page_path("100000001")
+    b = layout.rel_page_path("100000001")
+    assert a == b and "100000001" in a
+
+
+# --------------------------------------------------------------- 직렬화
+
+def test_canonical_json_is_deterministic():
+    """키 삽입 순서가 달라도 같은 바이트가 나와야 한다."""
+    s1 = canonical_json({"b": 1, "a": [3, 2], "c": "한글"})
+    s2 = canonical_json({"c": "한글", "a": [3, 2], "b": 1})
+    assert s1 == s2
+    assert s1.endswith("\n")
+    assert "한글" in s1, "ensure_ascii=False 여야 grep 가능"
+
+
+def test_link_order_does_not_change_signature():
+    """Confluence가 링크 순서를 바꿔 내려줘도 서명이 같아야 한다."""
+    la = Link(to="2", anchor="가"), Link(to="3", anchor="나")
+    s1 = StructureSignature("1", "T", "S", 1, ["h"], list(la))
+    s2 = StructureSignature("1", "T", "S", 1, ["h"], list(reversed(la)))
+    assert canonical_json(s1.to_dict()) == canonical_json(s2.to_dict())
+
+
+# --------------------------------------------------------------- 파싱
+
+@pytest.mark.parametrize(
+    "xhtml,expect_to,expect_anchor",
+    [
+        ('<ac:link><ri:content-entity ri:content-id="999"/>'
+         '<ac:link-body>본문</ac:link-body></ac:link>', "999", "본문"),
+        ('<a href="/wiki/spaces/K/pages/888/T">앵커</a>', "888", "앵커"),
+        ('<a href="/pages/viewpage.action?pageId=777">쿼리</a>', "777", "쿼리"),
+    ],
+)
+def test_link_extraction_variants(xhtml, expect_to, expect_anchor):
+    sig, _ = parse("1", "T", "S", 1, xhtml)
+    assert any(l.to == expect_to and l.anchor == expect_anchor for l in sig.links)
+
+
+def test_anchorless_link_falls_back_to_title():
+    sig, _ = parse("1", "T", "S", 1,
+                   '<ac:link><ri:page ri:content-title="용어집"/></ac:link>')
+    assert sig.links[0].anchor == "용어집"
+
+
+def test_ambiguous_title_is_not_resolved():
+    """같은 제목이 여러 스페이스에 있으면 해석하지 않는다. 틀린 간선보다 없는 편이 낫다."""
+    def resolve(title, space):
+        return None
+    sig, _ = parse("1", "T", "S", 1,
+                   '<ac:link><ri:page ri:content-title="중복"/></ac:link>', resolve)
+    assert sig.links[0].to is None
+    assert sig.links[0].to_title == "중복"
+
+
+def test_missing_space_key_defaults_to_source_page_space():
+    """
+    링크에 space-key가 없으면 Confluence 규칙상 소스 페이지와 같은 스페이스를
+    가리킨다. 이걸 안 채우면 같은 제목이 다른 스페이스에도 있을 때 동명이인으로
+    오판해 해석 가능한 링크까지 미해결로 남는다 (실제 겪은 버그).
+    """
+    seen = {}
+
+    def resolve(title, space):
+        seen["title"], seen["space"] = title, space
+        return "resolved-id"
+
+    sig, _ = parse("1", "T", "MYSPACE", 1,
+                   '<ac:link><ri:page ri:content-title="Guide"/></ac:link>', resolve)
+    assert seen == {"title": "Guide", "space": "MYSPACE"}
+    assert sig.links[0].to == "resolved-id"
+
+
+def test_extract_cross_space_refs_requires_explicit_space_key():
+    """
+    space-key가 명시된 링크만 뽑는다. 생략된 건 '같은 스페이스'라는 뜻이라
+    build 단계가 이미 처리하므로 여기서 또 다루면 중복이다.
+    """
+    xhtml = (
+        '<ac:link><ri:page ri:content-title="A" ri:space-key="OTHER"/></ac:link>'
+        '<ac:link><ri:page ri:content-title="B"/></ac:link>'  # space-key 없음
+        '<ac:link><ri:page ri:content-title="A" ri:space-key="OTHER"/></ac:link>'  # 중복
+    )
+    assert extract_cross_space_refs(xhtml) == [("OTHER", "A")]
+
+
+def test_front_matter_carries_id():
+    sig = StructureSignature("100000001", "제목: 콜론 포함", "SP", 3)
+    out = render_page_file(sig, "본문")
+    assert 'id: "100000001"' in out
+    assert '"제목: 콜론 포함"' in out, "콜론 포함 제목은 인용되어야 YAML이 깨지지 않음"
+
+
+# --------------------------------------------------------------- 전치
+
+def test_transpose_inverts_links(tmp_path):
+    root = make_vault(tmp_path)
+    build(root)
+    entries = {
+        json.loads(l)["target"]: json.loads(l)
+        for l in layout.anchors_path(root).read_text(encoding="utf-8").splitlines() if l
+    }
+
+    oauth = entries["100000001"]
+    texts = sorted({a["text"] for a in oauth["anchors"]})
+    # 두 페이지가 같은 구어체로 부른다 -> 전치의 핵심 산출물
+    assert "로그인 붙이는 법" in texts
+    assert oauth["indeg"] == 2
+    assert oauth["path"] == "mirror/pages/10/00/100000001.md"
+
+    # 제목에는 그 표현이 없다. 이것이 어휘 격차다.
+    assert "로그인" not in oauth["title"]
+
+
+def test_orphan_detected(tmp_path):
+    root = make_vault(tmp_path)
+    rep = build(root)
+    # 인링크 0인 페이지가 고아다. '온보딩 가이드'는 나가는 링크만 있고
+    # 들어오는 링크가 없으므로 역시 고아 — 위키 정리에서 실제로 유용한 신호다.
+    assert rep.orphans == 2
+    aliases = layout.aliases_path(root).read_text(encoding="utf-8")
+    assert "아무도 링크하지 않는 문서" in aliases
+    assert "온보딩 가이드" in aliases
+    assert "고아 문서 후보" in aliases
+
+
+def test_aliases_puts_path_next_to_alias(tmp_path):
+    """
+    grep 결과에서 경로가 같은 블록에 나와야 한다.
+    이게 로컬판이 서버 없이 동작하는 이유다.
+    """
+    root = make_vault(tmp_path)
+    build(root)
+    text = layout.aliases_path(root).read_text(encoding="utf-8")
+    hits = [l for l in text.splitlines() if "로그인 붙이는 법" in l]
+    assert hits, "별칭이 색인에 있어야 함"
+    # 컨텍스트 플래그 없이 grep 해도 경로가 나와야 한다
+    assert "mirror/pages/10/00/100000001.md" in hits[0], "경로가 같은 줄에 있어야 함"
+
+
+# --------------------------------------------------------------- 멱등성
+
+def test_build_is_idempotent(tmp_path):
+    """
+    두 번 빌드해도 바이트가 동일해야 한다.
+    아니면 서버판에서 git diff 기반 무효화가 매번 전체 발화한다.
+    """
+    root = make_vault(tmp_path)
+    build(root)
+    snap1 = {p: p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+    build(root)
+    snap2 = {p: p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+    assert snap1.keys() == snap2.keys()
+    for p in snap1:
+        assert snap1[p] == snap2[p], f"멱등성 위반: {p}"
+
+
+def test_resolution_rate_reported(tmp_path):
+    root = make_vault(tmp_path)
+    rep = build(root)
+    assert rep.total_links == 4
+    assert rep.resolved_links == 4
+    assert rep.resolution_rate == 1.0
+
+
+# --------------------------------------------------------------- stats
+
+def test_stats_gap_ignores_case_and_order_but_catches_real_gap(tmp_path, capsys):
+    """
+    어휘 격차 판정은 토큰 집합 기준이어야 한다.
+    대소문자·어순만 다른 앵커("api reference" vs "API Reference")는 검색
+    토크나이저가 이미 흡수하므로 격차가 아니다. 완전히 다른 단어로 불리는
+    경우("lookup" vs "Search Index")만 격차로 잡아야 한다.
+    """
+    from types import SimpleNamespace
+
+    from wikilens.cli import _cmd_stats
+
+    pages = {
+        "200000001": {
+            "title": "API Reference", "space": "DOCS", "version": 1,
+            "xhtml": "<p>no outgoing links.</p>",
+        },
+        "200000002": {
+            "title": "API Reference Guide", "space": "DOCS", "version": 1,
+            "xhtml": (
+                '<p>See <ac:link><ri:page ri:content-title="API Reference"/>'
+                '<ac:plain-text-link-body><![CDATA[api reference]]></ac:plain-text-link-body>'
+                "</ac:link>."
+            ),
+        },
+        "200000003": {
+            "title": "Search Index", "space": "DOCS", "version": 1,
+            "xhtml": "<p>no outgoing links.</p>",
+        },
+        "200000004": {
+            "title": "Search Index Guide", "space": "DOCS", "version": 1,
+            "xhtml": (
+                '<p>See <ac:link><ri:page ri:content-title="Search Index"/>'
+                '<ac:plain-text-link-body><![CDATA[lookup]]></ac:plain-text-link-body>'
+                "</ac:link>."
+            ),
+        },
+    }
+    root = tmp_path / "vault"
+    state = {"cursor": None, "pages": {}}
+    for pid, m in pages.items():
+        p = layout.ensure_parent(layout.raw_path(root, pid))
+        p.write_text(m["xhtml"], encoding="utf-8")
+        state["pages"][pid] = {
+            "title": m["title"], "space": m["space"],
+            "version": m["version"], "updated": "",
+        }
+    layout.ensure_parent(layout.sync_state_path(root)).write_text(
+        json.dumps(state, ensure_ascii=False), encoding="utf-8"
+    )
+    build(root)
+
+    _cmd_stats(SimpleNamespace(root=str(root)))
+    out = capsys.readouterr().out
+
+    assert "제목과 어휘가 안 겹치는 별칭을 가진 페이지: 1 " in out
+
+
+def test_stats_gap_ignores_untokenizable_title(tmp_path, capsys):
+    """
+    제목 자체가 토큰화되지 않으면(너무 짧거나 기호뿐) '겹침 없음'을 판단할
+    신호가 없다 — 무조건 격차로 잡으면 안 된다. 앵커 쪽 빈 토큰을 격차로
+    안 세는 것과 대칭이어야 한다.
+    """
+    from types import SimpleNamespace
+
+    from wikilens.cli import _cmd_stats
+
+    pages = {
+        "300000001": {
+            "title": "Q&A", "space": "DOCS", "version": 1,  # tokenize("Q&A") == []
+            "xhtml": "<p>no outgoing links.</p>",
+        },
+        "300000002": {
+            "title": "Q&A Source", "space": "DOCS", "version": 1,
+            "xhtml": (
+                '<p>See <ac:link><ri:page ri:content-title="Q&A"/>'
+                '<ac:plain-text-link-body><![CDATA[Frequently Asked Questions]]></ac:plain-text-link-body>'
+                "</ac:link>."
+            ),
+        },
+    }
+    root = tmp_path / "vault"
+    state = {"cursor": None, "pages": {}}
+    for pid, m in pages.items():
+        p = layout.ensure_parent(layout.raw_path(root, pid))
+        p.write_text(m["xhtml"], encoding="utf-8")
+        state["pages"][pid] = {
+            "title": m["title"], "space": m["space"],
+            "version": m["version"], "updated": "",
+        }
+    layout.ensure_parent(layout.sync_state_path(root)).write_text(
+        json.dumps(state, ensure_ascii=False), encoding="utf-8"
+    )
+    build(root)
+
+    _cmd_stats(SimpleNamespace(root=str(root)))
+    out = capsys.readouterr().out
+
+    assert "제목과 어휘가 안 겹치는 별칭을 가진 페이지: 0 " in out

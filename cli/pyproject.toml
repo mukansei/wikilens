@@ -1,0 +1,26 @@
+[project]
+name = "wikilens"
+version = "0.1.0"
+description = "Confluence 위키를 로컬 마크다운으로 미러링하고 별칭 색인을 생성합니다"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+    "markdownify>=0.13",
+]
+
+[project.optional-dependencies]
+server = ["fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
+
+[project.scripts]
+wikilens = "wikilens.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["wikilens*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

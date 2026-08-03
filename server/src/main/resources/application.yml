@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: wikilens-server
+  threads:
+    virtual:
+      enabled: true
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: 8787
+
+wikilens:
+  # Python `wikilens sync` 가 만든 미러 루트 (서비스 계정으로 1회 싱크)
+  vault-root: ./mirror-root
+  index-dir: ./.wikilens/index
+  state-dir: ./.wikilens/state
+  learn:
+    # EB 하한이 이 값 미만이면 힌트를 서빙하지 않는다
+    serve-threshold: 0.45
+    # 앞 질의와 키워드가 이만큼 겹치면 앞 시도를 실패로 본다
+    reformulation-overlap: 0.5
+
+logging:
+  level:
+    dev.wikilens: INFO

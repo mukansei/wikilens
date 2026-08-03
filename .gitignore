@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.venv/
+# IDE
+.idea/
+# Kotlin / Gradle
+.gradle/
+build/
+# 런타임 산출물
+mirror/
+derived/
+ALIASES.md
+mirror-root
+.wikilens/
+.wikilens-server/
