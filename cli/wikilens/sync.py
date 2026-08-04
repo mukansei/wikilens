@@ -20,7 +20,7 @@ from pathlib import Path
 import requests
 
 from . import layout
-from .auth import AuthProvider, BasicAuth, BearerAuth, auth_from_env
+from .auth import AuthProvider, auth_from_env
 
 CHECKPOINT_EVERY = 100      # 이 건수마다 상태 저장 → 중단되어도 이어받는다
 MAX_RETRY_WAIT = 120        # 429 백오프 상한. 무한 대기 방지
@@ -225,10 +225,21 @@ class ConfluenceClient:
 
     # ------------------------------------------------------------ 조회
 
-    def search(self, cql: str, limit: int = 50):
+    # 본문·버전·스페이스·계층. ancestors 는 TREE.md 용으로 루트부터 직속 부모까지 온다.
+    FULL_EXPAND = "body.storage,version,space,ancestors"
+
+    def search(self, cql: str, limit: int = 50, expand: str | None = None):
+        """
+        [expand] 를 좁히면 응답이 극적으로 작아진다. ID 집합만 필요한 호출이
+        본문까지 받아오면 싱크가 사실상 본문을 두 번 내려받는다.
+        """
         url = self._url("/rest/api/content/search")
-        # ancestors: 계층 구조(TREE.md)용. 루트부터 직속 부모까지 순서대로 온다.
-        params = {"cql": cql, "limit": limit, "expand": "body.storage,version,space,ancestors"}
+        params = {"cql": cql, "limit": limit}
+        # `expand or FULL` 로 쓰면 안 된다 — 빈 문자열이 falsy 라 "확장 없음"이
+        # 조용히 전체 확장으로 되돌아간다. None(기본) 과 ""(명시적 없음) 을 구분한다.
+        exp = self.FULL_EXPAND if expand is None else expand
+        if exp:
+            params["expand"] = exp
         wait = 5
         while url:
             try:
@@ -254,8 +265,16 @@ class ConfluenceClient:
             params = None      # next 링크에 쿼리가 이미 들어 있다
 
     def list_page_ids(self, space: str) -> set:
-        """스페이스 전체 ID. 삭제 감지용 — 증분으로는 원리적으로 안 잡힌다."""
-        return {str(i["id"]) for i in self.search('type=page and space="' + space + '"', limit=100)}
+        """
+        스페이스 전체 ID. 삭제 감지용 — 증분으로는 원리적으로 안 잡힌다.
+
+        `expand=""` 가 핵심이다. 기본 확장을 쓰면 ID 하나 얻자고 페이지 본문을
+        전부 내려받아, `--full` 싱크가 본문을 두 번 받는 꼴이 된다.
+        """
+        return {
+            str(i["id"])
+            for i in self.search(_cql_for_space(space), limit=100, expand="")
+        }
 
 
 # ---------------------------------------------------------------- 상태
@@ -263,7 +282,15 @@ class ConfluenceClient:
 def _load_state(root: Path) -> dict:
     p = layout.sync_state_path(root)
     if p.exists():
-        return json.loads(p.read_text(encoding="utf-8"))
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            # 진단 가능한 메시지로 바꾼다. raw traceback 은 "무엇을 하라"를 안 알려준다.
+            raise ConfluenceError(
+                f"싱크 상태 파일이 손상됐습니다: {p}\n"
+                f"  {e}\n"
+                f"  이 파일을 지우면 전체를 다시 받습니다 (원본은 mirror/raw 에 남아 있습니다)."
+            ) from e
     return {"cursor": None, "pages": {}, "partial": None}
 
 
@@ -412,19 +439,23 @@ def sync(root: Path, client: ConfluenceClient, spaces: list,
                 state["partial"] = (item.get("version") or {}).get("when", "")
                 report.fetched += 1
                 since_checkpoint += 1
-
-                if since_checkpoint >= CHECKPOINT_EVERY:
-                    _save_state(root, state)
-                    since_checkpoint = 0
-                    if verbose:
-                        print("  ... 체크포인트 " + str(report.fetched) + "건")
                 if verbose:
                     version = (item.get("version") or {}).get("number", 0)
-                    print("  + " + str(item["id"]) + " v" + str(version) + " " + item.get("title", ""))
+                    print(f"  + {item['id']} v{version} {item.get('title', '')}")
             except Exception as e:  # noqa: BLE001
                 report.failed += 1
                 if verbose:
-                    print("  ! 실패 " + str(item.get("id")) + ": " + str(e))
+                    print(f"  ! 실패 {item.get('id')}: {e}")
+                continue
+
+            # 체크포인트 저장은 **try 밖**이어야 한다. 안에 두면 디스크 오류가
+            # "페이지 1건 실패"로 감춰지고, 상태는 영영 저장되지 않은 채 싱크가
+            # 끝나 다음 실행이 처음부터 전부 다시 받는다.
+            if since_checkpoint >= CHECKPOINT_EVERY:
+                _save_state(root, state)
+                since_checkpoint = 0
+                if verbose:
+                    print(f"  ... 체크포인트 {report.fetched}건")
 
     if follow_refs:
         report.referenced = _expand_referenced(root, client, state, spaces, follow_refs_cap, verbose)
