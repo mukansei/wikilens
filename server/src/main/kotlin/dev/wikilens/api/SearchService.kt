@@ -38,7 +38,7 @@ class SearchService(
 
         // Lucene 점수를 [0,1]로 정규화해 EB 사전분포로 넘긴다.
         val top = lexical.firstOrNull()?.score?.toDouble()?.takeIf { it > 0.0 } ?: 1.0
-        val priors = lexical.associate { it.id to (it.score / top).toDouble().coerceIn(0.0, 1.0) }
+        val priors = lexical.associate { it.id to (it.score / top).coerceIn(0.0, 1.0) }
 
         val hints = store.hints(terms, priors, req.limit)
 
@@ -62,13 +62,25 @@ class SearchService(
             }
         }
 
+        // 어휘 결과에 없는 후보(학습 힌트로만 발견된 페이지)는 메타데이터 캐시에서 채운다.
+        // 예전엔 여기서 조용히 버려져 `source="learned"` 가 도달 불가능한 분기였다 —
+        // 어휘 검색이 못 찾는 문서를 찾아주는 것이 학습 레이어의 존재 이유인데 그게 죽어 있었다.
+        // take 는 필터 **뒤에** 와야 한다. 앞에 두면 버려질 후보가 limit 슬롯을 먹는다.
         val hits = acc.entries
             .sortedByDescending { it.value.score }
-            .take(req.limit)
             .mapNotNull { (pid, a) ->
-                val m = meta[pid] ?: return@mapNotNull null   // 색인에 없으면 경로를 모른다
-                SearchHit(pid, m.title, m.space, a.score, a.source, a.rel)
+                val title: String
+                val space: String
+                val scored = meta[pid]
+                if (scored != null) {
+                    title = scored.title; space = scored.space
+                } else {
+                    val pm = index.metaOf(pid) ?: return@mapNotNull null  // 색인에도 없으면 폐기된 ID
+                    title = pm.title; space = pm.space
+                }
+                SearchHit(pid, title, space, a.score, a.source, a.rel)
             }
+            .take(req.limit)
 
         return SearchResponse(req.query, terms, lexical.size, hints.size, hits)
     }

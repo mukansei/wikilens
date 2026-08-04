@@ -29,10 +29,14 @@ class AclRegistry {
     fun tokensFor(userKey: String?): Set<String> =
         if (userKey.isNullOrBlank()) emptySet() else byUser[userKey] ?: emptySet()
 
-    fun canSee(userKey: String?, pageId: String): Boolean {
-        val u = tokensFor(userKey)
-        return u.isNotEmpty() && tokensOf(pageId).any { it in u }
-    }
+    fun canSee(userKey: String?, pageId: String): Boolean = canSee(tokensFor(userKey), pageId)
+
+    /**
+     * 토큰을 이미 계산해 둔 경우용. grep 처럼 문서 수천 개를 도는 루프에서
+     * 문서마다 `tokensFor` 를 다시 조회하지 않게 한다.
+     */
+    fun canSee(tokens: Set<String>, pageId: String): Boolean =
+        tokens.isNotEmpty() && tokensOf(pageId).any { it in tokens }
 
     fun pageCount(): Int = byPage.size
     fun userCount(): Int = byUser.size
