@@ -3,10 +3,7 @@
     "wikilens": {
       "command": "python3",
       "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/wikilens_mcp.py"],
-      "env": {
-        "WIKILENS_SERVER": "${WIKILENS_SERVER}",
-        "WIKILENS_USER": "${WIKILENS_USER}"
-      }
+      "_comment": "WIKILENS_SERVER / WIKILENS_USER 는 여기서 넘기지 않는다. 미설정일 때 '${WIKILENS_SERVER}' 가 리터럴 문자열로 전달돼 프록시의 기본값(http://127.0.0.1:8787)을 덮어쓰고 'unknown url type' 으로 죽는다. 프록시가 os.environ 에서 직접 읽으므로 셸에서 export 하면 그대로 상속된다."
     }
   }
 }

@@ -165,6 +165,50 @@ def main() -> int:
         ends = [p for p, _ in received if p == "/api/session/end"]
         check("session/end 호출", len(ends) == 1, f"실제={len(ends)}")
 
+        print("\n=== 10. 환경변수 처리 (겪은 버그) ===")
+        # 플러그인 매니페스트가 미설정 변수를 넘기면 값이 '${WIKILENS_SERVER}'
+        # 리터럴로 들어와 URL 조립이 깨졌다 ('unknown url type'). 기본값으로
+        # 떨어져야 한다.
+        env_lit = {**os.environ,
+                   "WIKILENS_SERVER": "${WIKILENS_SERVER}",
+                   "WIKILENS_USER": "alice@corp"}
+        p2 = subprocess.Popen(
+            [sys.executable, "-u", str(PROXY)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, env=env_lit, bufsize=1)
+        try:
+            rpc(p2, {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                     "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                                "clientInfo": {"name": "t", "version": "1"}}})
+            r = rpc(p2, {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                         "params": {"name": "search", "arguments": {"query": "x"}}})
+            text = r["result"]["content"][0]["text"]
+            # 기본값(127.0.0.1:8787)이 적용되면 서버가 떠 있든 아니든 URL 조립은 성공한다.
+            # 즉 정상 응답이거나 연결 실패이지, 'unknown url type' 은 아니어야 한다.
+            check("확장 안 된 ${VAR} 를 기본값으로 대체", "unknown url type" not in text, text[:60])
+        finally:
+            if p2.poll() is None:
+                p2.stdin.close(); p2.kill()
+
+        # WIKILENS_USER 가 없으면 ACL 이 fail-closed 라 결과가 항상 비는데,
+        # 그것을 "문서 없음"으로 오해하면 원인을 못 찾는다.
+        env_nouser = {k: v for k, v in os.environ.items() if k != "WIKILENS_USER"}
+        env_nouser["WIKILENS_SERVER"] = f"http://127.0.0.1:{PORT}"
+        p3 = subprocess.Popen(
+            [sys.executable, "-u", str(PROXY)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, env=env_nouser, bufsize=1)
+        try:
+            rpc(p3, {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                     "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                                "clientInfo": {"name": "t", "version": "1"}}})
+            r = rpc(p3, {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                         "params": {"name": "search", "arguments": {"query": "x"}}})
+            check("WIKILENS_USER 누락을 오류로 알림", r["result"].get("isError") is True)
+            check("무엇을 하라는 안내 포함",
+                  "WIKILENS_USER" in r["result"]["content"][0]["text"])
+        finally:
+            if p3.poll() is None:
+                p3.stdin.close(); p3.kill()
+
     finally:
         if proc.poll() is None:
             proc.kill()
