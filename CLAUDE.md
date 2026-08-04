@@ -4,25 +4,25 @@ Confluence 위키를 미러링하고 **앵커 텍스트**(다른 문서들이 �
 색인해 어휘 격차를 메운다. 그 위에 에이전트 탐색 궤적을 축적하는 학습 레이어를 얹는다.
 
 ```
-cli/      Python  싱크·파싱·앵커 전치·로컬판         65 테스트
-server/   Kotlin  Lucene/Nori 색인 + 학습 레이어      32 (핵심만) / 배선 검증됨(Acme 실데이터)
-plugin/   local=스킬만 · server=MCP 도구 4개          21 테스트
+cli/      Python  싱크·파싱·앵커 전치·로컬판         74 테스트
+server/   Kotlin  Lucene/Nori 색인 + 학습 레이어      51 테스트 / 배선 검증됨(Acme 실데이터)
+plugin/   local=스킬만 · server=MCP 도구 4개          24 테스트
 docs/     아키텍처 · 결정 로그
 ```
 
 ## 먼저 실행할 것
 
 ```bash
-./check-contracts.sh                              # 교차 언어 계약 20개
-cd cli    && python -m pytest tests/ -q           # 65
-cd server && ./verify.sh                          # 32, kotlinc만 필요 (Maven 불필요)
+./check-contracts.sh                              # 교차 언어 계약 16개
+cd cli    && python -m pytest tests/ -q           # 74
+cd server && ./gradlew test                       # 51 (JUnit)
 ```
 
 `check-contracts.sh`가 특히 중요하다. Python과 Kotlin이 파일로만 연결되어 있어
 아래 계약이 어긋나면 **테스트는 통과하는데 런타임에 조용히 틀어진다.**
 
-**변경 후 이 셋이 통과하는지 반드시 확인할 것.** 특히 `verify.sh`는 Gradle 없이
-돌아가므로 의존성을 못 받는 환경에서도 핵심 로직을 검증할 수 있다.
+**변경 후 이 셋이 통과하는지 반드시 확인할 것.** IntelliJ 를 쓴다면 실행 구성
+"3. 전체 검증"이 이 셋을 한 번에 돌린다.
 
 ---
 
@@ -74,10 +74,9 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 
 되돌리기 전에 이유를 확인할 것.
 
-- **`server/src/main/.../learn/`에 Spring·Lucene import가 없다** — 의존성 없이
-  컴파일·검증할 수 있어야 해서다. `verify.sh`가 그것에 의존한다. import 추가 금지.
-- **`verify/Verify.kt`가 `src/main` 밖에 있다** — `main()`이 둘이면 `bootJar`의
-  `mainClass` 해석이 깨진다.
+- **`server/src/main/.../learn/`에 Spring·Lucene import가 없다** — EB·게이트·궤적은
+  순수 알고리즘이고, 프레임워크가 새어 들어오면 랭킹·색인 관심사와 뒤엉켜 단위
+  테스트가 통합 테스트로 변질된다. `check-contracts.sh`가 강제한다. import 추가 금지.
 - **서버가 Confluence를 크롤하지 않는다** — Python `sync`가 이미 검증돼 있다.
   서버는 `mirror/`를 읽기만 한다. 재구현하지 말 것.
 - **`sync`와 `build`가 분리** — 제목→ID 해석 완전성 때문. 원본을 다 받은 뒤

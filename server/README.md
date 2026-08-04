@@ -7,17 +7,18 @@ Confluence 미러를 **서버측에서 색인**하고, 탐색 궤적을 축적�
 
 | 레이어 | 검증 |
 |---|---|
-| `learn/` (게이트·EB·궤적·포스팅) | **컴파일·실행 검증 완료.** 32/32 통과, Python/scipy와 1e-6 일치 |
-| `index/` `api/` `vault/` `acl/` (Lucene·Spring 배선) | **미검증.** 이 환경에서 Maven Central 접근 불가 |
-
-배선 레이어는 정적 검토만 거쳤습니다. 첫 빌드에서 오류가 날 수 있고, 특히
-Lucene 9 대 10의 API 차이(`storedFields()`, `TermInSetQuery` 시그니처)를 확인하세요.
+| `learn/` (게이트·EB·궤적·포스팅) | JUnit 12개 통과, Python/scipy와 1e-6 일치 |
+| `index/` `api/` `vault/` `acl/` (Lucene·Spring 배선) | 빌드·`bootRun`·재색인 검증됨 (Acme 실데이터 2,378건, 2026-08) |
+| JUnit 전체 | 51개 통과 |
+| 검색 랭킹 **품질** | **미검증.** 배선이 도는 것과 랭킹이 좋은 것은 다른 문제다 |
 
 ```bash
-./verify.sh          # 순수 로직만. kotlinc만 있으면 됨
 ./gradlew test       # JUnit 전체
 ./gradlew bootRun    # 서버 기동
 ```
+
+`learn/` 에는 Spring·Lucene import 가 없다 — EB·게이트·궤적은 순수 알고리즘이라
+프레임워크와 섞이면 단위 테스트가 통합 테스트로 변질된다. `check-contracts.sh` 가 강제한다.
 
 ## 왜 서버가 색인을 갖는가
 
