@@ -1,0 +1,3 @@
+{"anchors":[{"from":"200","text":"루트로"}],"indeg":1,"path":"mirror/pages/01/00/100.md","target":"100","title":"루트"}
+{"anchors":[{"from":"100","text":"자식 문서"}],"indeg":1,"path":"mirror/pages/02/00/200.md","target":"200","title":"자식A"}
+{"anchors":[],"indeg":0,"path":"mirror/pages/03/00/300.md","target":"300","title":"고아B"}

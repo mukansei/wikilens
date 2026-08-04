@@ -68,11 +68,19 @@ data class SessionEndRequest(val sessionId: String)
 data class TreeRequest(
     /** 요청자 식별자. ACL 필터의 입력. 없으면 빈 트리가 나와야 한다. */
     val userKey: String? = null,
+    /** 지정하면 이 페이지를 루트로 한 서브트리만. 권한이 없으면 빈 트리 (존재 비노출). */
+    val rootId: String? = null,
+    /** 최대 깊이. 0 = 무제한. 잘린 가지는 rootId로 파고들 수 있게 요약 라인이 남는다. */
+    val depth: Int = 0,
 )
 
 /**
  * 계층 목차. 로컬판 TREE.md와 같은 신호를 서버판에도 노출한다 —
  * 앵커 색인이 못 잡는 고아 문서(링크는 안 걸렸지만 페이지 트리엔 있는 것)를
  * 위에서부터 내려가며 찾는 용도. 앵커/학습과는 완전히 분리된 경로다.
+ *
+ * [truncated] 는 depth 제한으로 잘린 가지가 있었는지 — markdown 본문 속
+ * "… (+N개 하위, rootId=...)" 문구를 파싱하지 않고도 확인할 수 있는 구조화된
+ * 신호다 (GrepResponse.truncated 와 같은 패턴).
  */
-data class TreeResponse(val markdown: String)
+data class TreeResponse(val markdown: String, val truncated: Boolean = false)

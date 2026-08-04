@@ -9,10 +9,11 @@ __pycache__/
 # Kotlin / Gradle
 .gradle/
 build/
-# 런타임 산출물
-mirror/
-derived/
-ALIASES.md
+# 런타임 산출물 (루트 기준으로만 — contracts/fixtures/ 아래 체크인된 정본 볼트는 무시하면 안 됨)
+/mirror/
+/derived/
+/ALIASES.md
+/TREE.md
 mirror-root
 .wikilens/
 .wikilens-server/
