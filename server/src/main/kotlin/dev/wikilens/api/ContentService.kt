@@ -3,6 +3,7 @@ package dev.wikilens.api
 import dev.wikilens.acl.AclRegistry
 import dev.wikilens.config.WikiLensProperties
 import dev.wikilens.index.LuceneIndex
+import dev.wikilens.vault.VaultLayout
 import org.springframework.stereotype.Service
 import java.nio.file.Files
 import java.nio.file.Path
@@ -28,7 +29,7 @@ class ContentService(
     fun read(pageId: String, userKey: String?): ReadResponse? {
         if (!acl.canSee(userKey, pageId)) return null   // 존재 여부도 알리지 않는다
         val meta = index.metaOf(pageId) ?: return null
-        val f = root.resolve(relPagePath(pageId))
+        val f = root.resolve(VaultLayout.relPagePath(pageId))
         if (!Files.exists(f)) return null
         return ReadResponse(pageId, meta.title, meta.space, Files.readString(f))
     }
@@ -55,7 +56,7 @@ class ContentService(
         for (meta in index.allMeta()) {
             if (matches.size >= limit) { truncated = true; break }
             if (!acl.canSee(userKey, meta.id)) continue
-            val f = root.resolve(relPagePath(meta.id))
+            val f = root.resolve(VaultLayout.relPagePath(meta.id))
             if (!Files.exists(f)) continue
             scanned++
             Files.newBufferedReader(f).useLines { lines ->
@@ -69,11 +70,5 @@ class ContentService(
             }
         }
         return GrepResponse(pattern, scanned, matches, truncated)
-    }
-
-    /** 로컬판과 동일한 샤딩 규칙. 계약이므로 바꾸면 안 된다. */
-    private fun relPagePath(pid: String): String {
-        val p = pid.padStart(4, '0')
-        return "mirror/pages/${p.substring(0, 2)}/${p.substring(2, 4)}/$pid.md"
     }
 }

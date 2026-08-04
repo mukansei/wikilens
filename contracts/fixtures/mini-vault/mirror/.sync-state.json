@@ -1,0 +1,26 @@
+{
+  "cursor": "2026-01-01T00:00:00Z",
+  "pages": {
+    "100": {
+      "title": "루트",
+      "space": "DOCS",
+      "version": 1,
+      "updated": "2026-01-01T00:00:00Z",
+      "ancestors": []
+    },
+    "200": {
+      "title": "자식A",
+      "space": "DOCS",
+      "version": 1,
+      "updated": "2026-01-01T00:00:00Z",
+      "ancestors": [{"id": "100", "title": "루트"}]
+    },
+    "300": {
+      "title": "고아B",
+      "space": "DOCS",
+      "version": 1,
+      "updated": "2026-01-01T00:00:00Z",
+      "ancestors": [{"id": "999999", "title": "동기화 안 된 부모"}]
+    }
+  }
+}

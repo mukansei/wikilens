@@ -59,8 +59,10 @@ class Controller(
      * 궤적 관측 대상이 아니다 — 어휘 신호가 아니라 분류 신호이기 때문이다.
      */
     @PostMapping("/tree")
-    fun tree(@RequestBody req: TreeRequest): TreeResponse =
-        TreeResponse(index.renderTree { pid -> acl.canSee(req.userKey, pid) })
+    fun tree(@RequestBody req: TreeRequest): TreeResponse {
+        val rendered = index.renderTree({ pid -> acl.canSee(req.userKey, pid) }, req.rootId, req.depth)
+        return TreeResponse(rendered.markdown, rendered.truncated)
+    }
 
     /** MCP 프록시가 종료 시 호출한다. 놓쳐도 sweep 이 처리한다. */
     @PostMapping("/session/end")

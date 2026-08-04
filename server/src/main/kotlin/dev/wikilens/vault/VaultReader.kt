@@ -43,7 +43,7 @@ class VaultReader(private val mapper: ObjectMapper) {
                 id = pid,
                 title = meta["title"]?.toString().orEmpty(),
                 space = meta["space"]?.toString().orEmpty(),
-                path = relPagePath(pid),
+                path = VaultLayout.relPagePath(pid),
                 body = readBody(root, pid),
                 anchors = anchors[pid].orEmpty(),
                 aclTokens = tokens,
@@ -99,14 +99,8 @@ class VaultReader(private val mapper: ObjectMapper) {
     }
 
     private fun readBody(root: Path, pid: String): String {
-        val f = root.resolve(relPagePath(pid))
+        val f = root.resolve(VaultLayout.relPagePath(pid))
         return if (Files.exists(f)) runCatching { Files.readString(f) }.getOrDefault("") else ""
-    }
-
-    /** 로컬판과 동일한 샤딩 규칙. 계약이므로 바꾸면 안 된다. */
-    private fun relPagePath(pid: String): String {
-        val padded = pid.padStart(4, '0')
-        return "mirror/pages/${padded.substring(0, 2)}/${padded.substring(2, 4)}/$pid.md"
     }
 
     companion object { const val PUBLIC = "@public" }

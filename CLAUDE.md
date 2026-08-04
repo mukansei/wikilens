@@ -4,9 +4,9 @@ Confluence 위키를 미러링하고 **앵커 텍스트**(다른 문서들이 �
 색인해 어휘 격차를 메운다. 그 위에 에이전트 탐색 궤적을 축적하는 학습 레이어를 얹는다.
 
 ```
-cli/      Python  싱크·파싱·앵커 전치·로컬판         55 테스트
-server/   Kotlin  Lucene/Nori 색인 + 학습 레이어      32 (핵심만) / 배선 미검증
-plugin/   local=스킬만 · server=MCP 도구 3개          18 테스트
+cli/      Python  싱크·파싱·앵커 전치·로컬판         70 테스트
+server/   Kotlin  Lucene/Nori 색인 + 학습 레이어      32 (핵심만) / 배선 검증됨(Acme 실데이터)
+plugin/   local=스킬만 · server=MCP 도구 4개          21 테스트
 bench/    설계 검증 시뮬레이션 (합성 코퍼스)
 docs/     아키텍처 · 결정 로그
 ```
@@ -14,8 +14,8 @@ docs/     아키텍처 · 결정 로그
 ## 먼저 실행할 것
 
 ```bash
-./check-contracts.sh                              # 교차 언어 계약 12개
-cd cli    && python -m pytest tests/ -q           # 55
+./check-contracts.sh                              # 교차 언어 계약 18개
+cd cli    && python -m pytest tests/ -q           # 70
 cd server && ./verify.sh                          # 32, kotlinc만 필요 (Maven 불필요)
 cd cli    && python demo_server.py                # 프로토타입 루프 엔드투엔드
 ```
@@ -35,10 +35,11 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 
 | 계약 | 위치 | 깨지면 |
 |---|---|---|
-| 페이지 ID가 식별자 (제목 아님) | `layout.py`, `VaultReader.relPagePath` | 이름 변경 시 학습 전량 손실 |
-| 샤딩 `{id앞2}/{id다음2}` | 같음 | Kotlin이 파일을 못 찾음 |
+| 페이지 ID가 식별자 (제목 아님) | `layout.py`, `vault/Layout.kt` | 이름 변경 시 학습 전량 손실 |
+| 샤딩 `{id앞2}/{id다음2}` | 같음 (Kotlin 정의처는 `Layout.kt` 한 곳뿐) | Kotlin이 파일을 못 찾음 |
 | `canonical_json` 결정적 직렬화 | `models.py` | 매 싱크마다 전 파일이 변경으로 잡힘 |
 | `anchors.jsonl` 스키마 | `build.py` ↔ `VaultReader` | 앵커 색인 유실 |
+| `ancestors` 스키마 (id/title 목록) | `sync.py` ↔ `VaultReader.readAncestors` | 서버 트리가 조용히 평평해짐 |
 | 빌드 멱등성 (2회 실행 = 바이트 동일) | `tests/test_wikilens.py` | 무효화 폭풍 |
 | 항 단위 포스팅 (키워드 **집합** 아님) | `TrajectoryStore` | 표현이 다르면 카운트 분산 |
 | 사전확률 클램프 `[0.05, 0.85]` | `Reliability.PRIOR_CEIL` | 1관측에 신뢰도 1.0 |
@@ -95,24 +96,23 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 | 앵커 텍스트 효과 (n: 6.04→1.81) | **합성 코퍼스.** 실제 위키에서 재측정 필요 |
 | churn 5%에 커버리지 85% 소실 | 합성. 방향성만 유효 |
 | 실사용 적중률 | **측정된 바 없음** |
-| Kotlin Lucene/Spring 배선 | **컴파일된 적 없음** (Maven 접근 불가 환경) |
+| Kotlin Lucene/Spring 배선 | 빌드·bootRun·재색인 검증됨 (Acme 실데이터 2,378건, 2026-08). 검색 랭킹 **품질**은 별도 미검증 |
 
 ---
 
 ## 다음 작업 (우선순위)
 
-1. **실제 Confluence 연결.** `wikilens doctor` → `sync` → `stats`.
-   `stats`의 "제목과 다른 별칭 비율"이 낮으면 **프로젝트 전체를 중단**하는 게 맞다.
-   그 지표 하나가 존재 이유다.
-2. **Kotlin 배선 첫 빌드.** `./gradlew build`. Lucene 9↔10 API 차이
-   (`storedFields()`, `TermInSetQuery` 시그니처)를 먼저 볼 것.
-3. **ACL 수집** — `sync`가 권한을 전혀 가져오지 않아 모든 페이지가 `@public`이 된다.
-   `/rest/api/content/{id}/restriction/byOperation`. **다중 사용자 배포 전 필수.**
+완료: 실제 Confluence 연결(Acme CWDOMESTICDT, 2,375문서), Kotlin 배선 첫 빌드·재색인
+검증, 서버판 계층(TREE.md) 통합. 근거는 git log와 `docs/`.
+
+1. **ACL 수집** — `sync`가 권한을 전혀 가져오지 않아 모든 페이지가 `@public`이 된다.
+   `/rest/api/content/{id}/restriction/byOperation`. **다중 사용자 배포 전 필수** —
+   지금 상태로 제3자를 서버판에 붙이면 그 사람이 Confluence에서 못 보는 문서까지 노출된다.
    권한 변경은 `lastModified`를 안 건드리므로 콘텐츠 싱크와 분리해 더 자주 돌려야 한다.
-4. **싱크 자동화** — 현재 `sync` → `/admin/reindex`가 수동이다. cron으로 충분:
+2. **싱크 자동화** — 현재 `sync` → `/admin/reindex`가 수동이다. cron으로 충분:
    `wikilens sync ... && curl -XPOST .../admin/reindex` (`&&` 필수 — 실패 시
    절반만 반영되는 것을 막는다).
-5. **"유용했다" 판정 개선** — 학습 레이어 전체가 이 레이블에 걸려 있는데
+3. **"유용했다" 판정 개선** — 학습 레이어 전체가 이 레이블에 걸려 있는데
    지금은 약한 신호 둘(마지막 읽기, 질의 재구성)뿐이다. `pWrong`이 노이즈 크기다.
 
 ## 손대지 말아야 할 것
