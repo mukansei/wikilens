@@ -64,3 +64,15 @@ data class GrepResponse(
 )
 
 data class SessionEndRequest(val sessionId: String)
+
+data class TreeRequest(
+    /** 요청자 식별자. ACL 필터의 입력. 없으면 빈 트리가 나와야 한다. */
+    val userKey: String? = null,
+)
+
+/**
+ * 계층 목차. 로컬판 TREE.md와 같은 신호를 서버판에도 노출한다 —
+ * 앵커 색인이 못 잡는 고아 문서(링크는 안 걸렸지만 페이지 트리엔 있는 것)를
+ * 위에서부터 내려가며 찾는 용도. 앵커/학습과는 완전히 분리된 경로다.
+ */
+data class TreeResponse(val markdown: String)

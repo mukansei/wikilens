@@ -55,6 +55,11 @@ def aliases_path(root: Path) -> Path:
     return root / "ALIASES.md"
 
 
+def tree_path(root: Path) -> Path:
+    """계층 구조(부모-자식) 목차. 어휘를 몰라도 영역만 알면 위에서 내려가며 찾는 용도."""
+    return root / "TREE.md"
+
+
 def sync_state_path(root: Path) -> Path:
     return root / "mirror" / ".sync-state.json"
 

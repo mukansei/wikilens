@@ -47,6 +47,9 @@ class Fake(BaseHTTPRequestHandler):
             payload = {"pattern": body.get("pattern"), "scanned": 12, "truncated": False,
                        "matches": [{"pageId": "200000003", "title": "배포 파이프라인 규격",
                                     "line": 42, "text": "DEPLOY_TOKEN=..."}]}
+        elif self.path == "/api/tree":
+            payload = {"markdown": "- [SPACE] 팀 홈 — 111354187\n"
+                                    "  - 참고. 조직 R&R 정리 — 167164533\n"}
         elif self.path == "/api/session/end":
             payload = {"finalized": 1}
         else:
@@ -110,7 +113,7 @@ def main() -> int:
         print("\n=== 2. tools/list ===")
         r = rpc(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         names = [t["name"] for t in r["result"]["tools"]]
-        check("도구 3개", names == ["search", "read", "grep"], f"실제={names}")
+        check("도구 4개", names == ["search", "read", "grep", "tree"], f"실제={names}")
         check("스키마 있음", all("inputSchema" in t for t in r["result"]["tools"]))
 
         print("\n=== 3. search ===")
@@ -143,11 +146,19 @@ def main() -> int:
                        "params": {"name": "grep", "arguments": {"pattern": "DEPLOY_TOKEN"}}})
         check("매치 반환", "200000003" in r["result"]["content"][0]["text"])
 
-        print("\n=== 7. 알 수 없는 메서드 ===")
-        r = rpc(proc, {"jsonrpc": "2.0", "id": 7, "method": "nope"})
+        print("\n=== 7. tree ===")
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 7, "method": "tools/call",
+                       "params": {"name": "tree", "arguments": {}}})
+        check("계층 반환", "111354187" in r["result"]["content"][0]["text"])
+        _, body = received[-1]
+        check("userKey 전달", body.get("userKey") == "alice@corp")
+        check("sessionId 미포함 (계층은 궤적 관측 대상 아님)", "sessionId" not in body)
+
+        print("\n=== 8. 알 수 없는 메서드 ===")
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 8, "method": "nope"})
         check("-32601 반환", r.get("error", {}).get("code") == -32601)
 
-        print("\n=== 8. 종료 시 세션 정리 ===")
+        print("\n=== 9. 종료 시 세션 정리 ===")
         proc.stdin.close()
         proc.wait(timeout=5)
         time.sleep(0.3)

@@ -54,6 +54,14 @@ class Controller(
     fun grep(@RequestBody req: GrepRequest): GrepResponse =
         content.grep(req.pattern, req.userKey, req.limit, req.regex)
 
+    /**
+     * 계층 목차(로컬판 TREE.md의 서버판). 앵커/학습과 분리된 별도 경로라
+     * 궤적 관측 대상이 아니다 — 어휘 신호가 아니라 분류 신호이기 때문이다.
+     */
+    @PostMapping("/tree")
+    fun tree(@RequestBody req: TreeRequest): TreeResponse =
+        TreeResponse(index.renderTree { pid -> acl.canSee(req.userKey, pid) })
+
     /** MCP 프록시가 종료 시 호출한다. 놓쳐도 sweep 이 처리한다. */
     @PostMapping("/session/end")
     fun endSession(@RequestBody req: SessionEndRequest): Map<String, Any> =
