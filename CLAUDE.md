@@ -62,6 +62,13 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
    흐름을 *묻는* 표현만 마커에 넣는다.
 6. **401을 "API 없음"으로 해석** → 토큰 문제를 URL 문제로 오진.
    `detect_prefix`는 401/403을 "찾음"으로 취급한다.
+7. **Gate 폴백 임계값이 너무 타이트했음** → 마커에 안 걸리는 자연어 질의는 3토큰 넘으면
+   전부 UNKNOWN이라 학습 간선이 거의 안 생겼다(실측: 7토큰 질의가 `success=true`인
+   궤적으로 기록됐는데도 `postings`는 안 늘어남). 임계값을 8로 올리고 `RATIONALE`
+   마커에 "배경"을 추가해 대응(`Gate.classify`). 마커 체크가 길이 폴백보다 먼저
+   실행되므로 RATIONALE/TRACING은 마커가 커버하는 한 길이와 무관하게 안전하지만,
+   마커에 안 걸리는 긴 경로의존 질의를 오분류할 잔여 위험은 남는다 — `pWrong`으로
+   모니터링할 것.
 
 ---
 
@@ -103,7 +110,7 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 ## 다음 작업 (우선순위)
 
 완료: 실제 Confluence 연결(Coway CWDOMESTICDT, 2,375문서), Kotlin 배선 첫 빌드·재색인
-검증, 서버판 계층(TREE.md) 통합. 근거는 git log와 `docs/`.
+검증, 서버판 계층(TREE.md) 통합, Gate 폴백 임계값 완화(3→8토큰). 근거는 git log와 `docs/`.
 
 1. **ACL 수집** — `sync`가 권한을 전혀 가져오지 않아 모든 페이지가 `@public`이 된다.
    `/rest/api/content/{id}/restriction/byOperation`. **다중 사용자 배포 전 필수** —

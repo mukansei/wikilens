@@ -75,6 +75,13 @@ fun main() {
     check("근거 질의", Gate.classify("왜 이 정책이지") == QueryKind.RATIONALE)
     check("짧은 질의는 조회", Gate.classify("온보딩") == QueryKind.LOCALIZATION)
     check("TRACING 캐싱 불가", !QueryKind.TRACING.cacheable && !QueryKind.RATIONALE.cacheable)
+    check("마커 없는 7토큰 자연어 질의도 조회로 잡힘 (실측 실패 사례, 임계값 8)",
+        Gate.classify("컨텐츠 노출 권한 필터링에 대한 3가지 방법") == QueryKind.LOCALIZATION)
+    check("경계값: 8토큰(마커 없음)은 조회, 9토큰은 UNKNOWN",
+        Gate.classify("컨텐츠 노출 권한 필터링에 대한 세가지 처리 절차") == QueryKind.LOCALIZATION &&
+        Gate.classify("컨텐츠 노출 권한 필터링에 대한 세가지 처리 절차 정리") == QueryKind.UNKNOWN)
+    check("배경 마커가 임계값 상향과 무관하게 근거 질의를 방어",
+        Gate.classify("이 기능을 이렇게 구현한 배경이 궁금해") == QueryKind.RATIONALE)
 
     println("\n=== 5. 항 단위 포스팅 (겪은 버그: 집합 키라 카운트 분산) ===")
     val (s5, _) = collectingStore()
