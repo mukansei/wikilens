@@ -2,7 +2,7 @@
 서버 스코어링 로직 테스트.
 
 `wikilens.server.scoring`은 Kotlin `Scoring.kt`와 나란히 유지되는 정본이다 —
-`check-contracts.sh`가 둘의 임계값·상수 일치를 검사한다. 여기 있는 것 대부분은
+`shared_contracts.sh`가 둘의 임계값·상수 일치를 검사한다. 여기 있는 것 대부분은
 실제로 겪은 버그를 잠그는 테스트다("동작한다"가 아니라 "이 방식으로 깨졌었다").
 
 공유 Python 서버(`app.py`/`store.py`, 클라이언트 로컬 색인/검색 `index.py`/`search.py`)는
