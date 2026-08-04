@@ -74,7 +74,7 @@ def _cmd_sync(args) -> int:
 
 
 def _cmd_build(args) -> int:
-    rep = build(Path(args.root), verbose=args.verbose)
+    rep = build(Path(args.root))
     print(
         f"빌드 완료: 파싱 {rep.parsed} · 페이지 {rep.pages_written} · "
         f"구조 {rep.structures_written}"
@@ -106,6 +106,10 @@ def _cmd_stats(args) -> int:
 
     entries = [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines() if l]
     total = len(entries)
+    if not total:
+        print("derived/anchors.jsonl 이 비어 있습니다. 싱크된 페이지가 없는지 확인하세요.")
+        return 1
+
     with_alias = [e for e in entries if e["indeg"] > 0]
     orphans = total - len(with_alias)
     indegs = sorted((e["indeg"] for e in entries), reverse=True)

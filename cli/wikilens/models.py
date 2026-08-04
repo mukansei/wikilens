@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -56,31 +56,6 @@ class StructureSignature:
             ],
         }
 
-    @staticmethod
-    def from_dict(d: dict[str, Any]) -> "StructureSignature":
-        return StructureSignature(
-            page_id=d["page_id"],
-            title=d["title"],
-            space=d.get("space", ""),
-            version=int(d.get("version", 0)),
-            headings=list(d.get("headings", [])),
-            links=[
-                Link(to=l.get("to"), anchor=l.get("anchor", ""), to_title=l.get("to_title"))
-                for l in d.get("links", [])
-            ],
-        )
-
-
-@dataclass
-class Page:
-    page_id: str
-    title: str
-    space: str
-    version: int
-    raw_xhtml: str
-    markdown: str
-    signature: StructureSignature
-
 
 @dataclass
 class AnchorEntry:
@@ -115,4 +90,6 @@ def canonical_json(obj: Any) -> str:
 
 
 def jsonl_line(obj: Any) -> str:
-    return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n"
+    """JSONL 한 줄. 결정적 직렬화 규칙은 [canonical_json] 과 **같아야** 한다 —
+    예전엔 같은 구현이 두 벌로 복제돼 있어 한쪽만 바뀔 위험이 있었다."""
+    return canonical_json(obj)

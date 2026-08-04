@@ -43,7 +43,7 @@ def _load_raw_index(root: Path) -> dict[str, dict]:
     return json.loads(p.read_text(encoding="utf-8")).get("pages", {})
 
 
-def build(root: Path, verbose: bool = False) -> BuildReport:
+def build(root: Path) -> BuildReport:
     root = Path(root)
     meta = _load_raw_index(root)
     report = BuildReport()
@@ -190,12 +190,13 @@ def _write_aliases(
         "## 색인",
         "",
     ]
-    with_alias = [e for e in entries if _alias_terms(e)]
-    without = [e for e in entries if not _alias_terms(e)]
+    # 엔트리당 한 번만 계산한다. 예전엔 분류 2회 + 렌더 1회로 3중 재계산이었다.
+    scored = [(e, _alias_terms(e)) for e in entries]
+    with_alias = [(e, terms) for e, terms in scored if terms]
+    without = [e for e, terms in scored if not terms]
 
-    for e in sorted(with_alias, key=lambda x: -x.indeg):
-        terms = " · ".join(_alias_terms(e))
-        lines.append(f"{e.title} | {terms} | {e.indeg} | {e.path}")
+    for e, terms in sorted(with_alias, key=lambda x: -x[0].indeg):
+        lines.append(f"{e.title} | {' · '.join(terms)} | {e.indeg} | {e.path}")
 
     if without:
         lines += [
