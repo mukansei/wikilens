@@ -73,6 +73,22 @@ class LearnLayerTest {
     }
 
     @Test
+    fun `fallback threshold covers marker-free natural queries up to 8 tokens`() {
+        // 실측 실패 사례: 마커 없는 7토큰 자연어 질의가 예전엔 UNKNOWN으로 빠져 학습 간선이 안 생겼다.
+        assertEquals(QueryKind.LOCALIZATION, Gate.classify("컨텐츠 노출 권한 필터링에 대한 3가지 방법"))
+        // 경계값 고정: 정확히 8토큰(마커 없음) -> LOCALIZATION, 9토큰(마커 없음) -> UNKNOWN
+        assertEquals(QueryKind.LOCALIZATION, Gate.classify("컨텐츠 노출 권한 필터링에 대한 세가지 처리 절차"))
+        assertEquals(QueryKind.UNKNOWN, Gate.classify("컨텐츠 노출 권한 필터링에 대한 세가지 처리 절차 정리"))
+    }
+
+    @Test
+    fun `rationale marker protects long queries from the raised threshold`() {
+        // 임계값을 8로 올려도, "배경" 마커가 길이와 무관하게 먼저 걸려야 한다 —
+        // 안 그러면 경로의존 질의가 LOCALIZATION으로 잘못 캐싱된다.
+        assertEquals(QueryKind.RATIONALE, Gate.classify("이 기능을 이렇게 구현한 배경이 궁금해"))
+    }
+
+    @Test
     fun `path dependent queries create no edges`() {
         val (s, log) = store()
         repeat(8) { session(s, "t$it", "토큰이 어떻게 흐르나", listOf("토큰", "흐르"), listOf("A", "B")) }

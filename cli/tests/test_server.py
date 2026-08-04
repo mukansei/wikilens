@@ -120,6 +120,13 @@ def test_eb_reduces_to_wilson_like_under_flat_prior():
     ("배포 가이드", QueryKind.LOCALIZATION),
     ("토큰이 어떻게 흐르나", QueryKind.TRACING),
     ("왜 이 정책이지", QueryKind.RATIONALE),
+    # 실측 실패 사례: 마커 없는 7토큰 자연어 질의가 예전엔(임계값 3) UNKNOWN으로 빠졌다.
+    ("컨텐츠 노출 권한 필터링에 대한 3가지 방법", QueryKind.LOCALIZATION),
+    # 경계값 고정: 정확히 8토큰(마커 없음) -> LOCALIZATION, 9토큰(마커 없음) -> UNKNOWN
+    ("컨텐츠 노출 권한 필터링에 대한 세가지 처리 절차", QueryKind.LOCALIZATION),
+    ("컨텐츠 노출 권한 필터링에 대한 세가지 처리 절차 정리", QueryKind.UNKNOWN),
+    # 임계값을 8로 올려도 "배경" 마커가 길이와 무관하게 먼저 걸려야 한다.
+    ("이 기능을 이렇게 구현한 배경이 궁금해", QueryKind.RATIONALE),
 ])
 def test_classify(q, kind):
     assert classify(q) is kind

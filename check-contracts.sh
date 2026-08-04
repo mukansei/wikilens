@@ -28,6 +28,10 @@ check "canonical_json 결정적 직렬화" \
   'grep -q "sort_keys=True, ensure_ascii=False" cli/wikilens/models.py'
 check "ancestors 스키마 Python↔Kotlin 일치 (sync.py 가 쓰고 VaultReader 가 같은 키로 읽음)" \
   'grep -qF "\"ancestors\": ancestors" cli/wikilens/sync.py && grep -qF "meta[\"ancestors\"]" server/src/main/kotlin/dev/wikilens/vault/VaultReader.kt'
+check "Gate LOCALIZATION 폴백 임계값 Python/Kotlin 일치 (8토큰)" \
+  'grep -q "<= 8" server/src/main/kotlin/dev/wikilens/learn/Scoring.kt && grep -q "<= 8" cli/wikilens/server/scoring.py'
+check "RATIONALE 마커 '배경' Python/Kotlin 양쪽 존재" \
+  'grep -qF "\"배경\"" server/src/main/kotlin/dev/wikilens/learn/Scoring.kt && grep -qF "\"배경\"" cli/wikilens/server/scoring.py'
 
 echo "빌드 구조"
 check "learn/ 에 Spring·Lucene 의존 없음 (verify.sh 가 의존)" \

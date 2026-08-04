@@ -35,7 +35,7 @@ _TRACING = (
 )
 # 근거가 경유 노드에 분산 — 목적지만으로 재구성 불가
 _RATIONALE = (
-    "왜 ", "왜?", "이유", "근거", "의도", "설계 결정", "트레이드오프",
+    "왜 ", "왜?", "이유", "근거", "의도", "배경", "설계 결정", "트레이드오프",
     "why ", "why?", "rationale", "reason for", "trade-off", "tradeoff",
 )
 # 목적지 자체가 답 — 경유 노드를 건너뛰어도 무손실
@@ -65,8 +65,13 @@ def classify(query: str) -> QueryKind:
         return QueryKind.TRACING
     if any(m in q for m in _LOCALIZATION):
         return QueryKind.LOCALIZATION
-    # 짧은 질의는 대개 심볼/제목 조회다
-    if len(query.strip().split()) <= 3:
+    # 마커 어디에도 안 걸리는 짧은 질의는 대개 심볼/제목 조회다. 문턱을 8로 잡은
+    # 근거: 실측 실패 사례("컨텐츠 노출 권한 필터링에 대한 3가지 방법", 마커 없음)가
+    # 7토큰이었고 자연어 조회 질의 대부분이 마커 없이 3토큰을 넘긴다 — 3은 너무
+    # 타이트해서 학습 간선이 거의 안 생겼다. 마커 체크가 이 폴백보다 먼저 실행되므로
+    # RATIONALE/TRACING 질의는 마커가 커버하는 한 길이와 무관하게 안전하다. 마커에
+    # 안 걸리는 긴 경로의존 질의를 오분류할 잔여 위험은 남는다 — pWrong으로 모니터링.
+    if len(query.strip().split()) <= 8:
         return QueryKind.LOCALIZATION
     return QueryKind.UNKNOWN
 
