@@ -67,6 +67,15 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
    실행되므로 RATIONALE/TRACING은 마커가 커버하는 한 길이와 무관하게 안전하지만,
    마커에 안 걸리는 긴 경로의존 질의를 오분류할 잔여 위험은 남는다 — `pWrong`으로
    모니터링할 것.
+8. **학습 전용 힌트가 통째로 버려졌음** → `SearchService`가 메타데이터를 어휘 결과로만
+   채우고 거기 없는 후보를 걸러내, **어휘 검색이 못 찾고 학습으로만 발견된 페이지가
+   항상 폐기**됐다. 학습 레이어의 존재 이유가 죽어 있었고 `SKILL.md`가 문서화한
+   `S = 학습 힌트만` 마커는 도달 불가능한 분기였다. 색인에 없으면 `index.metaOf()`로
+   폴백하고, `take(limit)`을 필터 **뒤로** 옮겨 해결(안 그러면 버려질 후보가 슬롯을 먹음).
+   `SearchService`에 테스트가 하나도 없어서 오래 살아남았다.
+9. **`.mcp.json`이 미설정 env 를 리터럴로 주입** → 변수가 없으면 `"${WIKILENS_SERVER}"`
+   문자열이 그대로 들어가 프록시 기본값을 덮어쓰고 `unknown url type` 으로 죽는다.
+   env 를 넘기지 않고 프록시가 `os.environ` 에서 직접 읽게 한다.
 
 ---
 
@@ -85,6 +94,13 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
   조용히 쌓이는 자리라 이득이 없으면 피한다.
 - **`raw/` XHTML을 버리지 않는다** — 마크다운 변환은 매크로를 잃는다.
   변환기가 개선되면 재크롤 없이 재변환할 수 있다.
+- **마켓플레이스 매니페스트가 저장소 루트에 있다** — `.claude-plugin/marketplace.json`.
+  하위 디렉터리로 옮기면 플러그인 `source` 상대 경로가 잘못 해석돼 설치가
+  `"source type your Claude Code version does not support"` 로 실패한다(실측).
+- **검사 장치가 둘이다** — `shared_contracts.sh`(grep, 빠르지만 리팩터링에 취약)와
+  `shared-fixtures/`(실제 파싱·생성 후 비교, 느리지만 동작을 잠금). 겹쳐 보이지만
+  잡는 실패가 다르다 — grep 은 문자열만 바뀌어도 오탐이고, 픽스처는 포맷이 조용히
+  갈라지는 것을 잡는다.
 
 ---
 
@@ -106,7 +122,8 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 ## 다음 작업 (우선순위)
 
 완료: 실제 Confluence 연결(Coway CWDOMESTICDT, 2,375문서), Kotlin 배선 첫 빌드·재색인
-검증, 서버판 계층(TREE.md) 통합, Gate 폴백 임계값 완화(3→8토큰). 근거는 git log와 `docs/`.
+검증, 서버판 계층(TREE.md) 통합, Gate 폴백 임계값 완화(3→8토큰), 플러그인 설치 실동작
+확인(매니페스트를 저장소 루트로 이동). 근거는 git log와 `docs/`.
 
 1. **ACL 수집** — `sync`가 권한을 전혀 가져오지 않아 모든 페이지가 `@public`이 된다.
    `/rest/api/content/{id}/restriction/byOperation`. **다중 사용자 배포 전 필수** —
