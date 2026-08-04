@@ -4,8 +4,10 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .venv/
-# IDE
-.idea/
+# IDE — 개인 설정은 무시하되 실행 구성은 팀과 공유한다.
+# (git 은 제외된 디렉터리로 내려가지 않으므로 `.idea/*` 로 열어둔 뒤 예외를 준다)
+.idea/*
+!.idea/runConfigurations/
 # Kotlin / Gradle
 .gradle/
 build/
