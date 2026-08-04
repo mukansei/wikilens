@@ -34,10 +34,3 @@ dependencies {
 }
 
 tasks.withType<Test> { useJUnitPlatform() }
-
-// 순수 로직 검증을 빌드에 연결한다. Lucene/Spring 없이도 돌아간다.
-tasks.register<Exec>("verifyCore") {
-    group = "verification"
-    description = "kotlinc만으로 학습 레이어 순수 로직을 검증합니다"
-    commandLine("./verify.sh")
-}
