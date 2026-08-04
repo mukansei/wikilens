@@ -87,6 +87,7 @@ def _cmd_build(args) -> int:
     root = Path(args.root)
     print(f"\n  {layout.aliases_path(root)}")
     print(f"  {layout.anchors_path(root)}")
+    print(f"  {layout.tree_path(root)}")
     if rep.resolution_rate < 0.7 and rep.total_links:
         print(
             "\n주의: 링크 해석률이 낮습니다. 링크 대상 스페이스가 싱크 범위 밖일 수 있습니다."

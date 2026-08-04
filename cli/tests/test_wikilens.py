@@ -355,3 +355,65 @@ def test_stats_gap_ignores_untokenizable_title(tmp_path, capsys):
     out = capsys.readouterr().out
 
     assert "제목과 어휘가 안 겹치는 별칭을 가진 페이지: 0 " in out
+
+
+# --------------------------------------------------------------- TREE.md
+
+def test_tree_reflects_parent_child_hierarchy(tmp_path):
+    """
+    ancestors 로 부모-자식을 그대로 중첩해서 보여줘야 한다. 앵커 색인과
+    분리된 별도 산출물이라, 이 문서들에 서로 링크가 없어도(고아여도) 뜬다.
+    """
+    pages = {
+        "100": {"title": "루트", "ancestors": []},
+        "200": {"title": "자식A", "ancestors": [{"id": "100", "title": "루트"}]},
+        "300": {
+            "title": "손자B",
+            "ancestors": [{"id": "100", "title": "루트"}, {"id": "200", "title": "자식A"}],
+        },
+    }
+    root = tmp_path / "vault"
+    state = {"cursor": None, "pages": {}}
+    for pid, m in pages.items():
+        p = layout.ensure_parent(layout.raw_path(root, pid))
+        p.write_text("<p>내용 없음.</p>", encoding="utf-8")
+        state["pages"][pid] = {
+            "title": m["title"], "space": "DOCS", "version": 1, "updated": "",
+            "ancestors": m["ancestors"],
+        }
+    layout.ensure_parent(layout.sync_state_path(root)).write_text(
+        json.dumps(state, ensure_ascii=False), encoding="utf-8"
+    )
+    build(root)
+
+    tree = layout.tree_path(root).read_text(encoding="utf-8")
+    lines = [l for l in tree.splitlines() if l.strip().startswith("-")]
+    assert lines[0].startswith("- 루트")
+    assert lines[1].startswith("  - 자식A")
+    assert lines[2].startswith("    - 손자B")
+
+
+def test_tree_treats_out_of_sync_parent_as_root(tmp_path):
+    """부모가 동기화 범위 밖(다른 콘텐츠 타입 등)이면 최상위로 취급한다."""
+    pages = {
+        "500": {
+            "title": "고아 자식",
+            "ancestors": [{"id": "999999", "title": "동기화 안 된 부모"}],
+        },
+    }
+    root = tmp_path / "vault"
+    state = {"cursor": None, "pages": {}}
+    for pid, m in pages.items():
+        p = layout.ensure_parent(layout.raw_path(root, pid))
+        p.write_text("<p>내용 없음.</p>", encoding="utf-8")
+        state["pages"][pid] = {
+            "title": m["title"], "space": "DOCS", "version": 1, "updated": "",
+            "ancestors": m["ancestors"],
+        }
+    layout.ensure_parent(layout.sync_state_path(root)).write_text(
+        json.dumps(state, ensure_ascii=False), encoding="utf-8"
+    )
+    build(root)
+
+    tree = layout.tree_path(root).read_text(encoding="utf-8")
+    assert "- 고아 자식" in tree

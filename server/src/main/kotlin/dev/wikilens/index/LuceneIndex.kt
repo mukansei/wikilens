@@ -54,6 +54,9 @@ object FieldBoost {
     const val BODY = 1.0f
 }
 
+/** 부모 하나. 루트부터 직속 부모까지 순서대로 온다(Confluence ancestors 그대로). */
+data class Ancestor(val id: String, val title: String)
+
 data class IndexedPage(
     val id: String,
     val title: String,
@@ -62,6 +65,7 @@ data class IndexedPage(
     val body: String,
     val anchors: List<String>,
     val aclTokens: List<String>,
+    val ancestors: List<Ancestor> = emptyList(),
 )
 
 data class Scored(val id: String, val title: String, val space: String, val score: Float)
@@ -111,6 +115,7 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
             }
         }
         metaRef.set(pages.associate { it.id to PageMeta(it.id, it.title, it.space) })
+        treeRef.set(buildTree(pages))
         swapSearcher()
         log.info("색인 재구축 {}건 · {}ms", pages.size, (System.nanoTime() - started) / 1_000_000)
     }
@@ -172,6 +177,58 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
 
     fun metaOf(pageId: String): PageMeta? = metaRef.get()[pageId]
     fun allMeta(): Collection<PageMeta> = metaRef.get().values
+
+    /**
+     * 부모-자식 계층. 앵커 색인(어휘)과 완전히 분리된 신호다 — "이 문서를 뭐라고
+     * 부르나"가 아니라 "이 문서가 어디 분류에 속하나"를 답한다. 로컬판 TREE.md와
+     * 같은 데이터, 서버판에서 처음 노출하는 것이다.
+     */
+    data class TreeIndex(val children: Map<String, List<String>>, val roots: List<String>)
+
+    private val treeRef = AtomicReference(TreeIndex(emptyMap(), emptyList()))
+
+    private fun buildTree(pages: Collection<IndexedPage>): TreeIndex {
+        val ids = pages.mapTo(HashSet()) { it.id }
+        val children = HashMap<String, MutableList<String>>()
+        val roots = mutableListOf<String>()
+        for (p in pages) {
+            val parent = p.ancestors.lastOrNull()?.id
+            if (parent != null && parent in ids) {
+                children.getOrPut(parent) { mutableListOf() }.add(p.id)
+            } else {
+                roots.add(p.id)
+            }
+        }
+        return TreeIndex(children, roots)
+    }
+
+    /**
+     * 계층을 들여쓰기 목록으로 렌더링한다. [canSee]로 페이지마다 ACL을 확인한다.
+     *
+     * 부모가 안 보여도 자식은 숨기지 않는다 — 대신 부모가 없었던 것처럼 그
+     * 깊이에서 이어 그린다. 존재를 숨기는 것과 접근을 거부하는 것은 다르다
+     * (권한 없음은 404 원칙과 같은 결).
+     */
+    fun renderTree(canSee: (String) -> Boolean): String {
+        val t = treeRef.get()
+        val meta = metaRef.get()
+        val sb = StringBuilder()
+
+        fun render(pid: String, depth: Int) {
+            val title = meta[pid]?.title
+            val visible = title != null && canSee(pid)
+            if (visible) {
+                sb.append("  ".repeat(depth)).append("- ").append(title).append(" — ").append(pid).append('\n')
+            }
+            val nextDepth = if (visible) depth + 1 else depth
+            t.children[pid].orEmpty()
+                .sortedBy { meta[it]?.title.orEmpty() }
+                .forEach { render(it, nextDepth) }
+        }
+
+        t.roots.sortedBy { meta[it]?.title.orEmpty() }.forEach { render(it, 0) }
+        return sb.toString()
+    }
 
     /** 세 필드에 대한 가중 OR. 파싱 실패 시 null 을 반환해 호출부가 조용히 빈 결과를 내게 한다. */
     private fun buildTextQuery(text: String): Query? {

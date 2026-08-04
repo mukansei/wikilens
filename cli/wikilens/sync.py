@@ -227,7 +227,8 @@ class ConfluenceClient:
 
     def search(self, cql: str, limit: int = 50):
         url = self._url("/rest/api/content/search")
-        params = {"cql": cql, "limit": limit, "expand": "body.storage,version,space"}
+        # ancestors: 계층 구조(TREE.md)용. 루트부터 직속 부모까지 순서대로 온다.
+        params = {"cql": cql, "limit": limit, "expand": "body.storage,version,space,ancestors"}
         wait = 5
         while url:
             try:
@@ -303,11 +304,20 @@ def _ingest(item: dict, root: Path, state: dict, fallback_space: str, full: bool
     body = ((item.get("body") or {}).get("storage") or {}).get("value", "")
     layout.ensure_parent(layout.raw_path(root, pid)).write_text(body, encoding="utf-8")
 
+    # 루트부터 직속 부모까지 순서대로. TREE.md(계층 목차)를 만드는 데만 쓴다 —
+    # 앵커 색인과는 완전히 분리된 별도 신호다(부모 제목을 앵커처럼 섞으면
+    # 같은 부모 아래 문서 전부가 앵커를 공유해 모호성이 커진다).
+    ancestors = [
+        {"id": str(a["id"]), "title": a.get("title", "")}
+        for a in (item.get("ancestors") or [])
+    ]
+
     state["pages"][pid] = {
         "title": item.get("title", ""),
         "space": (item.get("space") or {}).get("key", fallback_space),
         "version": version,
         "updated": (item.get("version") or {}).get("when", ""),
+        "ancestors": ancestors,
     }
     return "fetched"
 

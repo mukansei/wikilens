@@ -92,6 +92,7 @@ def build(root: Path, verbose: bool = False) -> BuildReport:
     entries = transpose(signatures, report)
     _write_anchors(root, entries)
     _write_aliases(root, entries, signatures)
+    _write_tree(root, meta, signatures)
     return report
 
 
@@ -210,6 +211,50 @@ def _write_aliases(
 
     lines.append("")
     layout.aliases_path(root).write_text("\n".join(lines), encoding="utf-8")
+
+
+def _write_tree(
+    root: Path, meta: dict[str, dict], signatures: dict[str, StructureSignature]
+) -> None:
+    """
+    부모-자식 계층을 그대로 보여주는 목차.
+
+    앵커 색인과 분리된 별도 신호다 — "이 문서를 뭐라고 부르나"가 아니라
+    "이 문서가 어디 분류에 속하나"를 답한다. 정확한 어휘를 몰라도 영역만 알 때
+    위에서 아래로 내려가며 찾는 용도. 앵커처럼 부모 제목을 별칭에 섞지 않는다 —
+    같은 부모 아래 문서 수십 개가 그 제목을 공유하면 모호성만 커진다
+    (실제로 이 문제를 겪었다: 인링크 상위 앵커가 3개 문서에 걸쳐 모호했던 사례).
+    """
+    valid = {pid: m for pid, m in meta.items() if pid in signatures}
+    children: dict[str, list[str]] = defaultdict(list)
+    roots: list[str] = []
+
+    for pid, m in valid.items():
+        ancestors = m.get("ancestors") or []
+        parent_id = str(ancestors[-1]["id"]) if ancestors else None
+        if parent_id and parent_id in valid:
+            children[parent_id].append(pid)
+        else:
+            roots.append(pid)
+
+    lines = [
+        "# 페이지 트리",
+        "",
+        "부모-자식 계층입니다. 자동 생성 — 직접 수정하지 마세요.",
+        "정확한 이름을 모르고 영역만 알 때는 ALIASES.md 대신 이걸로 위에서부터 내려가며 찾으세요.",
+        "",
+    ]
+
+    def render(pid: str, depth: int) -> None:
+        lines.append(f"{'  ' * depth}- {valid[pid].get('title', '')} — {layout.rel_page_path(pid)}")
+        for child in sorted(children.get(pid, []), key=lambda c: valid[c].get("title", "")):
+            render(child, depth + 1)
+
+    for pid in sorted(roots, key=lambda p: valid[p].get("title", "")):
+        render(pid, 0)
+
+    lines.append("")
+    layout.tree_path(root).write_text("\n".join(lines), encoding="utf-8")
 
 
 def _write_if_changed(path: Path, content: str) -> bool:

@@ -2,6 +2,7 @@ package dev.wikilens.vault
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.wikilens.acl.AclRegistry
+import dev.wikilens.index.Ancestor
 import dev.wikilens.index.IndexedPage
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
@@ -46,9 +47,18 @@ class VaultReader(private val mapper: ObjectMapper) {
                 body = readBody(root, pid),
                 anchors = anchors[pid].orEmpty(),
                 aclTokens = tokens,
+                ancestors = readAncestors(meta),
             )
         }
     }
+
+    /** 루트부터 직속 부모까지 순서대로. TREE.md와 같은 원본(.sync-state.json)을 쓴다. */
+    @Suppress("UNCHECKED_CAST")
+    private fun readAncestors(meta: Map<String, Any?>): List<Ancestor> =
+        (meta["ancestors"] as? List<Map<String, Any?>>).orEmpty().mapNotNull { a ->
+            val id = a["id"]?.toString() ?: return@mapNotNull null
+            Ancestor(id = id, title = a["title"]?.toString().orEmpty())
+        }
 
     /** 앵커 전치 결과. 로컬판이 만든 derived/anchors.jsonl 을 그대로 쓴다. */
     private fun readAnchors(root: Path): Map<String, List<String>> {

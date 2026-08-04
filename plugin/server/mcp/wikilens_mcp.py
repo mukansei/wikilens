@@ -108,6 +108,16 @@ TOOLS = [
             "required": ["pattern"],
         },
     },
+    {
+        "name": "tree",
+        "description": (
+            "위키 페이지의 부모-자식 계층을 마크다운 목차로 가져옵니다. 정확한 문서 이름은 "
+            "모르지만 어느 영역(스페이스/카테고리)에 있는지는 알 때, 위에서부터 내려가며 "
+            "찾을 때 씁니다. search는 앵커 텍스트(다른 문서가 이 문서를 부르는 이름)로 찾으므로 "
+            "어디서도 링크되지 않은 '고아' 문서에는 약합니다 — 그럴 때 이 도구가 보완합니다."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -149,6 +159,13 @@ def call_tool(name: str, args: dict) -> tuple[str, bool]:
             for m in ms:
                 out.append(f"  [{m['pageId']}] {m['title']}:{m['line']}  {m['text']}")
             return ("\n".join(out), False)
+
+        if name == "tree":
+            r = post("/api/tree", {"userKey": USER})
+            md = r.get("markdown", "")
+            if not md:
+                return ("계층 정보 없음 (권한이 없거나 색인이 비어 있습니다).", False)
+            return (md, False)
 
         return (f"알 수 없는 도구: {name}", True)
 
