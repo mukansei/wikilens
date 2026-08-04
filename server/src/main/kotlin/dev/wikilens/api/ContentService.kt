@@ -54,14 +54,19 @@ class ContentService(
         var truncated = false
 
         for (meta in index.allMeta()) {
+            // limit 이 찼는데 아직 볼 문서가 남았다 = 잘렸다.
             if (matches.size >= limit) { truncated = true; break }
-            if (!acl.canSee(userKey, meta.id)) continue
+            // 루프 밖에서 한 번 계산한 tokens 를 재사용한다 (문서마다 재조회하면 수천 회).
+            if (!acl.canSee(tokens, meta.id)) continue
             val f = root.resolve(VaultLayout.relPagePath(meta.id))
-            if (!Files.exists(f)) continue
+            // exists + open 두 번 왕복하는 대신 열어보고 실패하면 넘어간다.
+            val reader = runCatching { Files.newBufferedReader(f) }.getOrNull() ?: continue
             scanned++
-            Files.newBufferedReader(f).useLines { lines ->
-                lines.forEachIndexed { i, line ->
-                    if (matches.size >= limit) return@forEachIndexed
+            reader.useLines { lines ->
+                // forEach + return@forEach 는 그 줄만 건너뛸 뿐 파일 잔여를 계속 읽는다.
+                // for + break 라야 실제로 읽기를 멈춘다.
+                for ((i, line) in lines.withIndex()) {
+                    if (matches.size >= limit) { truncated = true; break }
                     val hit = rx?.containsMatchIn(line) ?: line.contains(pattern, ignoreCase = true)
                     if (hit) {
                         matches.add(GrepMatch(meta.id, meta.title, i + 1, line.trim().take(300)))

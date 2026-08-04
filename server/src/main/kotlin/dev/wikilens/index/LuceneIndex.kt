@@ -92,16 +92,40 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
         ),
     )
 
-    private val searcherRef = AtomicReference<IndexSearcher?>(null)
-    private val readerRef = AtomicReference<DirectoryReader?>(null)
+    /**
+     * 검색기·메타데이터·트리를 **한 덩어리로** 들고 있다.
+     *
+     * 예전엔 셋을 각각 `AtomicReference` 로 따로 교체했는데, 그 사이에 들어온 요청이
+     * 새 트리 + 옛 메타처럼 뒤섞인 상태를 볼 수 있었다. 하나로 묶으면 교체가 원자적이다.
+     * [dir] 를 함께 들고 있는 이유는 예전에 `DirectoryReader.open(MMapDirectory(...))` 의
+     * Directory 를 아무도 안 닫아 교체마다 누수됐기 때문이다.
+     */
+    private class Snapshot(
+        val searcher: IndexSearcher?,
+        val reader: DirectoryReader?,
+        val dir: MMapDirectory?,
+        val meta: Map<String, PageMeta>,
+        val tree: TreeIndex,
+    ) {
+        fun close() {
+            runCatching { reader?.close() }
+            runCatching { dir?.close() }
+        }
 
-    val docCount: Int get() = readerRef.get()?.numDocs() ?: 0
+        companion object {
+            val EMPTY = Snapshot(null, null, null, emptyMap(), TreeIndex.EMPTY)
+        }
+    }
+
+    private val snapshotRef = AtomicReference(Snapshot.EMPTY)
+
+    val docCount: Int get() = snapshotRef.get().reader?.numDocs() ?: 0
 
     /**
-     * 전체 재구축 후 참조를 원자적으로 교체한다.
+     * 전체 재구축 후 스냅샷을 원자적으로 교체한다.
      *
      * 제자리 갱신을 하지 않는 이유: 10k 문서 재구축이 수 초라 증분 갱신의 이득이 없고,
-     * 증분은 드리프트가 조용히 쌓이는 자리다. 재구축 중 질의는 이전 searcher 를 계속 쓴다.
+     * 증분은 드리프트가 조용히 쌓이는 자리다. 재구축 중 질의는 이전 스냅샷을 계속 쓴다.
      */
     fun rebuild(pages: Collection<IndexedPage>) {
         val started = System.nanoTime()
@@ -114,9 +138,10 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
                 w.commit()
             }
         }
-        metaRef.set(pages.associate { it.id to PageMeta(it.id, it.title, it.space) })
-        treeRef.set(buildTree(pages))
-        swapSearcher()
+        swap(
+            meta = pages.associate { it.id to PageMeta(it.id, it.title, it.space) },
+            tree = TreeIndex.build(pages),
+        )
         log.info("색인 재구축 {}건 · {}ms", pages.size, (System.nanoTime() - started) / 1_000_000)
     }
 
@@ -131,15 +156,32 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
         for (t in p.aclTokens) add(StringField(Fields.ACL, t, Field.Store.NO))
     }
 
-    private fun swapSearcher() {
-        val newReader = DirectoryReader.open(MMapDirectory(dir))
-        val old = readerRef.getAndSet(newReader)
-        searcherRef.set(IndexSearcher(newReader))
-        old?.close()
+    /**
+     * 새 스냅샷을 열어 원자 교체하고 이전 것을 닫는다.
+     *
+     * [meta]/[tree] 를 안 주면(기동 시 기존 색인 열기) 현재 값을 유지한다 — 그 경우
+     * 메타·트리는 `/admin/reindex` 가 채운다.
+     */
+    private fun swap(meta: Map<String, PageMeta>? = null, tree: TreeIndex? = null) {
+        val d = MMapDirectory(dir)
+        val reader = runCatching { DirectoryReader.open(d) }
+            .onFailure { runCatching { d.close() } }   // 열기 실패 시 Directory 를 흘리지 않는다
+            .getOrThrow()
+        val cur = snapshotRef.get()
+        val old = snapshotRef.getAndSet(
+            Snapshot(
+                searcher = IndexSearcher(reader),
+                reader = reader,
+                dir = d,
+                meta = meta ?: cur.meta,
+                tree = tree ?: cur.tree,
+            )
+        )
+        old.close()
     }
 
     fun openIfExists() {
-        runCatching { swapSearcher() }
+        runCatching { swap() }
             .onFailure { log.info("기존 색인 없음 — reindex 필요") }
     }
 
@@ -150,7 +192,7 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
      * 실수로 전체가 노출되는 것보다 아무것도 안 나오는 편이 낫다.
      */
     fun search(queryText: String, aclTokens: Collection<String>, limit: Int): List<Scored> {
-        val searcher = searcherRef.get() ?: return emptyList()
+        val searcher = snapshotRef.get().searcher ?: return emptyList()
         if (aclTokens.isEmpty()) return emptyList()
 
         val text = buildTextQuery(queryText) ?: return emptyList()
@@ -170,111 +212,19 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
     }
 
     /**
-     * 메타데이터 캐시. 색인 재구축 시 함께 교체된다.
+     * 메타데이터 캐시 조회. 스냅샷의 일부라 색인 재구축 시 함께 교체된다.
      * ContentService 가 제목을 얻으려고 Lucene 을 매번 조회하지 않게 한다.
      */
-    private val metaRef = AtomicReference<Map<String, PageMeta>>(emptyMap())
-
-    fun metaOf(pageId: String): PageMeta? = metaRef.get()[pageId]
-    fun allMeta(): Collection<PageMeta> = metaRef.get().values
+    fun metaOf(pageId: String): PageMeta? = snapshotRef.get().meta[pageId]
+    fun allMeta(): Collection<PageMeta> = snapshotRef.get().meta.values
 
     /**
-     * 부모-자식 계층. 앵커 색인(어휘)과 완전히 분리된 신호다 — "이 문서를 뭐라고
-     * 부르나"가 아니라 "이 문서가 어디 분류에 속하나"를 답한다. 로컬판 TREE.md와
-     * 같은 데이터, 서버판에서 처음 노출하는 것이다.
-     */
-    data class TreeIndex(val children: Map<String, List<String>>, val roots: List<String>)
-
-    private val treeRef = AtomicReference(TreeIndex(emptyMap(), emptyList()))
-
-    private fun buildTree(pages: Collection<IndexedPage>): TreeIndex {
-        val ids = pages.mapTo(HashSet()) { it.id }
-        val children = HashMap<String, MutableList<String>>()
-        val roots = mutableListOf<String>()
-        for (p in pages) {
-            val parent = p.ancestors.lastOrNull()?.id
-            if (parent != null && parent in ids) {
-                children.getOrPut(parent) { mutableListOf() }.add(p.id)
-            } else {
-                roots.add(p.id)
-            }
-        }
-        return TreeIndex(children, roots)
-    }
-
-    /** 서브트리 개수 요약을 위해 한 요청당 훑는 노드 수 상한. 이 예산을 넘기면
-     * 정확한 개수 대신 "N개 이상"으로 어림한다 — depth 로 응답을 가볍게 하려는
-     * 취지가 큰 가지에서 전체 순회로 무너지는 것을 막는다. */
-    private val descendantCountBudget = 1000
-
-    /** [renderTree] 결과. [truncated] 는 잘린 가지가 있었는지 — 마크다운 본문의
-     * 문구를 파싱하지 않고도 논-LLM 소비자가 확인할 수 있는 구조화된 신호다. */
-    data class RenderedTree(val markdown: String, val truncated: Boolean)
-
-    /**
-     * 계층을 들여쓰기 목록으로 렌더링한다. [canSee]로 페이지마다 ACL을 확인한다.
-     *
-     * 부모가 안 보여도 자식은 숨기지 않는다 — 대신 부모가 없었던 것처럼 그
-     * 깊이에서 이어 그린다. 존재를 숨기는 것과 접근을 거부하는 것은 다르다
-     * (권한 없음은 404 원칙과 같은 결). [rootId]로 진입할 때도 같은 규칙이다 —
-     * rootId 자신이 안 보여도 그 아래 보이는 자식은 숨기지 않는다. 별도 분기로
-     * "rootId 안 보이면 통째로 빈 응답"을 하면, 전체 트리 조회에서는 보이던
-     * 자식이 그 자식의 rootId로 콕 집어 들어가는 순간 사라지는 비일관성이 생긴다.
-     *
-     * [rootId]를 주면 그 서브트리만, [maxDepth]>0 이면 그 깊이까지만 그린다.
-     * 잘린 가지는 하위 개수와 rootId를 요약 라인으로 남겨 이어서 조회할 수 있다.
-     * 요약의 개수도 **보이는** 하위만 센다 — 개수가 숨긴 문서의 존재를 새면 안 된다.
+     * 계층 렌더링. 실제 로직은 [TreeRenderer] 에 있다 — 순수 자료구조라
+     * Lucene 없이 단위 테스트할 수 있어야 해서 분리했다.
      */
     fun renderTree(canSee: (String) -> Boolean, rootId: String? = null, maxDepth: Int = 0): RenderedTree {
-        val t = treeRef.get()
-        val meta = metaRef.get()
-        val sb = StringBuilder()
-        var truncated = false
-        var budget = descendantCountBudget
-
-        /** (보이는 하위 개수, 예산 초과로 어림했는지). 예산을 넘기면 그 자리에서
-         * 순회를 멈춘다 — 전체 서브트리를 다 훑으면 depth 제한의 의미가 없다. */
-        fun visibleDescendants(pid: String): Pair<Int, Boolean> {
-            var n = 0
-            for (c in t.children[pid].orEmpty()) {
-                if (budget <= 0) return n to true
-                budget--
-                if (meta[c]?.title != null && canSee(c)) n++
-                val (below, capped) = visibleDescendants(c)
-                n += below
-                if (capped) return n to true
-            }
-            return n to false
-        }
-
-        fun render(pid: String, depth: Int) {
-            val title = meta[pid]?.title
-            val visible = title != null && canSee(pid)
-            if (visible) {
-                sb.append("  ".repeat(depth)).append("- ").append(title).append(" — ").append(pid).append('\n')
-                if (maxDepth > 0 && depth + 1 >= maxDepth) {
-                    val (below, capped) = visibleDescendants(pid)
-                    if (below > 0 || capped) {
-                        truncated = true
-                        val count = if (capped) "${below}개 이상" else "${below}개"
-                        sb.append("  ".repeat(depth + 1))
-                            .append("… (+").append(count).append(" 하위, rootId=").append(pid).append("로 조회)\n")
-                    }
-                    return
-                }
-            }
-            val nextDepth = if (visible) depth + 1 else depth
-            t.children[pid].orEmpty()
-                .sortedBy { meta[it]?.title.orEmpty() }
-                .forEach { render(it, nextDepth) }
-        }
-
-        if (rootId != null) {
-            render(rootId, 0)
-        } else {
-            t.roots.sortedBy { meta[it]?.title.orEmpty() }.forEach { render(it, 0) }
-        }
-        return RenderedTree(sb.toString(), truncated)
+        val snap = snapshotRef.get()
+        return TreeRenderer(snap.tree, snap.meta).render(canSee, rootId, maxDepth)
     }
 
     /** 세 필드에 대한 가중 OR. 파싱 실패 시 null 을 반환해 호출부가 조용히 빈 결과를 내게 한다. */
@@ -316,6 +266,6 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
     }
 
     override fun close() {
-        readerRef.getAndSet(null)?.close()
+        snapshotRef.getAndSet(Snapshot.EMPTY).close()
     }
 }
