@@ -18,11 +18,11 @@ OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 붙이기 | 2
 
 | 디렉터리 | 내용 | 언어 | 상태 |
 |---|---|---|---|
-| **`cli/`** | Confluence 싱크 · 앵커 전치 · 로컬판 | Python | **65 테스트 통과** |
-| **`server/`** | Lucene/Nori 색인 · 학습 레이어 | Kotlin | 핵심 32 통과 / 배선 검증됨(Coway 실데이터) |
+| **`cli/`** | Confluence 싱크 · 앵커 전치 · 로컬판 | Python | **74 테스트 통과** |
+| **`server/`** | Lucene/Nori 색인 · 학습 레이어 | Kotlin | **51 테스트 통과** / 배선 검증됨(Coway 실데이터) |
 | **`plugin/local/`** | 스킬만 (로컬판) | — | 형식 검증 |
-| **`plugin/server/`** | MCP 도구 4개 + 스킬 (서버판) | Python | **21 테스트 통과** |
-| `marketplace/` | 조직 배포용 | — | — |
+| **`plugin/server/`** | MCP 도구 4개 + 스킬 (서버판) | Python | **24 테스트 통과** |
+| `.claude-plugin/` | 마켓플레이스 매니페스트 (조직 배포용) | — | — |
 | `docs/` | 아키텍처 · 결정 로그 · 임베딩 설계 제안 | — | — |
 
 ---
@@ -101,12 +101,11 @@ cp plugin/local/skills/wikilens/SKILL.md ~/wiki/.claude/skills/wikilens/
 ### 2단계 — 궤적 관측만 (몇 주)
 
 랭킹 결과에 반영하기 전에, 실제 서버를 로컬에서 혼자 띄워 궤적이 실제로
-쌓이는지만 먼저 봅니다. 3단계와 같은 서버지만 팀 배포(`marketplace` 설치) 없이
+쌓이는지만 먼저 봅니다. 3단계와 같은 서버지만 팀 배포(플러그인 설치) 없이
 혼자 써보는 단계입니다:
 
 ```bash
-cd server && ./verify.sh      # 순수 로직만, kotlinc면 충분
-./gradlew bootRun
+cd server && ./gradlew bootRun
 curl -XPOST localhost:8787/api/admin/reindex
 ```
 
@@ -121,8 +120,7 @@ curl -XPOST localhost:8787/api/admin/reindex
 # 서비스 계정으로 1회 싱크 (사용자별 싱크 없음 → Confluence 부하 1배)
 CONFLUENCE_TOKEN=<서비스계정> wikilens --root ./mirror-root sync --space PLATFORM
 
-cd server && ./verify.sh      # 순수 로직만, kotlinc면 충분
-./gradlew bootRun
+cd server && ./gradlew bootRun
 curl -XPOST localhost:8787/api/admin/reindex
 ```
 
@@ -131,9 +129,22 @@ curl -XPOST localhost:8787/api/admin/reindex
 ```bash
 export WIKILENS_SERVER=http://wikilens.corp:8787
 export WIKILENS_USER=alice@corp
-/plugin marketplace add ./marketplace
-/plugin install wikilens@wikilens-tools
 ```
+```
+/plugin marketplace add ./          # 또는 팀 배포 시 저장소의 git URL
+/plugin install wikilens@wikilens-tools
+/reload-plugins
+```
+
+**매니페스트는 반드시 저장소 루트의 `.claude-plugin/marketplace.json` 이어야 합니다.**
+하위 디렉터리(`marketplace/.claude-plugin/…`)에 두고 그 경로를 `add` 하면 등록은 되지만
+설치가 `"source type your Claude Code version does not support"` 로 실패합니다 —
+플러그인 `source` 의 상대 경로가 기대와 다르게 해석되기 때문입니다(2026-08-04 실측,
+Claude Code 2.1.220). 루트에 두면 `source` 가 `./plugin/server` 처럼 하위 경로여도
+정상 동작합니다.
+
+`source` 가 `plugin/server`·`plugin/local` 을 직접 가리키므로 사본이 없습니다 —
+플러그인을 고치면 마켓플레이스에 그대로 반영됩니다.
 
 ---
 
@@ -174,18 +185,38 @@ Lucene Nori가 그 문제의 프로덕션 해답입니다. 색인이 서버에 �
 
 ---
 
+## IntelliJ 실행 구성
+
+`.idea/runConfigurations/` 를 저장소에 포함해 두었습니다. 프로젝트를 열면 실행
+드롭다운에 그대로 뜹니다(개인 설정인 `workspace.xml` 등은 계속 무시됩니다).
+
+| 구성 | 하는 일 |
+|---|---|
+| 1. 서버 실행 (bootRun) | Spring Boot 기동 (`:8787`) |
+| 2. 재색인 | `/admin/reindex` + 테스트 사용자 등록 + `stats` — **1번이 떠 있어야 함** |
+| 3. 전체 검증 | 계약·Python·MCP·JUnit 넷을 순서대로. **변경 후 이것부터** |
+| 4. 계약 검사만 | `check-contracts.sh` |
+| 5. Kotlin 테스트 | `gradlew test` |
+| 6. Python 테스트 | `pytest` + MCP 프록시 |
+
+3번을 통과시키는 것이 변경의 기본 조건입니다.
+
+---
+
 ## 검증 상태
 
 정직하게 나누면:
 
 | | 검증 |
 |---|---|
-| Python CLI · 앵커 전치 · 파서 | 23개 테스트 통과 (골든 픽스처 포함) |
+| Python CLI · 앵커 전치 · 파서 | 23개 통과 (골든 픽스처 포함) |
+| CLI 배선 (서브커맨드·진단 메시지) | 9개 통과 |
 | Confluence 클라이언트 | 17개 통과 (가짜 서버 — Cloud/Server·429·페이지네이션·재개·`--follow-refs`) |
 | 인증 계층 (SSO/IAM) | 12개 통과 (가짜 IAM — OAuth2·만료 갱신·401 재시도) |
 | Python 서버 스코어링 (`server/scoring.py`) | 13개 통과. Kotlin `Scoring.kt`와 나란히 유지되는 정본 — 공유 Python 서버 자체(구 훅 기반 설계)는 제거됨 |
-| MCP 프록시 | 21개 테스트 통과 (핸드셰이크·도구 4개·세션·404) |
-| Kotlin 학습 레이어 (`learn/`) | 컴파일·실행 32/32, Python/scipy와 1e-6 일치 |
+| MCP 프록시 | 24개 테스트 통과 (핸드셰이크·도구 4개·세션·404·환경변수) |
+| Kotlin 학습 레이어 (`learn/`) | JUnit 12개 통과, Python/scipy와 1e-6 일치 |
+| Kotlin 서비스 계층 (search·content·acl·tree) | JUnit 51개 통과 |
 | Kotlin Lucene/Spring 배선 | 빌드·bootRun·재색인 검증됨 (Coway 실데이터 2,378건). 검색 랭킹 품질은 별도 미검증 |
 
 ---
