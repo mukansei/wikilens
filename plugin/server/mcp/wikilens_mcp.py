@@ -20,9 +20,23 @@ import urllib.error
 import urllib.request
 import uuid
 
-SERVER = os.environ.get("WIKILENS_SERVER", "http://127.0.0.1:8787").rstrip("/")
-USER = os.environ.get("WIKILENS_USER", "")
-TIMEOUT = float(os.environ.get("WIKILENS_TIMEOUT", "15"))
+def _env(name: str, default: str = "") -> str:
+    """
+    확장되지 않은 `${VAR}` 리터럴을 미설정으로 취급한다.
+
+    플러그인 매니페스트가 env 를 넘길 때 변수가 없으면 값이 그대로 문자열
+    `"${WIKILENS_SERVER}"` 로 들어온다. 그대로 쓰면 URL 조립이 깨져
+    `unknown url type` 으로 죽는다 — 기본값으로 떨어지는 편이 낫다.
+    """
+    v = os.environ.get(name, "")
+    if not v or (v.startswith("${") and v.endswith("}")):
+        return default
+    return v
+
+
+SERVER = _env("WIKILENS_SERVER", "http://127.0.0.1:8787").rstrip("/")
+USER = _env("WIKILENS_USER")
+TIMEOUT = float(_env("WIKILENS_TIMEOUT", "15"))
 SESSION = f"mcp-{uuid.uuid4().hex[:12]}"
 
 PROTOCOL = "2025-06-18"
@@ -132,6 +146,15 @@ TOOLS = [
 
 def call_tool(name: str, args: dict) -> tuple[str, bool]:
     """(텍스트, isError) 반환."""
+    # ACL 은 fail-closed 다 — userKey 가 없으면 서버가 정상적으로 빈 결과를 준다.
+    # 그것을 "문서가 없다"로 오해하지 않도록 여기서 먼저 구분해 알린다.
+    if not USER:
+        return (
+            "WIKILENS_USER 환경변수가 설정되지 않았습니다. 서버 ACL 이 요청자를 식별하지 "
+            "못해 결과가 항상 비어 있습니다 (문서가 없는 것이 아닙니다).\n"
+            "  export WIKILENS_USER=<본인 식별자> 후 Claude Code 를 재시작하세요.",
+            True,
+        )
     try:
         if name == "search":
             r = post("/api/search", {
