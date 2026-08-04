@@ -144,49 +144,6 @@ def _cmd_stats(args) -> int:
     return 0
 
 
-def _cmd_serve(args) -> int:
-    import os
-    os.environ.setdefault("WIKILENS_STATE", args.state)
-    import uvicorn
-    print(f"WikiLens 서버 · 상태 {args.state} · http://{args.host}:{args.port}")
-    print("서버는 페이지 ID와 키워드만 저장합니다. 콘텐츠·제목·경로는 받지 않습니다.")
-    uvicorn.run("wikilens.server.app:app", host=args.host, port=args.port, log_level="warning")
-    return 0
-
-
-def _cmd_search(args) -> int:
-    from .search import search
-
-    rep = search(Path(args.root), args.query, server=args.server, limit=args.limit)
-    if not rep.terms:
-        print("질의에서 토큰을 추출하지 못했습니다.")
-        return 1
-
-    flag = "Confident" if rep.confident else "Diffuse"
-    print(f"[{flag}] 최대 IDF {rep.max_idf:.2f} · 로컬 후보 {rep.local_candidates} "
-          f"· 서버 힌트 {rep.server_hints}"
-          + (f" · ACL로 버림 {rep.dropped_by_acl}" if rep.dropped_by_acl else ""))
-    if not rep.confident:
-        print("  질의어가 흔한 토큰뿐입니다. 어휘 경로가 실패했을 수 있습니다.")
-    print()
-    for i, r in enumerate(rep.results, 1):
-        tag = {"local": " ", "server": "S", "both": "*"}[r.source]
-        rel = f" rel={r.reliability:.2f}" if r.reliability is not None else ""
-        print(f" {tag} {i}. {r.title}{rel}")
-        print(f"      {r.path}")
-    if any(r.source in ("both", "server") for r in rep.results):
-        print("\n  * = 로컬과 서버 양쪽, S = 서버 힌트만")
-    return 0
-
-
-def _cmd_hook(args) -> int:
-    """플러그인 훅이 없을 때 수동 관측용. 훅 스크립트와 같은 입력을 받는다."""
-    import subprocess
-    from pathlib import Path as _P
-    script = _P(__file__).parent.parent / "plugin" / "hooks" / "observe.py"
-    return subprocess.run([sys.executable, str(script)], stdin=sys.stdin).returncode
-
-
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="wikilens",
@@ -215,21 +172,6 @@ def main(argv: list[str] | None = None) -> int:
 
     st = sub.add_parser("stats", help="볼트 통계 — 어휘 격차와 고아 문서")
     st.set_defaults(func=_cmd_stats)
-
-    sv = sub.add_parser("serve", help="공유 서버를 띄웁니다 (서버판)")
-    sv.add_argument("--host", default="127.0.0.1")
-    sv.add_argument("--port", type=int, default=8787)
-    sv.add_argument("--state", default="./.wikilens-server")
-    sv.set_defaults(func=_cmd_serve)
-
-    sc = sub.add_parser("search", help="로컬 랭킹 + 서버 힌트로 검색합니다")
-    sc.add_argument("query")
-    sc.add_argument("--server", default=None, help="예: http://127.0.0.1:8787")
-    sc.add_argument("--limit", type=int, default=8)
-    sc.set_defaults(func=_cmd_search)
-
-    hk = sub.add_parser("hook", help="훅 이벤트를 stdin JSON으로 처리합니다")
-    hk.set_defaults(func=_cmd_hook)
 
     args = p.parse_args(argv)
     return args.func(args)

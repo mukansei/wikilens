@@ -67,10 +67,3 @@ def sync_state_path(root: Path) -> Path:
 def ensure_parent(p: Path) -> Path:
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
-
-
-def iter_structure_files(root: Path):
-    base = root / "mirror" / "structure"
-    if not base.exists():
-        return
-    yield from sorted(base.rglob("*.json"))

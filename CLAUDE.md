@@ -4,7 +4,7 @@ Confluence 위키를 미러링하고 **앵커 텍스트**(다른 문서들이 �
 색인해 어휘 격차를 메운다. 그 위에 에이전트 탐색 궤적을 축적하는 학습 레이어를 얹는다.
 
 ```
-cli/      Python  싱크·파싱·앵커 전치·로컬판         70 테스트
+cli/      Python  싱크·파싱·앵커 전치·로컬판         65 테스트
 server/   Kotlin  Lucene/Nori 색인 + 학습 레이어      32 (핵심만) / 배선 검증됨(Coway 실데이터)
 plugin/   local=스킬만 · server=MCP 도구 4개          21 테스트
 bench/    설계 검증 시뮬레이션 (합성 코퍼스)
@@ -14,10 +14,9 @@ docs/     아키텍처 · 결정 로그
 ## 먼저 실행할 것
 
 ```bash
-./check-contracts.sh                              # 교차 언어 계약 18개
-cd cli    && python -m pytest tests/ -q           # 70
+./check-contracts.sh                              # 교차 언어 계약 20개
+cd cli    && python -m pytest tests/ -q           # 65
 cd server && ./verify.sh                          # 32, kotlinc만 필요 (Maven 불필요)
-cd cli    && python demo_server.py                # 프로토타입 루프 엔드투엔드
 ```
 
 `check-contracts.sh`가 특히 중요하다. Python과 Kotlin이 파일로만 연결되어 있어

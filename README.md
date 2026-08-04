@@ -18,7 +18,7 @@ OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 붙이기 | 2
 
 | 디렉터리 | 내용 | 언어 | 상태 |
 |---|---|---|---|
-| **`cli/`** | Confluence 싱크 · 앵커 전치 · 로컬판 | Python | **70 테스트 통과** |
+| **`cli/`** | Confluence 싱크 · 앵커 전치 · 로컬판 | Python | **65 테스트 통과** |
 | **`server/`** | Lucene/Nori 색인 · 학습 레이어 | Kotlin | 핵심 32 통과 / 배선 검증됨(Coway 실데이터) |
 | **`plugin/local/`** | 스킬만 (로컬판) | — | 형식 검증 |
 | **`plugin/server/`** | MCP 도구 4개 + 스킬 (서버판) | Python | **21 테스트 통과** |
@@ -101,12 +101,18 @@ cp plugin/local/skills/wikilens/SKILL.md ~/wiki/.claude/skills/wikilens/
 
 ### 2단계 — 궤적 관측만 (몇 주)
 
-랭킹에는 쓰지 않고 데이터만 모읍니다. `cli/`의 Python 서버로 루프 전체를
-지금 바로 돌려볼 수 있습니다:
+랭킹 결과에 반영하기 전에, 실제 서버를 로컬에서 혼자 띄워 궤적이 실제로
+쌓이는지만 먼저 봅니다. 3단계와 같은 서버지만 팀 배포(`marketplace` 설치) 없이
+혼자 써보는 단계입니다:
 
 ```bash
-cd cli && python demo_server.py
+cd server && ./verify.sh      # 순수 로직만, kotlinc면 충분
+./gradlew bootRun
+curl -XPOST localhost:8787/api/admin/reindex
 ```
+
+`curl -X POST localhost:8787/api/search -d '{"query":"...", "userKey":"me", "sessionId":"t1"}'`
+로 직접 질의해보면서 `/api/stats`의 `trajectories`·`termPagePairs`가 느는지 확인하세요.
 
 측정할 것: **비링크 도달 비율**과 질의 중복률. 낮으면 3단계로 가지 마세요.
 
@@ -175,10 +181,10 @@ Lucene Nori가 그 문제의 프로덕션 해답입니다. 색인이 서버에 �
 
 | | 검증 |
 |---|---|
-| Python CLI · 앵커 전치 · 파서 | 33개 테스트 통과 |
-| Confluence 클라이언트 | 10개 통과 (가짜 서버 — Cloud/Server·429·페이지네이션·재개) |
+| Python CLI · 앵커 전치 · 파서 | 23개 테스트 통과 (골든 픽스처 포함) |
+| Confluence 클라이언트 | 17개 통과 (가짜 서버 — Cloud/Server·429·페이지네이션·재개·`--follow-refs`) |
 | 인증 계층 (SSO/IAM) | 12개 통과 (가짜 IAM — OAuth2·만료 갱신·401 재시도) |
-| Python 프로토타입 서버 | 엔드투엔드 데모 통과 |
+| Python 서버 스코어링 (`server/scoring.py`) | 13개 통과. Kotlin `Scoring.kt`와 나란히 유지되는 정본 — 공유 Python 서버 자체(구 훅 기반 설계)는 제거됨 |
 | MCP 프록시 | 21개 테스트 통과 (핸드셰이크·도구 4개·세션·404) |
 | Kotlin 학습 레이어 (`learn/`) | 컴파일·실행 32/32, Python/scipy와 1e-6 일치 |
 | Kotlin Lucene/Spring 배선 | 빌드·bootRun·재색인 검증됨 (Coway 실데이터 2,378건). 검색 랭킹 품질은 별도 미검증 |
