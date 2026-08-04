@@ -13,12 +13,12 @@ docs/     아키텍처 · 결정 로그
 ## 먼저 실행할 것
 
 ```bash
-./check-contracts.sh                              # 교차 언어 계약 16개
+./shared_contracts.sh                              # 교차 언어 계약 16개
 cd cli    && python -m pytest tests/ -q           # 74
 cd server && ./gradlew test                       # 51 (JUnit)
 ```
 
-`check-contracts.sh`가 특히 중요하다. Python과 Kotlin이 파일로만 연결되어 있어
+`shared_contracts.sh`가 특히 중요하다. Python과 Kotlin이 파일로만 연결되어 있어
 아래 계약이 어긋나면 **테스트는 통과하는데 런타임에 조용히 틀어진다.**
 
 **변경 후 이 셋이 통과하는지 반드시 확인할 것.** IntelliJ 를 쓴다면 실행 구성
@@ -76,7 +76,7 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 
 - **`server/src/main/.../learn/`에 Spring·Lucene import가 없다** — EB·게이트·궤적은
   순수 알고리즘이고, 프레임워크가 새어 들어오면 랭킹·색인 관심사와 뒤엉켜 단위
-  테스트가 통합 테스트로 변질된다. `check-contracts.sh`가 강제한다. import 추가 금지.
+  테스트가 통합 테스트로 변질된다. `shared_contracts.sh`가 강제한다. import 추가 금지.
 - **서버가 Confluence를 크롤하지 않는다** — Python `sync`가 이미 검증돼 있다.
   서버는 `mirror/`를 읽기만 한다. 재구현하지 말 것.
 - **`sync`와 `build`가 분리** — 제목→ID 해석 완전성 때문. 원본을 다 받은 뒤

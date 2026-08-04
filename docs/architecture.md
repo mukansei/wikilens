@@ -111,7 +111,7 @@ flowchart LR
 |---|---|
 | 페이지 ID가 권위, 제목은 렌더링 | `layout.py` ↔ `vault/Layout.kt` (샤딩 `{앞2}/{다음2}`) |
 | 궤적만 복구 불가 | 포스팅은 궤적의 함수 — 기동 시 로그 재생으로 복원 |
-| 위키에 쓰지 않음 | 쓰기 경로 부재를 `check-contracts.sh` 가 검사 |
+| 위키에 쓰지 않음 | 쓰기 경로 부재를 `shared_contracts.sh` 가 검사 |
 | 궤적은 요청이 아니라 관측 | 읽기가 서버를 거치므로 훅이 불필요 |
 | 권한 없음은 404 (403 아님) | `ContentService.read` 가 null → `Controller` 가 404 |
 | 경로 의존 질의는 캐싱 안 함 | `Gate.classify` — `LOCALIZATION` 만 간선 생성 |

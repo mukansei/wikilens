@@ -1,7 +1,7 @@
 """
 골든 픽스처 계약 테스트.
 
-`contracts/fixtures/mini-vault/`는 Python 과 Kotlin 이 **공유하는 정본 볼트**다.
+`shared-fixtures/mini-vault/`는 Python 과 Kotlin 이 **공유하는 정본 볼트**다.
 이 테스트는 Python 쪽만 확인한다 — `build()`가 픽스처의 원본(mirror/raw,
 .sync-state.json)에서 체크인된 산출물(pages/, structure/, anchors.jsonl,
 ALIASES.md, TREE.md)을 결정적으로 재생성하는지.
@@ -17,7 +17,7 @@ from pathlib import Path
 
 from wikilens.build import build
 
-FIXTURE = Path(__file__).resolve().parents[2] / "contracts" / "fixtures" / "mini-vault"
+FIXTURE = Path(__file__).resolve().parents[2] / "shared-fixtures" / "mini-vault"
 
 # build() 가 만드는 산출물만 비교한다. mirror/raw, mirror/.sync-state.json 은
 # 입력이라 애초에 그대로 복사되므로 비교 대상이 아니다.

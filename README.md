@@ -195,7 +195,7 @@ Lucene Nori가 그 문제의 프로덕션 해답입니다. 색인이 서버에 �
 | 1. 서버 실행 (bootRun) | Spring Boot 기동 (`:8787`) |
 | 2. 재색인 | `/admin/reindex` + 테스트 사용자 등록 + `stats` — **1번이 떠 있어야 함** |
 | 3. 전체 검증 | 계약·Python·MCP·JUnit 넷을 순서대로. **변경 후 이것부터** |
-| 4. 계약 검사만 | `check-contracts.sh` |
+| 4. 계약 검사만 | `shared_contracts.sh` |
 | 5. Kotlin 테스트 | `gradlew test` |
 | 6. Python 테스트 | `pytest` + MCP 프록시 |
 

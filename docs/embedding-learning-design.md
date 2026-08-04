@@ -60,7 +60,7 @@ Acme 실데이터로 오늘 실측한 두 갭이 전부 이 표현 방식에서 
 ### `learn/`의 순수성 계약을 지키는 배치
 
 CLAUDE.md의 절대 계약: **"`learn/`에 Spring·Lucene import가 없다 —
-`check-contracts.sh`가 강제한다."** 임베딩 계산 자체(모델 로딩, 추론)는 이 제약을
+`shared_contracts.sh`가 강제한다."** 임베딩 계산 자체(모델 로딩, 추론)는 이 제약을
 깨기 쉽다. 그래서 경계를 명확히 나눈다:
 
 - `learn/` 패키지는 **`FloatArray`(임베딩 벡터)만 입력으로 받는다.** 코사인
@@ -110,7 +110,7 @@ CLAUDE.md의 "절대 깨면 안 되는 계약" 표에 다음 행이 있다:
 > 카운트 분산`
 
 이 원칙 자체를 벡터 기반으로 대체하는 것이므로, 채택 시 **이 표를 명시적으로
-갱신**해야 한다 — 조용히 우회하면 안 된다. `check-contracts.sh`에 이 계약을
+갱신**해야 한다 — 조용히 우회하면 안 된다. `shared_contracts.sh`에 이 계약을
 직접 검사하는 항목은 없지만(문서로만 존재), `server/src/test/kotlin/dev/wikilens/learn/LearnLayerTest.kt`의
 "표현이 달라도 신뢰도 합산" 테스트 케이스는 이 변경에 맞춰 다시 설계해야 한다.
 

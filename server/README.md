@@ -18,7 +18,7 @@ Confluence 미러를 **서버측에서 색인**하고, 탐색 궤적을 축적�
 ```
 
 `learn/` 에는 Spring·Lucene import 가 없다 — EB·게이트·궤적은 순수 알고리즘이라
-프레임워크와 섞이면 단위 테스트가 통합 테스트로 변질된다. `check-contracts.sh` 가 강제한다.
+프레임워크와 섞이면 단위 테스트가 통합 테스트로 변질된다. `shared_contracts.sh` 가 강제한다.
 
 ## 왜 서버가 색인을 갖는가
 
