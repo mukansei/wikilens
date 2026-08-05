@@ -4,10 +4,10 @@ Confluence 위키를 미러링하고 **앵커 텍스트**(다른 문서들이 �
 색인해 어휘 격차를 메운다. 그 위에 에이전트 탐색 궤적을 축적하는 학습 레이어를 얹는다.
 
 ```
-cli/       Python  싱크·파싱·앵커 전치·로컬판        93 테스트
+cli/       Python  싱크·파싱·앵커 전치·로컬판        pytest 114 (로컬판 40 포함)
 server/    Kotlin  Lucene/Nori 색인 + 학습 레이어    51 테스트 / 배선 검증됨(Coway 실데이터)
-plugin/    local=스킬+커맨드 · client=MCP 도구 4개   47 테스트 · 각 판 사용 안내 포함
-contract/  교차 언어 계약 검사 + 공유 픽스처
+plugin/    local=스킬+커맨드 · client=MCP 도구 4개   프록시 33 (별도 실행) · 안내 포함
+contract/  교차 언어 계약 26개 + 공유 픽스처
 docs/      아키텍처 · 임베딩 설계 제안
 ```
 
@@ -17,9 +17,10 @@ docs/      아키텍처 · 임베딩 설계 제안
 ## 먼저 실행할 것
 
 ```bash
-./contract/shared_contract.sh                     # 교차 언어 계약 21개
-cd cli    && python -m pytest tests/ -q           # 93
+./contract/shared_contract.sh                     # 교차 언어 계약 26개
+cd cli    && python -m pytest tests/ -q           # 114
 cd server && ./gradlew test                       # 51 (JUnit)
+python3 cli/tests/test_mcp_proxy.py               # 33 (pytest 가 안 걷는 독립 스크립트)
 ```
 
 `shared_contract.sh`가 특히 중요하다. Python과 Kotlin이 파일로만 연결되어 있어
@@ -132,6 +133,11 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
   이름이 무엇인지를, 스킬 이름이 무엇을 하는지를 말한다 — 커맨드 `:setup`·`:sync` 와
   같은 층위다. 네임스페이스가 다르므로 두 판의 스킬 이름이 같아도 충돌이 아니지만,
   그래서 구별 근거가 다시 description 하나뿐이라 계약이 그것을 지킨다.
+- **`marketplace.json` 에 지금은 쓸모없는 `renames` 한 줄이 있다** —
+  `{"wikilens": "wikilens-client"}`. 구 이름으로 설치한 사람이 없어 기능적으로는
+  불필요하다. 플러그인 `name` 이 **불변 슬러그**라 게시 후 바꾸면 기존 설치가
+  `plugin-not-found` 로 깨지는데, 그 탈출구가 이 맵이다. 다음에 이름을 바꿀 사람에게
+  여기 적으라고 알리려고 남긴다. 근거는 `DECISIONS.md` D9.
 - **마켓플레이스 매니페스트가 저장소 루트에 있다** — `.claude-plugin/marketplace.json`.
   하위 디렉터리로 옮기면 플러그인 `source` 상대 경로가 잘못 해석돼 설치가
   `"source type your Claude Code version does not support"` 로 실패한다(실측).

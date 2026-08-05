@@ -95,6 +95,24 @@ for e in mp[\"plugins\"]:
     assert pj[\"version\"]==e[\"version\"], e[\"name\"]
     assert sk==nm==[\"search\"], (e[\"name\"], sk, nm)
 "'
+# 플러그인 `name` 은 **불변 슬러그**다. 사용자가 그 이름으로 설치해 두므로 바꾸면
+# 기존 설치가 `plugin-not-found` 로 깨진다 (공식 마켓플레이스 README 가 명시).
+# 탈출구가 `renames` 맵이고, 로더가 이걸 읽어 옛 슬러그를 새 슬러그로 다시 쓴다.
+# 지금 `wikilens → wikilens-client` 한 줄이 든 것은 2026-08-05 개명 때문인데,
+# 아직 아무도 구 이름으로 설치한 적이 없어 기능적으로는 불필요하다. 남겨두는 이유는
+# **다음에 이름을 바꿀 사람에게 여기 적으라고 알리는 것**이다. 근거는 DECISIONS.md D9.
+#
+# 잘못 적으면 조용히 아무 일도 안 한다 — 목표가 실재하지 않으면 이전이 안 되고,
+# 살아 있는 이름을 키로 두면 그 플러그인이 자기 자신에서 밀려난다.
+check "renames 가 실재하는 플러그인을 가리키고 살아있는 이름을 밀어내지 않음" \
+  'python3 -c "
+import json,pathlib
+mp=json.loads(pathlib.Path(\".claude-plugin/marketplace.json\").read_text())
+live={e[\"name\"] for e in mp[\"plugins\"]}
+for old,new in (mp.get(\"renames\") or {}).items():
+    assert new in live, (old,new,\"대상이 실재하지 않음\")
+    assert old not in live, (old,\"살아있는 플러그인 이름을 키로 씀\")
+"'
 # .mcp.json 에서 미설정 변수를 넘기면 값이 '${WIKILENS_SERVER}' 리터럴로 전달돼
 # 프록시의 기본값을 덮어쓰고 'unknown url type' 으로 죽는다 (2026-08-04 실측).
 # 프록시가 os.environ 에서 직접 읽으므로 여기서 넘길 필요 자체가 없다.
