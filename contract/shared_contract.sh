@@ -78,6 +78,23 @@ check "source 가 가리키는 경로에 plugin.json 이 실재함" \
 check ".mcp.json 이 WIKILENS_* env 를 넘기지 않음 (미설정 시 리터럴 주입 방지)" \
   '! grep -qE "^[[:space:]]*\"WIKILENS_[A-Z]+\"[[:space:]]*:" plugin/server/.mcp.json'
 
+# 로컬판은 볼트가 프로젝트 밖에 있으므로 cwd 상대경로를 쓰면 볼트 안에서만 동작한다.
+# 그러면 전역 설치가 무의미해진다 — 배포 가능성의 핵심 조건이다.
+check "로컬 스킬이 cwd 상대경로를 쓰지 않음 (볼트가 프로젝트 밖이라 배포 시 깨짐)" \
+  '! grep -qE "path=\"(ALIASES|TREE)\.md\"" plugin/local/skills/wikilens/SKILL.md'
+# 두 스킬의 name 이 같아(wikilens) description 까지 같으면 둘 다 설치했을 때
+# 모델이 어느 쪽을 부를지 갈린다 — 로컬은 볼트가, 서버는 서버가 없어 각각 실패한다.
+check "로컬·서버 스킬 description 이 서로 구별됨 (동시 설치 시 오선택 방지)" \
+  '! diff -q <(sed -n "/^description:/,/^---$/p" plugin/local/skills/wikilens/SKILL.md) <(sed -n "/^description:/,/^---$/p" plugin/server/skills/wikilens/SKILL.md) >/dev/null'
+# 플러그인은 설치 시 버전별 캐시로 복사되고 구버전은 청소된다. CLI 를 동봉하면
+# 캐시가 지워질 때 설치가 죽고, marketplace/plugins/ 수동 사본과 같은 실수가 된다.
+check "plugin/local 에 CLI 사본 없음 (캐시 청소 시 죽고, 사본 금지 계약 위반)" \
+  '[ ! -d plugin/local/cli ] && [ ! -d plugin/local/wikilens ]'
+# 로컬판의 정의적 성질이 "검색 경로 런타임 의존성 0" 이다. 여기에 서드파티가 들어오면
+# 볼트 검색이 파이썬 환경 문제로 실패할 수 있게 된다.
+check "로컬판 스크립트가 표준 라이브러리만 씀 (검색 경로 의존성 0 유지)" \
+  '! grep -rqE "^[[:space:]]*(import|from) (requests|bs4|markdownify)\b" plugin/local/scripts/'
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."
