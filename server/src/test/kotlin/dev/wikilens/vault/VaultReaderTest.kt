@@ -9,7 +9,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * `shared-fixtures/mini-vault/`는 Python `cli/tests/test_contract_fixtures.py`와
+ * `contracts/shared-fixtures/mini-vault/`는 Python `cli/tests/test_contract_fixtures.py`와
  * **공유하는 정본 볼트**다. Python이 `build()`로 이 픽스처를 재생성해 형식을 검증하고,
  * 여기서는 같은 체크인된 산출물을 `VaultReader`가 그대로 소화하는지 확인한다.
  *
@@ -20,7 +20,7 @@ import kotlin.test.assertTrue
 class VaultReaderTest {
 
     // server/ 가 Gradle 작업 디렉터리이므로 저장소 루트 기준 상대 경로.
-    private val fixtureRoot: Path = Path.of("..", "shared-fixtures", "mini-vault")
+    private val fixtureRoot: Path = Path.of("..", "contracts", "shared-fixtures", "mini-vault")
 
     private fun readFixture(): List<IndexedPage> {
         val acl = AclRegistry()
