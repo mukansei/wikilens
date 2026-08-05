@@ -25,8 +25,10 @@ check() {
 }
 
 echo "교차 언어 계약"
-check "샤딩 규칙 Python/Kotlin 일치, Kotlin 정의처 1곳(Layout.kt)" \
-  'grep -q "SHARD_WIDTH = 2" cli/wikilens/layout.py && grep -qE "substring\(0,[[:space:]]*2\)" server/src/main/kotlin/dev/wikilens/vault/Layout.kt && [ $(grep -rl "fun relPagePath" server/src/main/kotlin | wc -l) -eq 1 ]'
+# vault_status.py 가 샤딩 규칙을 **다시 정의**한다(CLI 없이 동작해야 하므로 import 불가).
+# 갈라지면 정상 파일이 전부 '샤드 밖'으로 잡힌다. 동작 대조는 test_local_plugin.py 가 한다.
+check "샤딩 규칙 Python/Kotlin/플러그인 일치, Kotlin 정의처 1곳(Layout.kt)" \
+  'grep -q "SHARD_WIDTH = 2" cli/wikilens/layout.py && grep -q "SHARD_WIDTH = 2" plugin/local/scripts/vault_status.py && grep -qE "substring\(0,[[:space:]]*2\)" server/src/main/kotlin/dev/wikilens/vault/Layout.kt && [ $(grep -rl "fun relPagePath" server/src/main/kotlin | wc -l) -eq 1 ]'
 check "사전확률 클램프 양쪽 동일 (0.05, 0.85)" \
   'grep -q "PRIOR_CEIL = 0.85" server/src/main/kotlin/dev/wikilens/learn/Scoring.kt && grep -q "PRIOR_FLOOR, PRIOR_CEIL = 0.05, 0.85" cli/wikilens/server/scoring.py'
 check "canonical_json 결정적 직렬화" \

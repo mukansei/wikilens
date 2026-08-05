@@ -6,6 +6,9 @@
 넷으로 갈리고 각각 다르게 실패한다. 그 판정을 여기 한 곳에 모아 결정적으로 만든다.
 스킬은 이 출력의 `VAULT=` 값을 이후 모든 Grep/Read 경로 앞에 붙이기만 하면 된다.
 
+`STRAY=` 는 샤딩 규칙을 벗어난 파일 수다. 검색을 막지는 않으므로 `STATUS` 와
+종료코드에는 영향을 주지 않는다 — `find_strays()` 의 주석 참고.
+
 **표준 라이브러리만 쓴다.** 로컬판의 정의적 성질이 "검색 경로 런타임 의존성 0"이라,
 여기에 requests 같은 게 들어오면 볼트 검색이 파이썬 환경 문제로 실패할 수 있게 된다.
 네트워크도 건드리지 않는다 — 이 스크립트는 디스크만 본다.
@@ -25,6 +28,19 @@ STALE_DAYS = 7
 CONFIG_DIR = Path.home() / ".wikilens"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 DEFAULT_VAULT = CONFIG_DIR / "vault"
+
+# `cli/wikilens/layout.py` 의 값과 **반드시 같아야 한다.** 여기서 다시 정의하는 이유는
+# 로컬판이 CLI 없이도 동작해야 해서다(CLI 는 볼트 구축에만 필요하고, 검색·진단에는
+# 없을 수 있다). 계약 검사가 두 값의 일치를 강제한다.
+SHARD_DEPTH = 2
+SHARD_WIDTH = 2
+
+# mirror 하위 디렉터리별로 확장자가 정해져 있다. 확장자까지 대조하므로
+# `raw/` 에 `.md` 가 섞여 들어간 것도 잡힌다.
+MIRROR_DIRS = {"raw": ".xhtml", "pages": ".md", "structure": ".json"}
+
+# 이상 파일이 수백 개면 목록을 다 뱉어봐야 읽히지 않는다. 개수는 전부 세고 경로만 자른다.
+STRAY_REPORT_CAP = 20
 
 
 def _config() -> dict:
@@ -114,6 +130,52 @@ def cli_source(cfg: dict) -> str:
     return ""
 
 
+def _expected_rel(page_id: str, kind: str, ext: str) -> str:
+    """`layout.rel_page_path()` 와 같은 규칙. 여기선 세 디렉터리에 일반화했다."""
+    padded = page_id.rjust(SHARD_DEPTH * SHARD_WIDTH, "0")
+    seg = "/".join(padded[i * SHARD_WIDTH : (i + 1) * SHARD_WIDTH] for i in range(SHARD_DEPTH))
+    return f"{kind}/{seg}/{page_id}{ext}"
+
+
+def find_strays(vault: Path, cap: int = STRAY_REPORT_CAP) -> tuple[int, list[str]]:
+    """
+    샤딩 규칙을 벗어난 파일을 찾는다.
+
+    `sync` 는 이런 파일을 **영원히 못 지운다** — 삭제 청소는 `.sync-state.json` 이 아는
+    페이지 ID 만 대상으로 하는데, 이 파일들은 애초에 state 에 없기 때문이다.
+    실제로 겪은 것: `.DS_Store`, 그리고 ALIASES.md 한 줄을 잘못 쪼개 **링크 텍스트를
+    경로로 삼아** 만들어진 0바이트 파일(제목 속 `/` 가 디렉터리까지 만들었다).
+
+    파일명이 곧 페이지 ID 라는 계약을 그대로 판정에 쓴다 — 각 파일의 stem 으로 기대
+    경로를 다시 계산해 실제 위치와 대조한다. 그래서 잘못된 샤드에 놓인 파일도 잡힌다.
+
+    전수 스캔이라 볼트 크기에 선형이다(실측: 2,377페이지 / 7,350항목 / 46ms).
+    """
+    mirror = vault / "mirror"
+    strays: list[str] = []
+    total = 0
+    for kind, ext in MIRROR_DIRS.items():
+        base = mirror / kind
+        if not base.is_dir():
+            continue
+        try:
+            entries = sorted(base.rglob("*"))
+        except OSError:
+            continue
+        for p in entries:
+            try:
+                if p.is_dir():
+                    continue
+            except OSError:
+                continue
+            rel = p.relative_to(mirror).as_posix()
+            if rel != _expected_rel(p.stem, kind, ext):
+                total += 1
+                if len(strays) < cap:
+                    strays.append(rel)
+    return total, strays
+
+
 def inspect(vault: Path) -> dict:
     """볼트 상태 판정. 단계가 순서대로라 어디서 멈췄는지가 곧 다음 할 일이다."""
     out: dict[str, object] = {"vault": str(vault), "pages": 0, "age_days": -1}
@@ -149,9 +211,18 @@ def inspect(vault: Path) -> dict:
 
 def main(argv: list[str]) -> int:
     cfg = _config()
-    info = inspect(resolve_vault(cfg))
+    vault = resolve_vault(cfg)
+    info = inspect(vault)
     info["cli"] = find_cli(cfg)
     info["cli_source"] = cli_source(cfg)
+
+    # 이상 파일은 검색을 막지 않으므로 STATUS 와 종료코드를 건드리지 않는다.
+    # -1 은 "검사하지 않음"(볼트가 없거나 --no-scan).
+    if info["status"] == "missing" or "--no-scan" in argv:
+        info["stray"], stray_paths = -1, []
+    else:
+        info["stray"], stray_paths = find_strays(vault)
+    info["stray_paths"] = stray_paths
 
     if "--json" in argv:
         print(json.dumps(info, ensure_ascii=False))
@@ -162,6 +233,9 @@ def main(argv: list[str]) -> int:
         print(f"AGE_DAYS={info['age_days']}")
         print(f"CLI={info['cli']}")
         print(f"CLI_SOURCE={info['cli_source']}")
+        print(f"STRAY={info['stray']}")
+        for rel in stray_paths:
+            print(f"STRAY_PATH={rel}")
 
     # 0 = 검색 가능(ok/stale), 2 = 설정 필요. 스킬이 종료코드만 봐도 분기할 수 있다.
     return 0 if info["status"] in ("ok", "stale") else 2
