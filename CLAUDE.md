@@ -4,16 +4,17 @@ Confluence 위키를 미러링하고 **앵커 텍스트**(다른 문서들이 �
 색인해 어휘 격차를 메운다. 그 위에 에이전트 탐색 궤적을 축적하는 학습 레이어를 얹는다.
 
 ```
-cli/      Python  싱크·파싱·앵커 전치·로컬판         74 테스트
-server/   Kotlin  Lucene/Nori 색인 + 학습 레이어      51 테스트 / 배선 검증됨(Acme 실데이터)
-plugin/   local=스킬만 · server=MCP 도구 4개          24 테스트
-docs/     아키텍처 · 결정 로그
+cli/       Python  싱크·파싱·앵커 전치·로컬판        74 테스트
+server/    Kotlin  Lucene/Nori 색인 + 학습 레이어    51 테스트 / 배선 검증됨(Acme 실데이터)
+plugin/    local=스킬만 · server=MCP 도구 4개        24 테스트
+contracts/ 교차 언어 계약 검사 + 공유 픽스처
+docs/      아키텍처 · 결정 로그
 ```
 
 ## 먼저 실행할 것
 
 ```bash
-./shared_contracts.sh                              # 교차 언어 계약 16개
+./contracts/shared_contracts.sh                   # 교차 언어 계약 16개
 cd cli    && python -m pytest tests/ -q           # 74
 cd server && ./gradlew test                       # 51 (JUnit)
 ```
@@ -98,7 +99,7 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
   하위 디렉터리로 옮기면 플러그인 `source` 상대 경로가 잘못 해석돼 설치가
   `"source type your Claude Code version does not support"` 로 실패한다(실측).
 - **검사 장치가 둘이다** — `shared_contracts.sh`(grep, 빠르지만 리팩터링에 취약)와
-  `shared-fixtures/`(실제 파싱·생성 후 비교, 느리지만 동작을 잠금). 겹쳐 보이지만
+  `contracts/shared-fixtures/`(실제 파싱·생성 후 비교, 느리지만 동작을 잠금). 겹쳐 보이지만
   잡는 실패가 다르다 — grep 은 문자열만 바뀌어도 오탐이고, 픽스처는 포맷이 조용히
   갈라지는 것을 잡는다.
 
