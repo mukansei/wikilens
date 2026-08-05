@@ -311,6 +311,33 @@ def main() -> int:
         st3 = subprocess.run([sys.executable, str(PROXY), "--status"],
                              capture_output=True, text=True, env=dict(clean, HOME=dead_home))
         check("서버 다운을 도달 실패로 보고", "REACHABLE=no" in st3.stdout, st3.stdout[:200])
+
+        # --- 13. 잘못된 설정에 죽지 않기 (코드 리뷰에서 나온 결함) ------------
+        #
+        # timeout 을 최상단에서 float() 로 그대로 파싱해, 오타 하나로 MCP 서버가
+        # 기동 중 traceback 으로 죽었다. 그리고 JSON 숫자는 문자열이 아니라는 이유로
+        # 조용히 무시돼 기본값이 쓰였다.
+        print("\n=== 13. 잘못된 설정에 죽지 않기 ===")
+
+        def with_config(payload: dict, *args):
+            home = tempfile.mkdtemp(prefix="wl-proxy-cfg2-")
+            (pathlib.Path(home) / ".wikilens").mkdir()
+            (pathlib.Path(home) / ".wikilens" / "config.json").write_text(
+                json.dumps(payload), encoding="utf-8")
+            return subprocess.run([sys.executable, str(PROXY), *args],
+                                  capture_output=True, text=True,
+                                  env=dict(clean, HOME=home))
+
+        bad = with_config({"server": f"http://127.0.0.1:{PORT}", "user": "u",
+                           "timeout": "abc"}, "--status")
+        check("timeout 오타에 기동이 죽지 않음", "REACHABLE=yes" in bad.stdout, bad.stderr[:150])
+        check("잘못된 값임을 stderr 로 알림", "타임아웃" in bad.stderr, bad.stderr[:150])
+        check("stdout 은 오염되지 않음 (JSON-RPC 전용)",
+              "타임아웃" not in bad.stdout, bad.stdout[:150])
+
+        num = with_config({"server": f"http://127.0.0.1:{PORT}", "user": "u",
+                           "timeout": 30}, "--status")
+        check("JSON 숫자로 쓴 설정이 무시되지 않음", "REACHABLE=yes" in num.stdout, num.stdout[:150])
         check("주소를 넣은 사용자에겐 '설정한 적 없다' 안내를 안 함",
               "설정한 적이 없어" not in st3.stdout, st3.stdout[:200])
 

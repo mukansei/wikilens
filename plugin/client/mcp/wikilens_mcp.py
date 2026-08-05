@@ -52,16 +52,40 @@ def _setting(name: str, key: str, default: str = "") -> tuple[str, str]:
     v = os.environ.get(name, "")
     if v and not (v.startswith("${") and v.endswith("}")):
         return v, "env"
+
+    # JSON 은 숫자·불리언을 그대로 쓸 수 있다. `{"timeout": 30}` 은 사람이 자연스럽게
+    # 쓰는 형태인데 문자열만 받으면 **조용히 무시되고 기본값이 쓰인다.** 값이 있으면
+    # 문자열로 맞춰 받는다 (dict·list 는 설정값일 리 없으므로 제외).
     v = _CFG.get(key)
-    if isinstance(v, str) and v:
-        return v, "config"
+    if v is not None and not isinstance(v, (dict, list)):
+        s = str(v).strip()
+        if s:
+            return s, "config"
     return default, "default"
+
+
+def _timeout() -> float:
+    """
+    잘못된 값에 죽지 않는다. 예전에는 모듈 최상단에서 `float()` 을 그대로 불러
+    `{"timeout": "abc"}` 오타 하나로 **MCP 서버가 기동 중 traceback 으로 죽었다.**
+    설정 오타가 플러그인 전체를 내리는 것은 과한 처벌이다.
+    """
+    raw, origin = _setting("WIKILENS_TIMEOUT", "timeout", "15")
+    try:
+        t = float(raw)
+        if t > 0:
+            return t
+    except ValueError:
+        pass
+    # stdout 은 JSON-RPC 전용이므로 진단은 반드시 stderr 로.
+    print(f"타임아웃 값이 잘못됐습니다 ({origin}: {raw!r}). 15초를 씁니다.", file=sys.stderr)
+    return 15.0
 
 
 SERVER, SERVER_ORIGIN = _setting("WIKILENS_SERVER", "server", DEFAULT_SERVER)
 SERVER = SERVER.rstrip("/")
 USER, USER_ORIGIN = _setting("WIKILENS_USER", "user")
-TIMEOUT = float(_setting("WIKILENS_TIMEOUT", "timeout", "15")[0])
+TIMEOUT = _timeout()
 SESSION = f"mcp-{uuid.uuid4().hex[:12]}"
 
 PROTOCOL = "2025-06-18"
