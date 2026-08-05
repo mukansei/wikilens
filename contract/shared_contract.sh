@@ -128,6 +128,14 @@ check "두 판 모두 사용자용 안내를 플러그인에 포함 (설치자�
 # 부르는 경로가 하나라도 남으면 그쪽만 조용히 실패한다 (2026-08-05 실측).
 check "로컬판이 CLI 를 항상 래퍼로 호출 (맨 wikilens 는 자격증명 없이 죽음)" \
   '[ -f plugin/local/scripts/wikilens_cli.sh ] && ! grep -rnE "(^|[\`\" '"'"'])wikilens (doctor|stats|--root|sync|build)" plugin/local/'
+# 두 판 모두 설정이 환경변수 전용이면 Claude Code 를 앱으로 띄웠을 때 조용히 빈다.
+# 정본은 `~/.wikilens/` 하나다 — 비밀 아닌 설정은 config.json, 토큰류는 env.sh(600).
+check "두 판 모두 설정을 ~/.wikilens 에서 읽음 (env 단독은 세션 간 안 삶)" \
+  'grep -q "\.wikilens" plugin/client/mcp/wikilens_mcp.py && grep -q "\.wikilens" plugin/local/scripts/vault_status.py'
+# 서버는 /api/health·/api/stats 를 갖고 있었는데 플러그인이 안 써서 사용자에게 닿지
+# 않았다. 검색이 빈손일 때 주소·식별자·색인 중 무엇이 막혔는지 구분할 길이 없었다.
+check "서버판에 진단 경로 있음 (--status 가 health/stats 를 실제로 씀)" \
+  'grep -q -- "--status" plugin/client/mcp/wikilens_mcp.py && grep -q "/api/health" plugin/client/mcp/wikilens_mcp.py && grep -q "/api/stats" plugin/client/mcp/wikilens_mcp.py'
 
 echo
 if [ "$fail" -eq 0 ]; then

@@ -6,7 +6,7 @@ Confluence 위키를 미러링하고 **앵커 텍스트**(다른 문서들이 �
 ```
 cli/       Python  싱크·파싱·앵커 전치·로컬판        93 테스트
 server/    Kotlin  Lucene/Nori 색인 + 학습 레이어    51 테스트 / 배선 검증됨(Coway 실데이터)
-plugin/    local=스킬+커맨드 · client=MCP 도구 4개   43 테스트 · 각 판 사용 안내 포함
+plugin/    local=스킬+커맨드 · client=MCP 도구 4개   47 테스트 · 각 판 사용 안내 포함
 contract/  교차 언어 계약 검사 + 공유 픽스처
 docs/      아키텍처 · 임베딩 설계 제안
 ```
@@ -85,7 +85,18 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
    래퍼 없이 맨 `wikilens`를 부르는 경로가 하나라도 남으면 그쪽만 조용히 죽으므로
    `shared_contract.sh`가 막는다. 파일이 아니라 셸 스크립트인 이유는 사용자가
    `source ~/.wikilens/env.sh`로 자기 터미널에서 그대로 재사용하기 때문이다.
-10. **`.mcp.json`이 미설정 env 를 리터럴로 주입** → 변수가 없으면 `"${WIKILENS_SERVER}"`
+   **서버판도 같은 결함이었다** — `WIKILENS_SERVER`/`WIKILENS_USER`가 env 전용이라
+   Claude Code를 앱으로 띄우면 주소가 조용히 localhost 기본값이 되고 검색이 전부
+   빈다. 프록시가 `~/.wikilens/config.json`을 읽게 해서 맞췄다. 정본은
+   `~/.wikilens/` 하나로 통일 — **비밀 아닌 설정은 `config.json`, 토큰류는
+   `env.sh`(600)**.
+10. **서버 ACL에 사용자가 0명이면 색인이 멀쩡해도 전원이 빈손** — fail-closed라
+   맞는 동작인데, 사용자 눈에는 "문서가 없다"와 구별되지 않는다. 실측으로 인과를
+   확인했다(같은 질의: 등록 전 0건 → `@public` 등록 후 3건). `/api/health`와
+   `/api/stats`는 서버에 원래 있었는데 **플러그인이 안 써서** 이 구분이 사용자에게
+   닿지 않았다. `wikilens_mcp.py --status`가 주소·식별자·도달·색인·ACL을 한 번에
+   보여준다.
+11. **`.mcp.json`이 미설정 env 를 리터럴로 주입** → 변수가 없으면 `"${WIKILENS_SERVER}"`
    문자열이 그대로 들어가 프록시 기본값을 덮어쓰고 `unknown url type` 으로 죽는다.
    env 를 넘기지 않고 프록시가 `os.environ` 에서 직접 읽게 한다.
 

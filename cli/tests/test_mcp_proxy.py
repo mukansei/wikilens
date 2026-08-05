@@ -25,6 +25,23 @@ class Fake(BaseHTTPRequestHandler):
     def log_message(self, *a):  # 조용히
         pass
 
+    def _json(self, payload: dict) -> None:
+        raw = json.dumps(payload, ensure_ascii=False).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def do_GET(self):
+        # `--status` 가 쓰는 진단 엔드포인트. 서버엔 원래 있었는데 플러그인이 안 썼다.
+        if self.path == "/api/health":
+            self._json({"ok": True})
+        elif self.path == "/api/stats":
+            self._json({"indexedDocs": 2378, "aclUsers": 3})
+        else:
+            self.send_response(404); self.end_headers()
+
     def do_POST(self):
         n = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(n) or b"{}")
@@ -83,7 +100,13 @@ def main() -> int:
     time.sleep(0.2)
 
     import os
-    env = {**os.environ, "WIKILENS_SERVER": f"http://127.0.0.1:{PORT}",
+    import tempfile
+    # 프록시가 `~/.wikilens/config.json` 을 읽으므로 HOME 을 격리하지 않으면 개발자
+    # 머신의 설정이 새어 들어와 결과가 기계마다 달라진다 — 특히 "USER 미설정" 검사가
+    # 그 파일의 "user" 때문에 조용히 통과해버린다.
+    HOME = tempfile.mkdtemp(prefix="wl-proxy-home-")
+    env = {**os.environ, "HOME": HOME,
+           "WIKILENS_SERVER": f"http://127.0.0.1:{PORT}",
            "WIKILENS_USER": "alice@corp"}
     proc = subprocess.Popen(
         [sys.executable, "-u", str(PROXY)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -192,6 +215,7 @@ def main() -> int:
         # WIKILENS_USER 가 없으면 ACL 이 fail-closed 라 결과가 항상 비는데,
         # 그것을 "문서 없음"으로 오해하면 원인을 못 찾는다.
         env_nouser = {k: v for k, v in os.environ.items() if k != "WIKILENS_USER"}
+        env_nouser["HOME"] = HOME
         env_nouser["WIKILENS_SERVER"] = f"http://127.0.0.1:{PORT}"
         p3 = subprocess.Popen(
             [sys.executable, "-u", str(PROXY)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -208,6 +232,87 @@ def main() -> int:
         finally:
             if p3.poll() is None:
                 p3.stdin.close(); p3.kill()
+
+        # --- 11. 설정 지속성 (겪은 버그) ---------------------------------
+        #
+        # 설정이 환경변수 전용이라, Claude Code 를 앱으로 띄우면 환경이 비어 서버
+        # 주소가 조용히 localhost 가 되고 모든 검색이 빈 결과가 됐다.
+        print("\n=== 11. config.json 설정 (겪은 버그) ===")
+        import pathlib
+        cfg_home = tempfile.mkdtemp(prefix="wl-proxy-cfg-")
+        (pathlib.Path(cfg_home) / ".wikilens").mkdir()
+        (pathlib.Path(cfg_home) / ".wikilens" / "config.json").write_text(
+            json.dumps({"server": f"http://127.0.0.1:{PORT}", "user": "bob@corp"}),
+            encoding="utf-8")
+
+        clean = {k: v for k, v in os.environ.items()
+                 if not k.startswith("WIKILENS_")}
+        clean["HOME"] = cfg_home
+        p4 = subprocess.Popen(
+            [sys.executable, "-u", str(PROXY)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, env=clean, bufsize=1)
+        try:
+            rpc(p4, {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                     "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                                "clientInfo": {"name": "t", "version": "1"}}})
+            before = len(received)
+            r = rpc(p4, {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                         "params": {"name": "search", "arguments": {"query": "로그인"}}})
+            check("환경변수 없이 config.json 만으로 동작", r["result"].get("isError") is not True,
+                  r["result"]["content"][0]["text"][:80])
+            sent = received[before:]
+            check("config 의 user 가 요청에 실림",
+                  bool(sent) and sent[0][1].get("userKey") == "bob@corp")
+        finally:
+            if p4.poll() is None:
+                p4.stdin.close(); p4.kill()
+
+        # 환경변수는 일회성 재정의로 남아야 한다 — 파일이 env 를 덮으면 안 된다.
+        over = dict(clean, WIKILENS_USER="carol@corp")
+        p5 = subprocess.Popen(
+            [sys.executable, "-u", str(PROXY)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, env=over, bufsize=1)
+        try:
+            rpc(p5, {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                     "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                                "clientInfo": {"name": "t", "version": "1"}}})
+            before = len(received)
+            rpc(p5, {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                     "params": {"name": "search", "arguments": {"query": "로그인"}}})
+            sent = received[before:]
+            check("환경변수가 config 보다 우선",
+                  bool(sent) and sent[0][1].get("userKey") == "carol@corp")
+        finally:
+            if p5.poll() is None:
+                p5.stdin.close(); p5.kill()
+
+        # --- 12. --status 진단 -------------------------------------------
+        print("\n=== 12. --status 진단 ===")
+        st = subprocess.run([sys.executable, str(PROXY), "--status"],
+                            capture_output=True, text=True, env=clean)
+        check("설정 출처를 밝힘 (env/config/default 구분)", "(config)" in st.stdout, st.stdout[:120])
+        check("서버 도달 여부 보고", "REACHABLE=yes" in st.stdout, st.stdout[:120])
+
+        # 설정한 적이 없는 상태는 출처가 default 로 드러나야 한다. (도달 여부는
+        # 기본 포트에 무엇이 떠 있느냐에 달려 있으므로 여기서 단정하지 않는다 —
+        # 실제로 실서버가 8787 에 떠 있어 한 번 오탐했다.)
+        none_home = dict(clean, HOME=tempfile.mkdtemp(prefix="wl-proxy-none-"))
+        st2 = subprocess.run([sys.executable, str(PROXY), "--status"],
+                             capture_output=True, text=True, env=none_home)
+        check("설정 안 한 상태를 default 로 표시", "(default)" in st2.stdout, st2.stdout[:200])
+        check("USER 없으면 0 이 아닌 종료코드", st2.returncode != 0, str(st2.returncode))
+
+        # 핵심은 '주소를 안 넣었다'와 '서버가 죽었다'의 구분이다. 주소를 넣어둔 채
+        # 죽은 서버를 보면 그 안내가 **나오면 안 된다.**
+        dead_home = tempfile.mkdtemp(prefix="wl-proxy-dead-")
+        (pathlib.Path(dead_home) / ".wikilens").mkdir()
+        (pathlib.Path(dead_home) / ".wikilens" / "config.json").write_text(
+            json.dumps({"server": "http://127.0.0.1:1", "user": "bob@corp"}), encoding="utf-8")
+        st3 = subprocess.run([sys.executable, str(PROXY), "--status"],
+                             capture_output=True, text=True, env=dict(clean, HOME=dead_home))
+        check("서버 다운을 도달 실패로 보고", "REACHABLE=no" in st3.stdout, st3.stdout[:200])
+        check("주소를 넣은 사용자에겐 '설정한 적 없다' 안내를 안 함",
+              "설정한 적이 없어" not in st3.stdout, st3.stdout[:200])
 
     finally:
         if proc.poll() is None:

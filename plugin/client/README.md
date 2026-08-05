@@ -15,23 +15,39 @@ WikiLens는 **다른 문서들이 각 페이지를 링크할 때 쓴 표현**(�
 
 ## 설치
 
-먼저 셸에 두 가지를 export 합니다:
-
-```bash
-export WIKILENS_SERVER=http://wikilens.corp:8787   # 운영자에게 받으세요
-export WIKILENS_USER=alice@corp                    # 본인 식별자 (권한 확인용)
-```
-
-그다음:
-
 ```
 /plugin marketplace add <저장소 경로 또는 git URL>
 /plugin install wikilens-client@wikilens
 /reload-plugins
 ```
 
-> `WIKILENS_USER` 를 빼먹으면 서버가 요청자를 식별하지 못해 **결과가 항상 빕니다.**
+설정은 파일 하나입니다. `~/.wikilens/config.json` 을 만드세요:
+
+```json
+{
+  "server": "http://wikilens.corp:8787",
+  "user": "alice@corp"
+}
+```
+
+`server` 는 운영자에게 받은 주소, `user` 는 본인 식별자(권한 확인용)입니다.
+**넣고 나면 Claude Code 를 재시작하세요** — 설정은 시작할 때 한 번 읽습니다.
+
+> 셸에 `export WIKILENS_SERVER` / `WIKILENS_USER` 로도 되지만 **그 셸에서만 유지됩니다.**
+> Claude Code 를 앱으로 띄우면 환경이 비어 있어 설정이 없는 것과 같아집니다.
+> 파일로 두면 어디서 띄우든 동작합니다. (환경변수를 주면 파일보다 우선합니다.)
+
+> `user` 를 빼먹으면 서버가 요청자를 식별하지 못해 **결과가 항상 빕니다.**
 > 문서가 없는 게 아니라 권한 확인에 실패한 것이라, 도구가 그렇게 알려줍니다.
+
+### 잘 됐는지 확인
+
+```bash
+python3 ~/.claude/plugins/cache/wikilens/wikilens-client/*/mcp/wikilens_mcp.py --status
+```
+
+주소·식별자·서버 연결·색인 크기·등록된 사용자 수를 한 번에 보여주고,
+막힌 지점이 있으면 무엇을 해야 하는지 알려줍니다.
 
 ## 쓰는 법
 
@@ -75,12 +91,22 @@ export WIKILENS_USER=alice@corp                    # 본인 식별자 (권한 �
 
 ## 문제가 생기면
 
+먼저 `--status` 를 돌려보세요(위 "잘 됐는지 확인"). 아래는 그 출력을 읽는 법입니다.
+
+| 출력 | 뜻 |
+|---|---|
+| `SERVER=... (default)` | 주소를 넣은 적이 없어 로컬을 보고 있습니다. `config.json` 에 넣으세요 |
+| `REACHABLE=no` | 주소가 맞다면 서버가 떠 있는지 운영자에게 문의 |
+| `USER=(미설정)` | 결과가 항상 빕니다. `config.json` 의 `user` 를 넣으세요 |
+| `ACL_USERS=0` | **운영자가 아직 아무도 등록하지 않았습니다.** 사용자가 할 수 있는 일이 없습니다 |
+| `INDEXED_DOCS=0` | 색인이 비어 있습니다. 운영자에게 재색인 요청 |
+
+그 밖에:
+
 | 증상 | 확인 |
 |---|---|
-| "서버에 연결할 수 없습니다" | `WIKILENS_SERVER` 주소, 서버가 떠 있는지 운영자에게 문의 |
-| 결과가 항상 비어 있음 | `WIKILENS_USER` 가 설정돼 있는지, 운영자가 계정을 등록했는지 |
 | 방금 만든 문서가 안 나옴 | 서버 색인은 주기적으로 갱신됩니다. 운영자에게 재색인 요청 |
-| 설정을 바꿨는데 그대로 | 환경변수는 **Claude Code 재시작** 후 반영됩니다 |
+| 설정을 바꿨는데 그대로 | 설정은 시작할 때 한 번 읽습니다. **Claude Code 재시작** 후 반영됩니다 |
 
 ## 로컬판과 헷갈리지 마세요
 
@@ -110,8 +136,11 @@ curl -XPOST localhost:8787/api/admin/reindex
 
 - **정기 갱신은 cron 으로.** `wikilens sync ... && curl -XPOST .../admin/reindex` —
   `&&` 가 중요합니다. 싱크가 실패했는데 재색인이 돌면 절반만 반영됩니다.
-- **사용자 등록:** `POST /api/admin/acl/user?userKey=alice@corp` 에 권한 토큰 목록.
-  등록되지 않은 사용자는 아무것도 못 봅니다(실수로 전체 공개되는 것보다 안전한 쪽).
+- **사용자 등록을 잊지 마세요.** `POST /api/admin/acl/user?userKey=alice@corp` 에 권한
+  토큰 목록(`["@public"]` 등). 등록 전에는 색인이 멀쩡해도 **모든 검색이 빈손**입니다 —
+  fail-closed 라 실수로 전체 공개되는 것보다 안전한 쪽입니다. 실측: 같은 질의가
+  등록 전 0건, 등록 후 3건. 사용자 눈에는 "문서가 없다"로 보이므로 배포 직후
+  `--status` 의 `ACL_USERS` 를 꼭 확인하세요.
 - **백업 대상은 `state/trajectories.jsonl` 하나.** 색인은 언제든 재구축되지만
   탐색 궤적은 복구 불가능합니다.
 - **주의:** 현재 `sync` 는 Confluence 권한을 가져오지 않아 모든 페이지가 공개로
