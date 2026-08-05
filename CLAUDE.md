@@ -4,10 +4,10 @@ Confluence 위키를 미러링하고 **앵커 텍스트**(다른 문서들이 �
 색인해 어휘 격차를 메운다. 그 위에 에이전트 탐색 궤적을 축적하는 학습 레이어를 얹는다.
 
 ```
-cli/       Python  싱크·파싱·앵커 전치·로컬판        pytest 114 (로컬판 40 포함)
-server/    Kotlin  Lucene/Nori 색인 + 학습 레이어    51 테스트 / 배선 검증됨(Coway 실데이터)
-plugin/    local=스킬+커맨드 · client=MCP 도구 4개   프록시 33 (별도 실행) · 안내 포함
-contract/  교차 언어 계약 26개 + 공유 픽스처
+cli/       Python  싱크·파싱·앵커 전치·로컬판        pytest (로컬판 테스트도 여기)
+server/    Kotlin  Lucene/Nori 색인 + 학습 레이어    JUnit · 배선 검증됨(Coway 실데이터)
+plugin/    local=스킬+커맨드 · client=MCP 도구 4개   프록시 테스트는 별도 실행 · 안내 포함
+contract/  교차 언어 계약 + 공유 픽스처
 docs/      아키텍처 · 임베딩 설계 제안
 ```
 
@@ -17,17 +17,19 @@ docs/      아키텍처 · 임베딩 설계 제안
 ## 먼저 실행할 것
 
 ```bash
-./contract/shared_contract.sh                     # 교차 언어 계약 26개
-cd cli    && python -m pytest tests/ -q           # 114
-cd server && ./gradlew test                       # 51 (JUnit)
-python3 cli/tests/test_mcp_proxy.py               # 33 (pytest 가 안 걷는 독립 스크립트)
+./contract/shared_contract.sh                     # 교차 언어 계약
+cd cli    && python -m pytest tests/ -q           # 로컬판 플러그인 테스트 포함
+cd server && ./gradlew test                       # JUnit
+python3 cli/tests/test_mcp_proxy.py               # pytest 가 안 걷는 독립 스크립트
 ```
 
 `shared_contract.sh`가 특히 중요하다. Python과 Kotlin이 파일로만 연결되어 있어
 아래 계약이 어긋나면 **테스트는 통과하는데 런타임에 조용히 틀어진다.**
 
-**변경 후 이 셋이 통과하는지 반드시 확인할 것.** IntelliJ 를 쓴다면 실행 구성
-"3. 전체 검증"이 이 셋을 한 번에 돌린다.
+**개수는 일부러 안 적는다** — 늘 때마다 낡고, 돌리면 바로 나온다.
+
+**변경 후 이 넷이 통과하는지 반드시 확인할 것.** IntelliJ 를 쓴다면 실행 구성
+"3. 전체 검증"이 이 넷을 한 번에 돌린다.
 
 ---
 
