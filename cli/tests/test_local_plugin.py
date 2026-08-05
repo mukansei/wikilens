@@ -195,15 +195,146 @@ def test_shard_rule_matches_the_cli(tmp_path):
     assert status(tmp_path, WIKILENS_VAULT=v)["stray"] == 0
 
 
+# --------------------------------------------------------------- 자격증명 고정
+#
+# 자격증명이 환경변수 전용이라 `/wikilens-local:sync` 가 Claude Code 안에서 한 번도
+# 동작한 적이 없었다(2026-08-05 실측). env.sh 가 그 구멍을 막는다.
+
+def setup_vault(home: Path, *args: str, **env) -> subprocess.CompletedProcess:
+    e = {"HOME": str(home), "PATH": "/usr/bin:/bin"}
+    e.update({k: str(v) for k, v in env.items()})
+    return subprocess.run(
+        [sys.executable, str(PLUGIN / "scripts" / "setup_vault.py"), *args],
+        capture_output=True, text=True, env=e,
+    )
+
+
+def test_creds_none_when_nothing_is_set(tmp_path):
+    assert status(tmp_path)["creds"] == "none"
+
+
+def test_creds_shell_is_distinguished_from_file(tmp_path):
+    """`shell` 은 '지금은 되지만 다음 세션엔 안 된다' 는 뜻이라 `file` 과 달라야 한다."""
+    assert status(tmp_path, CONFLUENCE_URL="https://w.example.com")["creds"] == "shell"
+
+
+def test_capture_env_persists_credentials(tmp_path):
+    r = setup_vault(tmp_path, "--capture-env",
+                    CONFLUENCE_URL="https://w.example.com", CONFLUENCE_TOKEN="tok")
+    assert r.returncode == 0
+    assert status(tmp_path)["creds"] == "file"
+
+
+def test_capture_env_never_prints_the_token(tmp_path):
+    """값이 화면에 찍히면 로그·스크롤백에 남는다. 이름만 알린다."""
+    r = setup_vault(tmp_path, "--capture-env",
+                    CONFLUENCE_URL="https://w.example.com", CONFLUENCE_TOKEN="s3cr3t")
+    assert "s3cr3t" not in r.stdout + r.stderr
+    assert "CONFLUENCE_TOKEN" in r.stdout
+
+
+def test_env_file_is_not_world_readable(tmp_path):
+    setup_vault(tmp_path, "--capture-env",
+                CONFLUENCE_URL="https://w.example.com", CONFLUENCE_TOKEN="tok")
+    mode = (tmp_path / ".wikilens" / "env.sh").stat().st_mode & 0o777
+    assert mode == 0o600, f"토큰 파일 권한이 {oct(mode)}"
+
+
+def test_empty_prefix_survives_capture(tmp_path):
+    """
+    `CONFLUENCE_PREFIX=""` 는 Coway 필수 설정이고 **빈 문자열이 유효한 값**이다.
+    `.get()` 으로 판정하면 조용히 빠지고 인증이 실패한다.
+    """
+    setup_vault(tmp_path, "--capture-env", CONFLUENCE_URL="https://w.example.com",
+                CONFLUENCE_TOKEN="tok", CONFLUENCE_PREFIX="")
+    body = (tmp_path / ".wikilens" / "env.sh").read_text(encoding="utf-8")
+    assert "export CONFLUENCE_PREFIX=''" in body
+
+
+def test_capture_env_without_credentials_offers_a_template(tmp_path):
+    """대신 토큰을 넣어주지 않고, 사용자가 직접 실행할 명령을 내놔야 한다."""
+    r = setup_vault(tmp_path, "--capture-env")
+    assert r.returncode == 2
+    assert "CONFLUENCE_TOKEN=" in r.stdout
+    assert "umask 077" in r.stdout, "권한 없이 만들어지는 템플릿이다"
+
+
+def test_values_with_spaces_are_quoted(tmp_path):
+    """헤더 방식은 값에 공백이 들어간다 — 인용하지 않으면 source 가 깨진다."""
+    setup_vault(tmp_path, "--capture-env", CONFLUENCE_URL="https://w.example.com",
+                CONFLUENCE_HEADERS="X-Forwarded-User: me@corp")
+    env_sh = tmp_path / ".wikilens" / "env.sh"
+    got = subprocess.run(
+        ["sh", "-c", f'. "{env_sh}"; printf %s "$CONFLUENCE_HEADERS"'],
+        capture_output=True, text=True)
+    assert got.stdout == "X-Forwarded-User: me@corp"
+
+
+# --------------------------------------------------------------- CLI 실행 래퍼
+
+WRAPPER = PLUGIN / "scripts" / "wikilens_cli.sh"
+
+
+def test_wrapper_loads_credentials_from_env_file(tmp_path):
+    """래퍼의 존재 이유 — env.sh 를 실어야 CLI 가 자격증명을 본다."""
+    setup_vault(tmp_path, "--capture-env",
+                CONFLUENCE_URL="https://w.example.com", CONFLUENCE_TOKEN="tok")
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "wikilens").write_text('#!/bin/sh\nprintf %s "$CONFLUENCE_URL"\n')
+    (fake / "wikilens").chmod(0o755)
+
+    got = subprocess.run(
+        ["bash", str(WRAPPER), "doctor"], capture_output=True, text=True,
+        env={"HOME": str(tmp_path), "PATH": f"{fake}:/usr/bin:/bin"})
+    assert got.stdout == "https://w.example.com"
+
+
+def test_exported_value_beats_the_file(tmp_path):
+    """일회성 재정의가 파일에 덮이면 안 된다."""
+    setup_vault(tmp_path, "--capture-env", CONFLUENCE_URL="https://from-file")
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "wikilens").write_text('#!/bin/sh\nprintf %s "$CONFLUENCE_URL"\n')
+    (fake / "wikilens").chmod(0o755)
+
+    got = subprocess.run(
+        ["bash", str(WRAPPER), "doctor"], capture_output=True, text=True,
+        env={"HOME": str(tmp_path), "PATH": f"{fake}:/usr/bin:/bin",
+             "CONFLUENCE_URL": "https://from-shell"})
+    assert got.stdout == "https://from-shell"
+
+
+def test_wrapper_points_at_setup_when_cli_is_absent(tmp_path):
+    got = subprocess.run(
+        ["bash", str(WRAPPER), "doctor"], capture_output=True, text=True,
+        env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"})
+    assert got.returncode == 127
+    assert "setup" in got.stderr
+
+
+def test_commands_call_the_cli_through_the_wrapper():
+    """맨 `wikilens` 를 부르면 자격증명 없이 죽는다 — 커맨드가 래퍼를 거쳐야 한다."""
+    for name in ("sync",):
+        text = (PLUGIN / "commands" / f"{name}.md").read_text(encoding="utf-8")
+        assert "wikilens_cli.sh" in text, f"{name} 커맨드가 래퍼를 안 쓴다"
+
+
 # --------------------------------------------------------------- 스킬 정합성
 
 def test_skill_has_frontmatter_and_distinguishes_itself():
+    """
+    스킬 이름은 플러그인 이름과 같아야 한다. 예전엔 두 판의 스킬이 **둘 다**
+    `wikilens` 라 이름만으로는 구별이 불가능했고, description 이 유일한 단서였다.
+
+    이름을 갈라놓은 뒤에도 description 검사는 남긴다 — 둘은 상호 배타라 설명까지
+    같아지면 모델이 어느 쪽을 부를지 갈리고, 로컬은 볼트가 없어 실패한다.
+    """
     text = SKILL.read_text(encoding="utf-8")
     assert text.startswith("---\n")
     head = text.split("---", 2)[1]
-    assert "name: search" in head
-    # 서버판과 구별되지 않으면 둘 다 설치했을 때 모델이 잘못 고른다
-    assert "로컬" in head and "wikilens-local" not in head.split("description")[0]
+    assert "name: search" in head, "스킬 이름이 바뀌었다 — 계약과 어긋난다"
+    assert "로컬" in head, "서버판과 구별되는 표지가 description 에 없다"
 
 
 def test_skill_uses_plugin_root_not_hardcoded_path():

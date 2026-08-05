@@ -1,10 +1,10 @@
 ---
-description: WikiLens 로컬판을 설정합니다 — 볼트 위치 지정, CLI 설치, 첫 싱크
+description: WikiLens 로컬판을 설정합니다 — 자격증명 고정, 볼트 위치, CLI 설치, 첫 싱크
 ---
 
 WikiLens 로컬판 설정을 진행한다.
 
-절차 정본은 `${CLAUDE_PLUGIN_ROOT}/skills/wikilens/references/setup.md` 에 있다.
+절차 정본은 `${CLAUDE_PLUGIN_ROOT}/skills/search/references/setup.md` 에 있다.
 **그 파일을 먼저 Read 하고 거기 적힌 순서를 그대로 따를 것** — 절차를 여기 옮겨 적으면
 두 곳이 갈라진다.
 
@@ -16,8 +16,12 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vault_status.py"
 
 지켜야 할 것:
 
+- **이미 끝난 단계는 건너뛴다.** `CREDS=file`·`CLI=`·`STATUS=ok` 를 보고 판단한다.
+  전부 끝나 있으면 설정할 게 없다고 말하고 멈춘다.
 - **각 단계를 실행하기 전에 사용자에게 보여주고 승낙을 받는다.** 싱크는 Confluence에
   수천 건을 요청하고 수십 MB를 쓴다. `pip install` 과 전역 설정 변경도 마찬가지다.
+- **토큰을 대신 입력하지 않는다.** 셸에 이미 있으면 `--capture-env` 로 옮기고,
+  없으면 출력된 템플릿을 사용자가 직접 실행하게 한다.
 - 이미 볼트가 있으면 **옮기라고 하지 말고** 그 경로를 등록하기만 한다.
 - 마지막 `stats` 의 어휘 격차 비율은 **포장하지 말고 그대로 보고**한다. 낮으면 이 도구가
   값어치 없다는 뜻이고, 그 판정도 사용자에게 전달한다.

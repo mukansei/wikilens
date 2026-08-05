@@ -28,6 +28,7 @@ STALE_DAYS = 7
 CONFIG_DIR = Path.home() / ".wikilens"
 CONFIG_PATH = CONFIG_DIR / "config.json"
 DEFAULT_VAULT = CONFIG_DIR / "vault"
+ENV_PATH = CONFIG_DIR / "env.sh"
 
 # `cli/wikilens/layout.py` 의 값과 **반드시 같아야 한다.** 여기서 다시 정의하는 이유는
 # 로컬판이 CLI 없이도 동작해야 해서다(CLI 는 볼트 구축에만 필요하고, 검색·진단에는
@@ -130,6 +131,21 @@ def cli_source(cfg: dict) -> str:
     return ""
 
 
+def creds_state() -> str:
+    """
+    싱크에 쓸 Confluence 자격증명이 어디서 오는지.
+
+    `file` 이어야 다음 세션에도 `/wikilens-local:sync` 가 동작한다. `shell` 은 지금
+    이 셸에만 있다는 뜻이라, Claude Code 를 재시작하면 사라진다 — 검색은 되는데
+    갱신만 조용히 안 되는 상태가 되므로 구분해서 알린다.
+    """
+    if ENV_PATH.is_file():
+        return "file"
+    if os.environ.get("CONFLUENCE_URL"):
+        return "shell"
+    return "none"
+
+
 def _expected_rel(page_id: str, kind: str, ext: str) -> str:
     """`layout.rel_page_path()` 와 같은 규칙. 여기선 세 디렉터리에 일반화했다."""
     padded = page_id.rjust(SHARD_DEPTH * SHARD_WIDTH, "0")
@@ -215,6 +231,7 @@ def main(argv: list[str]) -> int:
     info = inspect(vault)
     info["cli"] = find_cli(cfg)
     info["cli_source"] = cli_source(cfg)
+    info["creds"] = creds_state()
 
     # 이상 파일은 검색을 막지 않으므로 STATUS 와 종료코드를 건드리지 않는다.
     # -1 은 "검사하지 않음"(볼트가 없거나 --no-scan).
@@ -233,6 +250,7 @@ def main(argv: list[str]) -> int:
         print(f"AGE_DAYS={info['age_days']}")
         print(f"CLI={info['cli']}")
         print(f"CLI_SOURCE={info['cli_source']}")
+        print(f"CREDS={info['creds']}")
         print(f"STRAY={info['stray']}")
         for rel in stray_paths:
             print(f"STRAY_PATH={rel}")
