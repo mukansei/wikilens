@@ -16,14 +16,15 @@ OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 붙이기 | 2
 
 ## 구성
 
-| 디렉터리 | 내용 | 언어 | 상태 |
+| 경로 | 내용 | 언어 | 상태 |
 |---|---|---|---|
 | **`cli/`** | Confluence 싱크 · 앵커 전치 · 로컬판 | Python | **74 테스트 통과** |
 | **`server/`** | Lucene/Nori 색인 · 학습 레이어 | Kotlin | **51 테스트 통과** / 배선 검증됨(Acme 실데이터) |
 | **`plugin/local/`** | 스킬만 (로컬판) | — | 형식 검증 |
 | **`plugin/server/`** | MCP 도구 4개 + 스킬 (서버판) | Python | **24 테스트 통과** |
 | `.claude-plugin/` | 마켓플레이스 매니페스트 (조직 배포용) | — | — |
-| `docs/` | 아키텍처 · 결정 로그 · 임베딩 설계 제안 | — | — |
+| `docs/` | 아키텍처 · 임베딩 설계 제안 | — | — |
+| `DECISIONS.md` | 뒤집힌 결정과 지우면 안 되는 것들 — 되돌리기 전에 읽으세요 | — | — |
 
 ---
 
@@ -172,7 +173,8 @@ Claude Code 2.1.220). 루트에 두면 `source` 가 `./plugin/server` 처럼 하
 Lucene Nori가 그 문제의 프로덕션 해답입니다. 색인이 서버에 없던 설계에서는
 이 근거가 없었고 실제로 Python이었습니다.
 
-자세한 근거는 [`docs/architecture.md`](docs/architecture.md) 참조.
+자세한 근거는 [`docs/architecture.md`](docs/architecture.md), 기각된 안과 뒤집힌
+결정의 이력은 [`DECISIONS.md`](DECISIONS.md) 참조.
 
 ---
 
