@@ -78,25 +78,16 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
    `S = 학습 힌트만` 마커는 도달 불가능한 분기였다. 색인에 없으면 `index.metaOf()`로
    폴백하고, `take(limit)`을 필터 **뒤로** 옮겨 해결(안 그러면 버려질 후보가 슬롯을 먹음).
    `SearchService`에 테스트가 하나도 없어서 오래 살아남았다.
-9. **자격증명이 환경변수 전용이라 로컬판 `sync`가 Claude Code 안에서 한 번도 안 됐음** —
-   `auth.py`/`sync.py`가 `os.environ`만 보는데, `export`는 그 셸에서만 산다. 사용자는
-   검색이 되니 정상이라 여기고 갱신만 자기 터미널에서 수동으로 하고 있었다(실측).
-   볼트 경로가 env를 버리고 `config.json`으로 간 것과 **같은 실패인데 자격증명만 빠져
-   있었다.** `~/.wikilens/env.sh`(600) + `scripts/wikilens_cli.sh` 래퍼로 해결.
-   래퍼 없이 맨 `wikilens`를 부르는 경로가 하나라도 남으면 그쪽만 조용히 죽으므로
-   `shared_contract.sh`가 막는다. 파일이 아니라 셸 스크립트인 이유는 사용자가
-   `source ~/.wikilens/env.sh`로 자기 터미널에서 그대로 재사용하기 때문이다.
-   **서버판도 같은 결함이었다** — `WIKILENS_SERVER`/`WIKILENS_USER`가 env 전용이라
-   Claude Code를 앱으로 띄우면 주소가 조용히 localhost 기본값이 되고 검색이 전부
-   빈다. 프록시가 `~/.wikilens/config.json`을 읽게 해서 맞췄다. 정본은
-   `~/.wikilens/` 하나로 통일 — **비밀 아닌 설정은 `config.json`, 토큰류는
-   `env.sh`(600)**.
+9. **설정이 환경변수 전용** → `export`는 그 셸에서만 산다. 로컬판은 검색만 되고
+   `sync`가 조용히 죽고(사용자는 정상인 줄 알고 수동 싱크를 하고 있었다), 서버판은
+   앱으로 띄우면 주소가 localhost 기본값이 돼 **전 결과가 빈다.** 정본은
+   `~/.wikilens/` — 비밀 아닌 설정은 `config.json`, 토큰류는 `env.sh`(600).
+   CLI 경로도 여기 적는다(venv·pipx 는 PATH 에 없다). 근거는 `DECISIONS.md` D10.
 10. **서버 ACL에 사용자가 0명이면 색인이 멀쩡해도 전원이 빈손** — fail-closed라
-   맞는 동작인데, 사용자 눈에는 "문서가 없다"와 구별되지 않는다. 실측으로 인과를
-   확인했다(같은 질의: 등록 전 0건 → `@public` 등록 후 3건). `/api/health`와
-   `/api/stats`는 서버에 원래 있었는데 **플러그인이 안 써서** 이 구분이 사용자에게
-   닿지 않았다. `wikilens_mcp.py --status`가 주소·식별자·도달·색인·ACL을 한 번에
-   보여준다.
+   맞는 동작인데 "문서가 없다"와 구별되지 않는다. 실측으로 인과 확인(같은 질의:
+   등록 전 0건 → `@public` 등록 후 3건). `wikilens_mcp.py --status`가 주소·식별자·
+   도달·색인·ACL을 한 번에 보여준다 — `/api/health`·`/api/stats`는 원래 있었는데
+   플러그인이 안 써서 사용자에게 안 닿았다.
 11. **`.mcp.json`이 미설정 env 를 리터럴로 주입** → 변수가 없으면 `"${WIKILENS_SERVER}"`
    문자열이 그대로 들어가 프록시 기본값을 덮어쓰고 `unknown url type` 으로 죽는다.
    env 를 넘기지 않고 프록시가 `os.environ` 에서 직접 읽게 한다.
@@ -122,22 +113,12 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
   읽기 59ms. 근거는 `DECISIONS.md` D7.
 - **`raw/` XHTML을 버리지 않는다** — 마크다운 변환은 매크로를 잃는다.
   변환기가 개선되면 재크롤 없이 재변환할 수 있다.
-- **서버판 플러그인 디렉터리가 `plugin/client/` 다** — `plugin/server/` 가 아니라.
-  저장소의 `server/` 가 **진짜 Kotlin 서버**라 같은 단어가 두 물건을 가리키게 된다.
-  플러그인은 서버가 아니라 그 서버의 클라이언트다. 플러그인 이름도 같은 이유로
-  `wikilens-server` 가 아니라 `wikilens-client` 이고, 덤으로 무표지 이름 `wikilens` 가
-  사라져 어느 쪽도 "기본"을 참칭하지 않는다(`client` 는 접속할 서버가 따로 있다는
-  전제까지 이름으로 알린다).
-- **스킬 이름이 플러그인 이름과 다르다** — 양쪽 다 `search` 다. 스킬은 `플러그인:스킬`
-  로 노출되므로 같게 두면 `wikilens-local:wikilens-local` 이 된다(실측). 플러그인
-  이름이 무엇인지를, 스킬 이름이 무엇을 하는지를 말한다 — 커맨드 `:setup`·`:sync` 와
-  같은 층위다. 네임스페이스가 다르므로 두 판의 스킬 이름이 같아도 충돌이 아니지만,
-  그래서 구별 근거가 다시 description 하나뿐이라 계약이 그것을 지킨다.
-- **`marketplace.json` 에 지금은 쓸모없는 `renames` 한 줄이 있다** —
-  `{"wikilens": "wikilens-client"}`. 구 이름으로 설치한 사람이 없어 기능적으로는
-  불필요하다. 플러그인 `name` 이 **불변 슬러그**라 게시 후 바꾸면 기존 설치가
-  `plugin-not-found` 로 깨지는데, 그 탈출구가 이 맵이다. 다음에 이름을 바꿀 사람에게
-  여기 적으라고 알리려고 남긴다. 근거는 `DECISIONS.md` D9.
+- **플러그인이 `wikilens-client`/`wikilens-local`, 디렉터리는 `plugin/client/`** —
+  저장소의 `server/`가 진짜 Kotlin 서버라 플러그인이 그 이름을 쓰면 한 단어가 두
+  물건을 가리킨다. 무표지 `wikilens`를 없애 어느 쪽도 "기본"을 참칭하지 않는다.
+- **스킬 이름은 플러그인 이름과 다르다(양쪽 다 `search`)** — 스킬은 `플러그인:스킬`로
+  노출돼 같게 두면 `wikilens-local:wikilens-local`이 된다(실측). 대신 구별 근거가
+  description 하나뿐이라 계약이 그것을 지킨다. 이름은 **게시 후 불변** — `DECISIONS.md` D9.
 - **마켓플레이스 매니페스트가 저장소 루트에 있다** — `.claude-plugin/marketplace.json`.
   하위 디렉터리로 옮기면 플러그인 `source` 상대 경로가 잘못 해석돼 설치가
   `"source type your Claude Code version does not support"` 로 실패한다(실측).
