@@ -1,6 +1,6 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="3. 전체 검증 (변경 후 이것부터)" type="ShConfigurationType">
-    <option name="SCRIPT_TEXT" value="set -e&#10;echo '=== 1/4 교차 언어 계약 ==='&#10;./contracts/shared_contracts.sh&#10;echo&#10;echo '=== 2/4 Python ==='&#10;(cd cli &amp;&amp; ./.venv/bin/python -m pytest tests/ -q)&#10;echo&#10;echo '=== 3/4 MCP 프록시 ==='&#10;(cd cli &amp;&amp; ./.venv/bin/python tests/test_mcp_proxy.py | tail -3)&#10;echo&#10;echo '=== 4/4 Kotlin JUnit ==='&#10;(cd server &amp;&amp; ./gradlew test -q) &amp;&amp; echo '  통과'&#10;echo&#10;echo '전부 통과.'" />
+    <option name="SCRIPT_TEXT" value="set -e&#10;echo '=== 1/4 교차 언어 계약 ==='&#10;./contract/shared_contract.sh&#10;echo&#10;echo '=== 2/4 Python ==='&#10;(cd cli &amp;&amp; ./.venv/bin/python -m pytest tests/ -q)&#10;echo&#10;echo '=== 3/4 MCP 프록시 ==='&#10;(cd cli &amp;&amp; ./.venv/bin/python tests/test_mcp_proxy.py | tail -3)&#10;echo&#10;echo '=== 4/4 Kotlin JUnit ==='&#10;(cd server &amp;&amp; ./gradlew test -q) &amp;&amp; echo '  통과'&#10;echo&#10;echo '전부 통과.'" />
     <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
     <option name="SCRIPT_PATH" value="" />
     <option name="SCRIPT_OPTIONS" value="" />

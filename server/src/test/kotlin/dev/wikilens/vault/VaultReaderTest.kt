@@ -9,18 +9,18 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * `contracts/shared-fixtures/mini-vault/`는 Python `cli/tests/test_contract_fixtures.py`와
+ * `contract/shared-fixture/`는 Python `cli/tests/test_contract_fixtures.py`와
  * **공유하는 정본 볼트**다. Python이 `build()`로 이 픽스처를 재생성해 형식을 검증하고,
  * 여기서는 같은 체크인된 산출물을 `VaultReader`가 그대로 소화하는지 확인한다.
  *
- * grep 기반 계약 검사(`shared_contracts.sh`)는 문자열이 존재하는지만 보므로 리팩터링에
+ * grep 기반 계약 검사(`shared_contract.sh`)는 문자열이 존재하는지만 보므로 리팩터링에
  * 취약하다. 이 테스트는 실제 파싱 동작을 검증하므로, Python이 `ancestors`나
  * `anchors.jsonl` 스키마를 조용히 바꾸면 여기서 시끄럽게 깨진다.
  */
 class VaultReaderTest {
 
     // server/ 가 Gradle 작업 디렉터리이므로 저장소 루트 기준 상대 경로.
-    private val fixtureRoot: Path = Path.of("..", "contracts", "shared-fixtures", "mini-vault")
+    private val fixtureRoot: Path = Path.of("..", "contract", "shared-fixture")
 
     private fun readFixture(): List<IndexedPage> {
         val acl = AclRegistry()
