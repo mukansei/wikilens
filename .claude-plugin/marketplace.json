@@ -5,6 +5,9 @@
   "owner": {
     "name": "Platform Team"
   },
+  "renames": {
+    "wikilens": "wikilens-client"
+  },
   "plugins": [
     {
       "name": "wikilens-client",
