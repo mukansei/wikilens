@@ -15,6 +15,9 @@ import json
 import sys
 from pathlib import Path
 
+# 경로 해석 로직은 vault_status 하나에만 둔다(복제하면 갈라진다). 다만 import 부산물인
+# __pycache__ 가 플러그인 디렉터리에 남으면 설치 시 함께 복사되므로 막는다.
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from vault_status import CONFIG_DIR, CONFIG_PATH, DEFAULT_VAULT, _config, cli_source  # noqa: E402
 
