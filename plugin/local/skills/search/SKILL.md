@@ -27,13 +27,19 @@ Bash: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vault_status.py"
 
 ```
 VAULT=/Users/me/wiki      ← 이 값을 아래 모든 경로 앞에 붙입니다
-STATUS=ok
+STATUS=ok                 ← 검색 가능 여부
 PAGES=2378
 AGE_DAYS=1
+CLI=/path/to/wikilens     ← 갱신에만 필요. 비어 있어도 검색은 됩니다
+CLI_SOURCE=/path/to/cli
+CREDS=file                ← file | shell | none
+STRAY=0
 ```
 
 **`STATUS`가 `ok` 또는 `stale`이면 곧바로 2단계로 갑니다.** 그게 거의 항상입니다.
-`stale`이면 답을 마친 뒤 "볼트가 N일 됐습니다, 갱신할까요?"를 덧붙이세요.
+`stale`이면 답을 마친 뒤 "볼트가 N일 됐습니다, 갱신할까요?"를 덧붙이세요 —
+단 `CREDS=none` 이거나 `CLI=` 가 비어 있으면 갱신이 불가능하니, 갱신을 제안하는
+대신 `/wikilens-local:setup` 이 필요하다고 알리세요. **되지도 않을 일을 제안하지 마세요.**
 
 그 밖의 값(`missing`·`unsynced`·`unbuilt`)은 볼트를 아직 쓸 수 없다는 뜻입니다.
 **셋 다 똑같이 처리하세요:**

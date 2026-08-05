@@ -67,8 +67,26 @@ api/         검색 융합 · 관측 · 배포 매니페스트
 이미 동작하고 테스트된 것을 다시 만들 이유가 없습니다.
 
 ```bash
-CONFLUENCE_TOKEN=<서비스계정> wikilens --root ./mirror-root sync --space PLATFORM
-curl -XPOST localhost:8787/api/admin/reindex
+CONFLUENCE_TOKEN=<서비스계정> wikilens --root ./mirror-root sync --space PLATFORM \
+  && curl -XPOST localhost:8787/api/admin/reindex
+```
+
+**`&&` 를 빼지 마세요.** 싱크가 실패했는데 재색인이 돌면 절반만 반영됩니다.
+
+그리고 **사용자를 등록해야 아무거나 보입니다.** ACL 이 fail-closed 라, 등록 전에는
+색인이 멀쩡해도 모든 검색이 빈손입니다 — 실측: 같은 질의가 등록 전 0건, `@public`
+등록 후 3건(색인 2,377건 상태에서).
+
+```bash
+curl -XPOST 'localhost:8787/api/admin/acl/user?userKey=alice@corp' \
+  -H 'Content-Type: application/json' -d '["@public"]'
+```
+
+배포 직후 상태 확인은 클라이언트 플러그인의 진단이 가장 빠릅니다 —
+주소·식별자·도달·색인 크기·등록 사용자 수를 한 번에 보여줍니다:
+
+```bash
+python3 plugin/client/mcp/wikilens_mcp.py --status
 ```
 
 ## API

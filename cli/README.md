@@ -44,6 +44,10 @@ wikilens --root ~/wiki sync --space PLATFORM --space ENG
 wikilens --root ~/wiki stats
 ```
 
+**`export` 는 그 셸에서만 삽니다.** 매번 다시 하지 않으려면 플러그인이 쓰는 것과 같은
+파일에 넣어두고 불러 쓰세요 — `~/.wikilens/env.sh` (권한 600, `source` 로 불러옵니다).
+`plugin/local/scripts/setup_vault.py --capture-env` 가 지금 셸의 값을 그대로 옮겨줍니다.
+
 `sync`는 원본만 받고 자동으로 `build`를 이어서 실행합니다.
 `build`는 순수 로컬이라 네트워크 없이 몇 번이든 다시 돌릴 수 있습니다.
 
@@ -63,8 +67,8 @@ $ wikilens stats
 ## Claude Code 플러그인
 
 ```bash
-/plugin marketplace add ./marketplace
-/plugin install wikilens-client@wikilens
+/plugin marketplace add <저장소 경로 또는 사내 git URL>
+/plugin install wikilens-local@wikilens
 /reload-plugins
 ```
 
@@ -96,8 +100,10 @@ derived/anchors.jsonl             별칭 원자료
 마크다운으로 내린 뒤에는 그 구조가 평평해집니다.
 
 **구조 서명을 본문과 분리합니다.** 오타 수정은 `pages/`만 바꾸고 `structure/`는
-그대로여야 합니다. 로컬판은 쓰지 않지만, 서버판이 `git diff -- structure/`로
-무효화 대상을 뽑습니다. 포맷을 나중에 고치면 전체 재크롤이 필요하므로 지금 고정합니다.
+그대로여야 합니다. **지금은 아무도 읽지 않습니다** — 증분 build 를 도입하는 순간
+`git diff -- structure/` 로 무효화 대상을 뽑는 데 쓰입니다(`version` 은 오탈자에도
+오르니 신호로 너무 거칩니다). 포맷을 나중에 고치면 전체 재크롤이 필요하므로 지금
+고정합니다. 근거는 `DECISIONS.md` D7.
 
 **결정적 직렬화.** 키 정렬 · 배열 정렬 · 고정 구분자 · `ensure_ascii=False`.
 아니면 아무것도 안 바뀌었는데 전체 파일이 변경으로 잡힙니다.
@@ -114,7 +120,7 @@ derived/anchors.jsonl             별칭 원자료
 - **랭킹하지 않습니다.** grep 순서가 전부입니다. IDF도 BM25도 없습니다
 - **세션 간 학습이 없습니다.** 1인 사용에서는 통계가 쌓이지 않아 어차피 무의미합니다
 
-이 셋이 필요하면 서버판 영역입니다 → **[../server/](../server/)** (프로덕션) 또는 **[PROTOTYPE-SERVER.md](PROTOTYPE-SERVER.md)** (탐색용)
+이 셋이 필요하면 서버판 영역입니다 → **[../server/](../server/)**.
 로컬판이 실제로 쓰이는지 먼저 확인하세요.
 
 ## 테스트
