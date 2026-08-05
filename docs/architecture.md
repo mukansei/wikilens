@@ -4,7 +4,7 @@
 
 > 이 문서는 **지금 구현된 것**만 적는다. 제안 단계인 것(임베딩 기반 학습 표현)은
 > [`embedding-learning-design.md`](embedding-learning-design.md) 에, 기각된 안과
-> 뒤집힌 결정은 [`DECISIONS.md`](DECISIONS.md) 에 있다.
+> 뒤집힌 결정은 [`../DECISIONS.md`](../DECISIONS.md) 에 있다.
 
 ## 두 판
 

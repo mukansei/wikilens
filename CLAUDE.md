@@ -8,8 +8,11 @@ cli/       Python  싱크·파싱·앵커 전치·로컬판        74 테스트
 server/    Kotlin  Lucene/Nori 색인 + 학습 레이어    51 테스트 / 배선 검증됨(Coway 실데이터)
 plugin/    local=스킬만 · server=MCP 도구 4개        24 테스트
 contract/  교차 언어 계약 검사 + 공유 픽스처
-docs/      아키텍처 · 결정 로그
+docs/      아키텍처 · 임베딩 설계 제안
 ```
+
+[`DECISIONS.md`](DECISIONS.md) — 뒤집힌 결정과 지우면 안 되는 것들.
+**되돌리기 전에 읽을 것.**
 
 ## 먼저 실행할 것
 
@@ -96,7 +99,7 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 - **`mirror/structure/`를 쓰는데 아무도 안 읽는다** — 지우지 말 것. 증분 build를
   도입하는 순간 필요해진다(`version`은 오탈자 수정에도 오르니 무효화 신호로 너무
   거칠고, 이게 "구조가 실제로 바뀐 페이지"만 골라낸다). 유지 비용은 362B/페이지 ·
-  읽기 59ms. 근거는 `docs/DECISIONS.md` D7.
+  읽기 59ms. 근거는 `DECISIONS.md` D7.
 - **`raw/` XHTML을 버리지 않는다** — 마크다운 변환은 매크로를 잃는다.
   변환기가 개선되면 재크롤 없이 재변환할 수 있다.
 - **마켓플레이스 매니페스트가 저장소 루트에 있다** — `.claude-plugin/marketplace.json`.
@@ -128,7 +131,7 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 
 완료: 실제 Confluence 연결(Coway CWDOMESTICDT, 2,375문서), Kotlin 배선 첫 빌드·재색인
 검증, 서버판 계층(TREE.md) 통합, Gate 폴백 임계값 완화(3→8토큰), 플러그인 설치 실동작
-확인(매니페스트를 저장소 루트로 이동). 근거는 git log와 `docs/`.
+확인(매니페스트를 저장소 루트로 이동). 근거는 git log와 `DECISIONS.md`.
 
 1. **ACL 수집** — `sync`가 권한을 전혀 가져오지 않아 모든 페이지가 `@public`이 된다.
    `/rest/api/content/{id}/restriction/byOperation`. **다중 사용자 배포 전 필수** —
@@ -149,4 +152,4 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 - **훅 부활 금지** (서버판). 읽기가 서버를 거치므로 서버가 궤적을 직접 본다.
   로컬판에는 보낼 서버가 없으므로 훅이 무의미하다.
 
-자세한 근거와 뒤집힌 결정들의 이력은 [`docs/DECISIONS.md`](docs/DECISIONS.md).
+자세한 근거와 뒤집힌 결정들의 이력은 [`DECISIONS.md`](DECISIONS.md).
