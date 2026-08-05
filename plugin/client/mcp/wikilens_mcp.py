@@ -14,29 +14,54 @@ Claude Code(stdio) ↔ WikiLens 서버(HTTP) 사이의 얇은 어댑터.
 import atexit
 import json
 import os
+import pathlib
 import signal
 import sys
 import urllib.error
 import urllib.request
 import uuid
 
-def _env(name: str, default: str = "") -> str:
-    """
-    확장되지 않은 `${VAR}` 리터럴을 미설정으로 취급한다.
+CONFIG_PATH = pathlib.Path.home() / ".wikilens" / "config.json"
+DEFAULT_SERVER = "http://127.0.0.1:8787"
 
-    플러그인 매니페스트가 env 를 넘길 때 변수가 없으면 값이 그대로 문자열
-    `"${WIKILENS_SERVER}"` 로 들어온다. 그대로 쓰면 URL 조립이 깨져
-    `unknown url type` 으로 죽는다 — 기본값으로 떨어지는 편이 낫다.
+
+def _config() -> dict:
+    try:
+        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+_CFG = _config()
+
+
+def _setting(name: str, key: str, default: str = "") -> tuple[str, str]:
+    """
+    설정 하나를 해석하고 **출처까지** 반환한다: env > config.json > 기본값.
+
+    config 를 읽는 이유: `export` 는 그 셸에서만 산다. Claude Code 를 앱으로 띄우면
+    환경이 통째로 비어 서버 주소가 조용히 localhost 기본값이 되고, `WIKILENS_USER`
+    가 없어 **모든 검색이 빈 결과**가 된다. 로컬판이 볼트 경로를 env 에서
+    `~/.wikilens/config.json` 으로 옮긴 것과 같은 이유다(같은 파일을 쓴다).
+
+    비밀이 아닌 설정만 여기 둔다 — 토큰류는 `~/.wikilens/env.sh`(600) 쪽이다.
+
+    확장되지 않은 `${VAR}` 리터럴은 미설정으로 친다. 매니페스트가 env 를 넘길 때
+    변수가 없으면 값이 문자열 `"${WIKILENS_SERVER}"` 로 들어와 URL 조립이 깨진다.
     """
     v = os.environ.get(name, "")
-    if not v or (v.startswith("${") and v.endswith("}")):
-        return default
-    return v
+    if v and not (v.startswith("${") and v.endswith("}")):
+        return v, "env"
+    v = _CFG.get(key)
+    if isinstance(v, str) and v:
+        return v, "config"
+    return default, "default"
 
 
-SERVER = _env("WIKILENS_SERVER", "http://127.0.0.1:8787").rstrip("/")
-USER = _env("WIKILENS_USER")
-TIMEOUT = float(_env("WIKILENS_TIMEOUT", "15"))
+SERVER, SERVER_ORIGIN = _setting("WIKILENS_SERVER", "server", DEFAULT_SERVER)
+SERVER = SERVER.rstrip("/")
+USER, USER_ORIGIN = _setting("WIKILENS_USER", "user")
+TIMEOUT = float(_setting("WIKILENS_TIMEOUT", "timeout", "15")[0])
 SESSION = f"mcp-{uuid.uuid4().hex[:12]}"
 
 PROTOCOL = "2025-06-18"
@@ -54,6 +79,57 @@ def post(path: str, payload: dict) -> dict:
     )
     with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
         return json.loads(r.read() or b"{}")
+
+
+def get(path: str) -> dict:
+    req = urllib.request.Request(f"{SERVER}{path}", method="GET")
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        return json.loads(r.read() or b"{}")
+
+
+def status() -> int:
+    """
+    설정과 서버 상태를 한 번에 진단한다 (로컬판 `vault_status.py` 에 대응).
+
+    서버는 `/api/health` 와 `/api/stats` 를 이미 갖고 있는데 플러그인이 쓰지 않아
+    사용자에게 닿지 않았다. 검색이 빈손일 때 원인이 셋(주소·식별자·색인) 중
+    무엇인지 구분할 방법이 없었다.
+    """
+    print(f"SERVER={SERVER} ({SERVER_ORIGIN})")
+    print(f"USER={USER or '(미설정)'} ({USER_ORIGIN})")
+    print(f"CONFIG={CONFIG_PATH if CONFIG_PATH.exists() else '(없음)'}")
+
+    try:
+        get("/api/health")
+        print("REACHABLE=yes")
+    except Exception as e:  # noqa: BLE001
+        print(f"REACHABLE=no ({e})")
+        if SERVER_ORIGIN == "default":
+            print("\n서버 주소를 설정한 적이 없어 기본값(로컬)을 보고 있습니다.")
+            print(f"  운영자에게 받은 주소를 {CONFIG_PATH} 의 \"server\" 에 넣으세요.")
+        return 2
+
+    ok = True
+    try:
+        s = get("/api/stats")
+        docs, users = s.get("indexedDocs", 0), s.get("aclUsers", 0)
+        print(f"INDEXED_DOCS={docs}")
+        print(f"ACL_USERS={users}")
+        if not docs:
+            print("\n색인이 비어 있습니다. 운영자에게 재색인을 요청하세요.")
+            ok = False
+        if not users:
+            print("\n등록된 사용자가 없습니다 — 아무도 아무것도 못 봅니다.")
+            print("  운영자가 POST /api/admin/acl/user 로 계정을 등록해야 합니다.")
+            ok = False
+    except Exception as e:  # noqa: BLE001
+        print(f"STATS=실패 ({e})")
+        ok = False
+
+    if not USER:
+        print(f"\nUSER 가 없어 모든 검색이 빈 결과가 됩니다. {CONFIG_PATH} 의 \"user\" 에 넣으세요.")
+        return 2
+    return 0 if ok else 2
 
 
 def end_session() -> None:
@@ -150,9 +226,10 @@ def call_tool(name: str, args: dict) -> tuple[str, bool]:
     # 그것을 "문서가 없다"로 오해하지 않도록 여기서 먼저 구분해 알린다.
     if not USER:
         return (
-            "WIKILENS_USER 환경변수가 설정되지 않았습니다. 서버 ACL 이 요청자를 식별하지 "
-            "못해 결과가 항상 비어 있습니다 (문서가 없는 것이 아닙니다).\n"
-            "  export WIKILENS_USER=<본인 식별자> 후 Claude Code 를 재시작하세요.",
+            "본인 식별자가 설정되지 않았습니다. 서버 ACL 이 요청자를 식별하지 못해 "
+            "결과가 항상 비어 있습니다 (문서가 없는 것이 아닙니다).\n"
+            f'  {CONFIG_PATH} 에 {{"user": "<본인 식별자>"}} 를 넣고 Claude Code 를 재시작하세요.\n'
+            "  (환경변수 WIKILENS_USER 로도 되지만 그 셸에서만 유지됩니다.)",
             True,
         )
     try:
@@ -212,7 +289,13 @@ def call_tool(name: str, args: dict) -> tuple[str, bool]:
             return ("해당 페이지를 찾을 수 없습니다.", True)
         return (f"서버 오류 {e.code}", True)
     except urllib.error.URLError as e:
-        return (f"WikiLens 서버에 연결할 수 없습니다 ({SERVER}): {e.reason}", True)
+        # 주소를 설정한 적이 없으면 조용히 localhost 를 보고 있다. "서버가 죽었다"와
+        # "주소를 안 넣었다"는 완전히 다른 문제인데 메시지가 같으면 구분이 안 된다.
+        hint = ""
+        if SERVER_ORIGIN == "default":
+            hint = (f"\n서버 주소를 설정한 적이 없어 기본값을 보고 있습니다. "
+                    f'{CONFIG_PATH} 에 {{"server": "<운영자에게 받은 주소>"}} 를 넣으세요.')
+        return (f"WikiLens 서버에 연결할 수 없습니다 ({SERVER}): {e.reason}{hint}", True)
     except Exception as e:  # noqa: BLE001
         return (f"오류: {e}", True)
 
@@ -255,8 +338,11 @@ def handle(msg: dict) -> None:
 
 
 def main() -> int:
+    if "--status" in sys.argv:
+        return status()
     if not USER:
-        print("WIKILENS_USER 환경변수가 필요합니다 (ACL 식별자)", file=sys.stderr)
+        print(f"본인 식별자가 필요합니다 (ACL). {CONFIG_PATH} 의 \"user\" 또는 "
+              "WIKILENS_USER 환경변수.", file=sys.stderr)
     # `for line in sys.stdin` 을 쓰면 안 된다. TextIOWrapper 의 read-ahead 버퍼가
     # 청크를 채울 때까지 블로킹해서 stdio 서버가 응답하지 못한다.
     # readline() 은 한 줄 단위로 즉시 반환한다.
