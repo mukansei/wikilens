@@ -6,7 +6,7 @@ Confluence 위키를 미러링하고 **앵커 텍스트**(다른 문서들이 �
 ```
 cli/       Python  싱크·파싱·앵커 전치·로컬판        93 테스트
 server/    Kotlin  Lucene/Nori 색인 + 학습 레이어    51 테스트 / 배선 검증됨(Coway 실데이터)
-plugin/    local=스킬+커맨드 · server=MCP 도구 4개   43 테스트
+plugin/    local=스킬+커맨드 · server=MCP 도구 4개   43 테스트 · 각 판 사용 안내 포함
 contract/  교차 언어 계약 검사 + 공유 픽스처
 docs/      아키텍처 · 임베딩 설계 제안
 ```
@@ -17,7 +17,7 @@ docs/      아키텍처 · 임베딩 설계 제안
 ## 먼저 실행할 것
 
 ```bash
-./contract/shared_contract.sh                     # 교차 언어 계약 20개
+./contract/shared_contract.sh                     # 교차 언어 계약 21개
 cd cli    && python -m pytest tests/ -q           # 93
 cd server && ./gradlew test                       # 51 (JUnit)
 ```

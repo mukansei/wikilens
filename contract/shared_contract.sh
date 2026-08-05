@@ -94,6 +94,10 @@ check "plugin/local 에 CLI 사본 없음 (캐시 청소 시 죽고, 사본 금�
 # 볼트 검색이 파이썬 환경 문제로 실패할 수 있게 된다.
 check "로컬판 스크립트가 표준 라이브러리만 씀 (검색 경로 의존성 0 유지)" \
   '! grep -rqE "^[[:space:]]*(import|from) (requests|bs4|markdownify)\b" plugin/local/scripts/'
+# 설치하면 손에 쥐는 건 플러그인 디렉터리뿐이다 — 저장소 README 는 볼 수 없다.
+# 사용자용 안내가 플러그인 **안에** 있어야 배포된다.
+check "두 판 모두 사용자용 안내를 플러그인에 포함 (설치자는 저장소를 못 본다)" \
+  '[ -f plugin/local/README.md ] && [ -f plugin/server/README.md ]'
 
 echo
 if [ "$fail" -eq 0 ]; then
