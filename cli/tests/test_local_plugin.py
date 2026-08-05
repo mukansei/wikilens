@@ -124,6 +124,77 @@ def test_exit_code_distinguishes_searchable_from_setup_needed(tmp_path):
     assert rc(WIKILENS_VAULT=FIXTURE) == 0        # 검색 가능
 
 
+# --------------------------------------------------------------- 샤드 밖 파일
+#
+# `sync` 는 이런 파일을 영원히 못 지운다 — 삭제 청소가 `.sync-state.json` 이 아는
+# 페이지 ID 만 훑기 때문이다. 아래 세 개는 실제 볼트에서 나온 것들이다(2026-08-05).
+
+def _vault_with(tmp_path, *rels: str) -> Path:
+    v = tmp_path / "v"
+    for rel in ("mirror/pages/20/00/200000001.md", "mirror/raw/20/00/200000001.xhtml", *rels):
+        p = v / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("", encoding="utf-8")
+    return v
+
+
+def test_clean_vault_has_no_strays(tmp_path):
+    v = _vault_with(tmp_path)
+    assert status(tmp_path, WIKILENS_VAULT=v)["stray"] == 0
+
+
+@pytest.mark.parametrize("rel", [
+    "mirror/pages/.DS_Store",                        # Finder 부산물
+    "mirror/pages/Project Task List.md",               # 제목이 파일명 (ID 계약 위반)
+    "mirror/pages/상위기획] 제품/서비스 개선](.md",      # 링크 텍스트를 경로로 삼음
+    "mirror/pages/20/00/200000002.xhtml",            # 확장자가 디렉터리와 안 맞음
+    "mirror/pages/99/99/200000001.md",               # 샤드 위치가 ID 와 안 맞음
+])
+def test_stray_file_is_detected(tmp_path, rel):
+    got = status(tmp_path, WIKILENS_VAULT=_vault_with(tmp_path, rel))
+    assert got["stray"] == 1
+    assert got["stray_paths"] == [rel[len("mirror/"):]]
+
+
+def test_strays_do_not_change_status_or_exit_code(tmp_path):
+    """이상 파일이 있어도 검색은 된다 — 진단이 검색을 막으면 안 된다."""
+    v = _vault_with(tmp_path, "mirror/pages/.DS_Store")
+    (v / "mirror" / ".sync-state.json").write_text(
+        json.dumps({"pages": {"200000001": {}}, "cursor": None}), encoding="utf-8")
+    (v / "ALIASES.md").write_text("# ALIASES\n", encoding="utf-8")
+
+    got = status(tmp_path, WIKILENS_VAULT=v)
+    assert got["stray"] == 1
+    assert got["status"] == "ok"
+
+    rc = subprocess.run(
+        [sys.executable, str(PLUGIN / "scripts" / "vault_status.py")],
+        capture_output=True,
+        env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin", "WIKILENS_VAULT": str(v)},
+    ).returncode
+    assert rc == 0
+
+
+def test_missing_vault_reports_scan_skipped(tmp_path):
+    """볼트가 없으면 0건이 아니라 '검사 안 함'이어야 한다 — 둘은 다른 뜻이다."""
+    assert status(tmp_path)["stray"] == -1
+
+
+def test_shard_rule_matches_the_cli(tmp_path):
+    """
+    `vault_status` 가 샤딩 규칙을 다시 정의하므로 CLI 와 갈라질 수 있다.
+    갈라지면 정상 파일이 전부 이상 파일로 잡힌다 — 실제 `layout` 으로 대조해 막는다.
+    """
+    from wikilens import layout
+
+    v = tmp_path / "v"
+    for pid in ("200000001", "7", "123456789012"):
+        p = v / layout.rel_page_path(pid)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("", encoding="utf-8")
+    assert status(tmp_path, WIKILENS_VAULT=v)["stray"] == 0
+
+
 # --------------------------------------------------------------- 스킬 정합성
 
 def test_skill_has_frontmatter_and_distinguishes_itself():
