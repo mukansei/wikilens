@@ -123,6 +123,11 @@ check "로컬판 스크립트가 표준 라이브러리만 씀 (검색 경로 �
 # 사용자용 안내가 플러그인 **안에** 있어야 배포된다.
 check "두 판 모두 사용자용 안내를 플러그인에 포함 (설치자는 저장소를 못 본다)" \
   '[ -f plugin/local/README.md ] && [ -f plugin/client/README.md ]'
+# 자격증명은 환경변수 전용이라(auth.py, sync.py) Claude Code 를 띄운 셸에 export 가 없으면
+# CLI 가 그대로 죽는다. 래퍼가 ~/.wikilens/env.sh 를 실어 그 구멍을 막으므로, 맨 wikilens 를
+# 부르는 경로가 하나라도 남으면 그쪽만 조용히 실패한다 (2026-08-05 실측).
+check "로컬판이 CLI 를 항상 래퍼로 호출 (맨 wikilens 는 자격증명 없이 죽음)" \
+  '[ -f plugin/local/scripts/wikilens_cli.sh ] && ! grep -rnE "(^|[\`\" '"'"'])wikilens (doctor|stats|--root|sync|build)" plugin/local/'
 
 echo
 if [ "$fail" -eq 0 ]; then

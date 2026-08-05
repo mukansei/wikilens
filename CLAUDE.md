@@ -77,7 +77,15 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
    `S = 학습 힌트만` 마커는 도달 불가능한 분기였다. 색인에 없으면 `index.metaOf()`로
    폴백하고, `take(limit)`을 필터 **뒤로** 옮겨 해결(안 그러면 버려질 후보가 슬롯을 먹음).
    `SearchService`에 테스트가 하나도 없어서 오래 살아남았다.
-9. **`.mcp.json`이 미설정 env 를 리터럴로 주입** → 변수가 없으면 `"${WIKILENS_SERVER}"`
+9. **자격증명이 환경변수 전용이라 로컬판 `sync`가 Claude Code 안에서 한 번도 안 됐음** —
+   `auth.py`/`sync.py`가 `os.environ`만 보는데, `export`는 그 셸에서만 산다. 사용자는
+   검색이 되니 정상이라 여기고 갱신만 자기 터미널에서 수동으로 하고 있었다(실측).
+   볼트 경로가 env를 버리고 `config.json`으로 간 것과 **같은 실패인데 자격증명만 빠져
+   있었다.** `~/.wikilens/env.sh`(600) + `scripts/wikilens_cli.sh` 래퍼로 해결.
+   래퍼 없이 맨 `wikilens`를 부르는 경로가 하나라도 남으면 그쪽만 조용히 죽으므로
+   `shared_contract.sh`가 막는다. 파일이 아니라 셸 스크립트인 이유는 사용자가
+   `source ~/.wikilens/env.sh`로 자기 터미널에서 그대로 재사용하기 때문이다.
+10. **`.mcp.json`이 미설정 env 를 리터럴로 주입** → 변수가 없으면 `"${WIKILENS_SERVER}"`
    문자열이 그대로 들어가 프록시 기본값을 덮어쓰고 `unknown url type` 으로 죽는다.
    env 를 넘기지 않고 프록시가 `os.environ` 에서 직접 읽게 한다.
 

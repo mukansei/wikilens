@@ -16,17 +16,20 @@ WikiLens는 **다른 문서들이 각 페이지를 링크할 때 쓴 표현**(�
 
 ```
 /plugin marketplace add <저장소 경로 또는 git URL>
-/plugin install wikilens-local@wikilens-tools
+/plugin install wikilens-local@wikilens
 /reload-plugins
 ```
 
-이어서 설정을 시작합니다:
+그다음은 **그냥 물어보면 됩니다.** 설정이 안 돼 있으면 Claude가 알아서 알아채고
+지금 할지 물어봅니다 — 커맨드를 외울 필요 없습니다.
 
 ```
-/wikilens-local:setup
+나: 우리 회사 배포 절차 문서 어디 있어?
+Claude: (일반 지식으로 답변) …
+        사내 위키에서도 찾아보려면 설정이 필요합니다. 지금 할까요? (약 5분)
 ```
 
-Claude가 순서대로 안내합니다. **각 단계는 물어보고 진행하니** 그냥 따라가면 됩니다.
+직접 시작하고 싶으면 `/wikilens-local:setup` 을 부르면 됩니다.
 
 ### 미리 준비할 것
 
@@ -35,17 +38,21 @@ Claude가 순서대로 안내합니다. **각 단계는 물어보고 진행하�
 | `CONFLUENCE_URL` | 예: `https://wiki.mycompany.com` |
 | 인증 토큰 | 대개 **개인 액세스 토큰(PAT)** 하나면 됩니다 |
 
-셸에 export 해두세요:
+setup이 이 값들을 `~/.wikilens/env.sh`(권한 600)에 넣어줍니다. **한 번만 하면 됩니다** —
+`.zshrc` 에 export 해두는 것과 달리 Claude Code 안에서도 그대로 동작합니다.
+
+셸에 이미 export 해두셨다면 그 값을 그대로 옮기고, 아니면 직접 채울 파일을 만들어
+줍니다(**토큰은 본인만 입력합니다**). 자기 터미널에서 CLI를 직접 쓸 때도 같은 파일을
+씁니다:
 
 ```bash
-export CONFLUENCE_URL=https://wiki.mycompany.com
-export CONFLUENCE_TOKEN=<발급받은 PAT>
+source ~/.wikilens/env.sh
 ```
 
 SSO를 쓰는 회사여도 대개 PAT가 따로 동작합니다. 안 되면 setup이 다른 방식
 (Cloud API 토큰 · 사내 IAM · 리버스 프록시)을 안내합니다.
 
-> **Acme(`wiki.example.com`)라면** `export CONFLUENCE_PREFIX=""` 도 함께 필요합니다.
+> **Acme(`wiki.example.com`)라면** `CONFLUENCE_PREFIX=""` 도 함께 필요합니다.
 > 사내 게이트웨이 구성 때문에 자동 판별이 잘못된 주소를 고릅니다.
 
 ### 첫 싱크는 시간이 걸립니다
@@ -66,12 +73,10 @@ Claude가 알아서 볼트를 뒤집니다. 사내 은어나 축약어를 그대
 
 ### 갱신
 
-```
-/wikilens-local:sync
-```
+위키가 바뀌어도 볼트는 그대로입니다. 볼트가 오래되면 Claude가 답변 끝에
+"볼트가 N일 됐습니다, 갱신할까요?"라고 물어봅니다 — 승낙만 하면 됩니다.
 
-위키가 바뀌어도 볼트는 그대로이므로 가끔 돌려주세요. 볼트가 오래되면 Claude가
-"N일 됐다"고 함께 알려줍니다.
+직접 부르려면 `/wikilens-local:sync`, 스페이스를 지정하려면 `/wikilens-local:sync KEY`.
 
 ## 알아둘 것
 
@@ -94,6 +99,7 @@ rm -rf ~/.wikilens        # 볼트 위치를 바꿨다면 그 경로
 |---|---|
 | 검색 결과가 계속 비어 있음 | `/wikilens-local:sync` 로 볼트가 있는지 확인 |
 | "볼트를 찾을 수 없다" | `/wikilens-local:setup` 을 다시 실행 |
+| 갱신만 안 됨 (검색은 됨) | 자격증명이 셸에만 있는 경우입니다. `/wikilens-local:setup` 이 `~/.wikilens/env.sh` 에 고정해 줍니다 |
 | 프로젝트마다 읽기 승인을 물음 | setup 마지막의 권한 등록을 건너뛴 경우입니다. 다시 실행하세요 |
 | 문서는 있는데 안 나옴 | 링크가 하나도 없는 '고아' 문서일 수 있습니다. "OO 영역 문서 목록 보여줘" 처럼 물으면 계층으로 찾습니다 |
 | `STRAY=` 가 0이 아니라고 함 | 볼트에 규칙 밖 파일이 섞인 것입니다(`.DS_Store` 등). 싱크로는 안 지워지니 알려준 경로를 `rm` 하세요 |
@@ -101,12 +107,12 @@ rm -rf ~/.wikilens        # 볼트 위치를 바꿨다면 그 경로
 현재 상태를 직접 보려면:
 
 ```bash
-python3 ~/.claude/plugins/cache/wikilens-tools/wikilens-local/*/scripts/vault_status.py
+python3 ~/.claude/plugins/cache/wikilens/wikilens-local/*/scripts/vault_status.py
 ```
 
 ## 서버판과 헷갈리지 마세요
 
-`wikilens`(서버판)와 **둘 중 하나만** 설치하세요. 둘 다 깔면 Claude가 어느 쪽을 쓸지
+`wikilens-client`(서버판)와 **둘 중 하나만** 설치하세요. 둘 다 깔면 Claude가 어느 쪽을 쓸지
 헷갈립니다.
 
 | | 로컬판 (이것) | 서버판 |
