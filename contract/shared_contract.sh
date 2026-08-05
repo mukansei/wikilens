@@ -95,6 +95,30 @@ for e in mp[\"plugins\"]:
     assert pj[\"version\"]==e[\"version\"], e[\"name\"]
     assert sk==nm==[\"search\"], (e[\"name\"], sk, nm)
 "'
+# 설치는 **버전별 캐시로 복사**된다. 버전을 안 올리고 소스만 고치면 캐시가 그대로 남아
+# 설치된 플러그인이 조용히 구버전으로 동작한다 — 버전 번호가 같으니 아무도 의심하지
+# 않는다. 실제로 그 상태로 CLI 경로 해석이 통째로 반영 안 돼 있었다(2026-08-05 실측:
+# 소스는 되는데 설치본은 `CLI=` 가 비고 래퍼가 CLI 를 못 찾았다).
+check "설치된 플러그인이 소스와 같은 내용 (버전 동일 + 내용 상이 = 조용한 구버전)" \
+  'python3 -c "
+import json,pathlib,filecmp,sys
+mp=json.loads(pathlib.Path(\".claude-plugin/marketplace.json\").read_text())
+inst=pathlib.Path.home()/\".claude/plugins/installed_plugins.json\"
+if not inst.exists(): sys.exit(0)
+have=json.loads(inst.read_text())[\"plugins\"]
+for e in mp[\"plugins\"]:
+    for rec in have.get(e[\"name\"]+\"@\"+mp[\"name\"], []):
+        if rec[\"version\"] != e[\"version\"]: continue   # 버전이 다르면 재설치하면 될 일
+        cache=pathlib.Path(rec[\"installPath\"])
+        src=pathlib.Path(e[\"source\"].lstrip(\"./\"))
+        d=filecmp.dircmp(str(cache), str(src), ignore=[\"__pycache__\"])
+        def diffs(c):
+            out=list(c.diff_files)
+            for s in c.subdirs.values(): out += diffs(s)
+            return out
+        bad=diffs(d)
+        assert not bad, (e[\"name\"], e[\"version\"], bad[:3])
+"'
 # 플러그인 `name` 은 **불변 슬러그**다. 사용자가 그 이름으로 설치해 두므로 바꾸면
 # 기존 설치가 `plugin-not-found` 로 깨진다 (공식 마켓플레이스 README 가 명시).
 # 탈출구가 `renames` 맵이고, 로더가 이걸 읽어 옛 슬러그를 새 슬러그로 다시 쓴다.
