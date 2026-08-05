@@ -8,6 +8,10 @@ __pycache__/
 # (git 은 제외된 디렉터리로 내려가지 않으므로 `.idea/*` 로 열어둔 뒤 예외를 준다)
 .idea/*
 !.idea/runConfigurations/
+# Claude Code — 개인 승인 목록만 무시한다. 팀 공용 설정(.claude/settings.json)과
+# 커맨드·스킬은 공유되어야 하므로 디렉터리째 무시하면 안 된다.
+# (지금은 전역 ~/.config/git/ignore 가 막고 있는데, 그 규칙은 클론과 함께 가지 않는다)
+.claude/settings.local.json
 # Kotlin / Gradle
 .gradle/
 build/
