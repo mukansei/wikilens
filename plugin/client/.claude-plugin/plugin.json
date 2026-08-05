@@ -1,6 +1,11 @@
 {
-  "name": "wikilens",
+  "name": "wikilens-client",
   "description": "사내 Confluence 위키를 검색하고 읽습니다. 앵커 텍스트 색인으로 어휘 격차를 메웁니다.",
   "version": "0.1.0",
-  "keywords": ["confluence", "wiki", "search", "documentation"]
+  "keywords": [
+    "confluence",
+    "wiki",
+    "search",
+    "documentation"
+  ]
 }

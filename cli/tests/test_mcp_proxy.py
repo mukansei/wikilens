@@ -15,7 +15,7 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-PROXY = Path(__file__).resolve().parents[2] / "plugin" / "server" / "mcp" / "wikilens_mcp.py"
+PROXY = Path(__file__).resolve().parents[2] / "plugin" / "client" / "mcp" / "wikilens_mcp.py"
 PORT = 8899
 
 received: list[tuple[str, dict]] = []
@@ -106,7 +106,7 @@ def main() -> int:
         check("응답 형식", r and r.get("jsonrpc") == "2.0" and r.get("id") == 1)
         check("프로토콜 버전 반환", r["result"]["protocolVersion"] == "2025-06-18")
         check("tools capability 선언", "tools" in r["result"]["capabilities"])
-        check("serverInfo", r["result"]["serverInfo"]["name"] == "wikilens")
+        check("serverInfo", r["result"]["serverInfo"]["name"] == "wiki")
 
         rpc(proc, {"jsonrpc": "2.0", "method": "notifications/initialized"})
 

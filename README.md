@@ -13,7 +13,7 @@ OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 붙이기 | 2
 찾으려는 문서가 아닙니다. 이 차이가 이 프로젝트의 출발점입니다.
 
 > **이 문서는 만드는 사람을 위한 것입니다.** 설치해서 쓰기만 한다면
-> [로컬판 안내](plugin/local/README.md) 또는 [서버판 안내](plugin/server/README.md)를 보세요.
+> [로컬판 안내](plugin/local/README.md) 또는 [서버판 안내](plugin/client/README.md)를 보세요.
 
 ---
 
@@ -24,7 +24,7 @@ OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 붙이기 | 2
 | **`cli/`** | Confluence 싱크 · 앵커 전치 · 로컬판 | Python | **93 테스트 통과** |
 | **`server/`** | Lucene/Nori 색인 · 학습 레이어 | Kotlin | **51 테스트 통과** / 배선 검증됨(Acme 실데이터) |
 | **`plugin/local/`** | 스킬 + 커맨드 2개 + [사용 안내](plugin/local/README.md) | Python | **19 테스트 통과** |
-| **`plugin/server/`** | MCP 도구 4개 + 스킬 + [사용 안내](plugin/server/README.md) | Python | **24 테스트 통과** |
+| **`plugin/client/`** | MCP 도구 4개 + 스킬 + [사용 안내](plugin/client/README.md) | Python | **24 테스트 통과** |
 | `.claude-plugin/` | 마켓플레이스 매니페스트 (조직 배포용) | — | — |
 | `docs/` | 아키텍처 · 임베딩 설계 제안 | — | — |
 | `DECISIONS.md` | 뒤집힌 결정과 지우면 안 되는 것들 — 되돌리기 전에 읽으세요 | — | — |
@@ -100,7 +100,7 @@ export CONFLUENCE_PREFIX=""      # Server/DC 강제 (자동판별 건너뜀)
 
 ```
 /plugin marketplace add ./
-/plugin install wikilens-local@wikilens-tools
+/plugin install wikilens-local@wikilens
 /wikilens-local:setup
 ```
 
@@ -145,7 +145,7 @@ export WIKILENS_USER=alice@corp
 ```
 ```
 /plugin marketplace add ./          # 또는 팀 배포 시 저장소의 git URL
-/plugin install wikilens@wikilens-tools
+/plugin install wikilens-client@wikilens
 /reload-plugins
 ```
 
@@ -153,10 +153,10 @@ export WIKILENS_USER=alice@corp
 하위 디렉터리(`marketplace/.claude-plugin/…`)에 두고 그 경로를 `add` 하면 등록은 되지만
 설치가 `"source type your Claude Code version does not support"` 로 실패합니다 —
 플러그인 `source` 의 상대 경로가 기대와 다르게 해석되기 때문입니다(2026-08-04 실측,
-Claude Code 2.1.220). 루트에 두면 `source` 가 `./plugin/server` 처럼 하위 경로여도
+Claude Code 2.1.220). 루트에 두면 `source` 가 `./plugin/client` 처럼 하위 경로여도
 정상 동작합니다.
 
-`source` 가 `plugin/server`·`plugin/local` 을 직접 가리키므로 **저장소 안에는** 사본이
+`source` 가 `plugin/client`·`plugin/local` 을 직접 가리키므로 **저장소 안에는** 사본이
 없습니다. 다만 **설치는 버전별 캐시로 복사**되므로, 플러그인을 고쳐도 이미 설치된 것에는
 자동 반영되지 않습니다(실측). 고친 뒤에는 재설치하거나 version 을 올려야 합니다.
 

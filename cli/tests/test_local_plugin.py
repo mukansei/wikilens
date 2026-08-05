@@ -23,8 +23,8 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 PLUGIN = REPO / "plugin" / "local"
-SKILL = PLUGIN / "skills" / "wikilens" / "SKILL.md"
-SETUP_REF = PLUGIN / "skills" / "wikilens" / "references" / "setup.md"
+SKILL = PLUGIN / "skills" / "search" / "SKILL.md"
+SETUP_REF = PLUGIN / "skills" / "search" / "references" / "setup.md"
 FIXTURE = REPO / "contract" / "shared-fixture"
 
 
@@ -201,7 +201,7 @@ def test_skill_has_frontmatter_and_distinguishes_itself():
     text = SKILL.read_text(encoding="utf-8")
     assert text.startswith("---\n")
     head = text.split("---", 2)[1]
-    assert "name: wikilens" in head
+    assert "name: search" in head
     # 서버판과 구별되지 않으면 둘 다 설치했을 때 모델이 잘못 고른다
     assert "로컬" in head and "wikilens-local" not in head.split("description")[0]
 
