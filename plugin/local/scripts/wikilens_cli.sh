@@ -26,21 +26,22 @@ if [ -f "$ENV_FILE" ]; then
   [ -n "$_url" ] && export CONFLUENCE_URL="$_url"
 fi
 
-if command -v wikilens >/dev/null 2>&1; then
-  exec wikilens "$@"
+# CLI 위치는 **직접 찾지 않는다.** `vault_status.py` 가 유일한 해석처이고
+# (`config.json` 의 `cli` > PATH > 설치된 모듈), 여기서 각자 찾으면 스킬은 "CLI 있음"
+# 이라 하는데 래퍼는 못 찾는 상태가 생긴다. 한 줄에 argv 하나씩 받아 공백이 든 경로도
+# 안전하게 복원한다.
+CLI=()
+while IFS= read -r part; do
+  [ -n "$part" ] && CLI+=("$part")
+done < <(python3 "$(dirname "$0")/vault_status.py" --cli 2>/dev/null)
+
+if [ ${#CLI[@]} -eq 0 ]; then
+  echo "wikilens CLI 를 찾을 수 없습니다. /wikilens-local:setup 을 실행하세요." >&2
+  echo "  (venv·pipx 에 설치했다면 PATH 에 없을 수 있습니다 —" >&2
+  echo "   setup_vault.py --cli-path <경로> 로 실제 경로를 기록하세요.)" >&2
+  exit 127
 fi
 
-# 설치는 됐는데 콘솔 스크립트가 PATH 에 없는 경우.
-#
-# 프로브를 `/` 에서 돌리는 이유: 파이썬은 cwd 를 sys.path 에 넣으므로, 이 저장소 안에서
-# 실행하면 `cli/wikilens/` 소스 디렉터리를 보고 "설치됨"으로 오판한다. 그러면 의존성이
-# 없는 인터프리터로 실행돼 `No module named 'bs4'` 로 죽는다(테스트로 잡은 실제 오판).
-# `wikilens` 가 아니라 `wikilens.cli` 를 import 하는 것도 의도적이다 — 의존성까지
-# 딸려 들어오므로 "import 는 되는데 실행은 안 되는" 상태를 걸러낸다.
-if (cd / && python3 -c 'import wikilens.cli') >/dev/null 2>&1; then
-  # 같은 이유로 실행 때도 cwd 를 sys.path 에서 뺀다(3.11+; 그 이하에서는 무시된다).
-  PYTHONSAFEPATH=1 exec python3 -m wikilens.cli "$@"
-fi
-
-echo "wikilens CLI 를 찾을 수 없습니다. /wikilens-local:setup 을 실행하세요." >&2
-exit 127
+# 모듈 실행으로 떨어졌을 때 cwd 가 sys.path 에 끼면 이 저장소의 `cli/wikilens/` 소스를
+# 집어 의존성 없는 인터프리터로 돌게 된다(3.11+ 에서만 유효, 그 이하에서는 무시된다).
+PYTHONSAFEPATH=1 exec "${CLI[@]}" "$@"

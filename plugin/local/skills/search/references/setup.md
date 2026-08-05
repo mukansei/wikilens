@@ -71,6 +71,18 @@ CLI는 볼트를 **만드는 데만** 필요하다(검색은 파일만 읽으므
 3. 둘 다 비어 있으면 **사내 git URL을 사용자에게 요청**한 뒤
    `setup_vault.py --cli-source "git+<URL>#subdirectory=cli"` 로 기록
 
+**설치했는데도 `CLI=(못 찾음)` 이면 venv·pipx 안에 있는 것이다.** 그 셸을 활성화하지
+않으면 PATH 에도 없고 기본 python 으로 import 도 안 되는데, Claude Code 가 띄우는
+셸이 정확히 그 상태다. 실제 경로를 `config.json` 에 기록해야 한다:
+
+```
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/setup_vault.py" --cli-path auto
+```
+
+`auto` 는 `<CLI_SOURCE>/.venv/bin/wikilens` 를 찾아본다. 못 찾으면 경로를 직접 준다
+(`--cli-path /path/to/bin/wikilens`). 기록해두면 이후 래퍼가 그 경로로 실행한다 —
+**PATH 에 의존하지 않는다.**
+
 ## 3. 스페이스 고르고 싱크
 
 ```
