@@ -118,7 +118,11 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
   물건을 가리킨다. 무표지 `wikilens`를 없애 어느 쪽도 "기본"을 참칭하지 않는다.
 - **스킬 이름은 플러그인 이름과 다르다(양쪽 다 `search`)** — 스킬은 `플러그인:스킬`로
   노출돼 같게 두면 `wikilens-local:wikilens-local`이 된다(실측). 대신 구별 근거가
-  description 하나뿐이라 계약이 그것을 지킨다. 이름은 **게시 후 불변** — `DECISIONS.md` D9.
+  description 하나뿐이라 계약이 그것을 지킨다.
+- **`marketplace.json`의 `renames` 는 지금 아무 일도 안 한다. 지우지 말 것** —
+  플러그인 이름은 게시 후 **불변**이고(바꾸면 기존 설치가 `plugin-not-found`),
+  그 유일한 탈출구다. 다음에 개명할 사람에게 적을 자리를 알리려고 남긴다.
+  **계약이 못 잡는다** — 통째로 지우면 조용히 통과한다. 근거는 `DECISIONS.md` D9.
 - **마켓플레이스 매니페스트가 저장소 루트에 있다** — `.claude-plugin/marketplace.json`.
   하위 디렉터리로 옮기면 플러그인 `source` 상대 경로가 잘못 해석돼 설치가
   `"source type your Claude Code version does not support"` 로 실패한다(실측).
