@@ -136,18 +136,25 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 ## 다음 작업 (우선순위)
 
 완료: 실제 Confluence 연결(Acme CWDOMESTICDT, 2,375문서), Kotlin 배선 첫 빌드·재색인
-검증, 서버판 계층(TREE.md) 통합, Gate 폴백 임계값 완화(3→8토큰), 플러그인 설치 실동작
-확인(매니페스트를 저장소 루트로 이동). 근거는 git log와 `DECISIONS.md`.
+검증, 서버판 계층(TREE.md) 통합, Gate 폴백 임계값 완화(3→8토큰), 두 판 모두 플러그인
+설치 실동작 확인, 로컬판 배포 가능화(D8). 근거는 git log와 `DECISIONS.md`.
+
+**지금 팀에 배포한다면 로컬판이다.** 서버판은 ACL 수집 전까지 제3자를 붙이면 안 되는데,
+로컬판은 각자 자기 토큰으로 싱크해 그 문제가 설계상 없다. 대가는 Confluence 부하가
+사용자 수에 비례하는 것이라 소규모 팀에 한한다.
 
 1. **ACL 수집** — `sync`가 권한을 전혀 가져오지 않아 모든 페이지가 `@public`이 된다.
-   `/rest/api/content/{id}/restriction/byOperation`. **다중 사용자 배포 전 필수** —
+   `/rest/api/content/{id}/restriction/byOperation`. **서버판 다중 사용자 배포 전 필수** —
    지금 상태로 제3자를 서버판에 붙이면 그 사람이 Confluence에서 못 보는 문서까지 노출된다.
    권한 변경은 `lastModified`를 안 건드리므로 콘텐츠 싱크와 분리해 더 자주 돌려야 한다.
+   (로컬판에는 해당 없음 — 개인 토큰이 곧 권한 범위다.)
 2. **싱크 자동화** — 현재 `sync` → `/admin/reindex`가 수동이다. cron으로 충분:
    `wikilens sync ... && curl -XPOST .../admin/reindex` (`&&` 필수 — 실패 시
    절반만 반영되는 것을 막는다).
 3. **"유용했다" 판정 개선** — 학습 레이어 전체가 이 레이블에 걸려 있는데
    지금은 약한 신호 둘(마지막 읽기, 질의 재구성)뿐이다. `pWrong`이 노이즈 크기다.
+4. **저장소를 사내 git 에 올리기** — remote 가 없어 `pip install git+URL` 분기,
+   타 머신 첫 설치, git source 마켓플레이스가 **전부 미검증**이다. 팀 배포의 선결 조건.
 
 ## 손대지 말아야 할 것
 
