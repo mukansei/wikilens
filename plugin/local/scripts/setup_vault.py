@@ -22,7 +22,8 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from vault_status import (  # noqa: E402
-    CONFIG_DIR, CONFIG_PATH, DEFAULT_VAULT, ENV_PATH, _config, cli_source,
+    CONFIG_DIR, CONFIG_PATH, DEFAULT_VAULT, ENV_PATH, _config, cli_argv,
+    cli_source, discover_cli,
 )
 
 # env.sh 로 옮길 변수들. `auth.py` 가 읽는 것 전부 + `sync.py` 의 URL·접두사.
@@ -72,12 +73,14 @@ def env_template() -> str:
     )
 
 
-def write_config(vault: Path | None, source: str | None) -> dict:
+def write_config(vault: Path | None, source: str | None, cli: str | None = None) -> dict:
     cfg = _config()
     if vault is not None:
         cfg["vault"] = str(vault)
     if source:
         cfg["cli_source"] = source
+    if cli:
+        cfg["cli"] = cli
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(
         json.dumps(cfg, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -121,6 +124,9 @@ def main(argv: list[str]) -> int:
     )
     ap.add_argument("--vault", help=f"볼트 경로. 생략하면 {DEFAULT_VAULT}")
     ap.add_argument("--cli-source", help="pip install 대상 (경로 또는 git+URL)")
+    ap.add_argument("--cli-path", metavar="PATH",
+                    help="wikilens 실행파일 경로를 기록 (venv·pipx 처럼 PATH 에 없을 때). "
+                         "'auto' 를 주면 저장소 옆 venv 를 찾아본다")
     ap.add_argument("--register-permissions", action="store_true",
                     help="볼트를 ~/.claude/settings.json 의 허용 디렉터리에 추가 (사용자 승낙 후에만)")
     ap.add_argument("--capture-env", action="store_true",
@@ -155,10 +161,30 @@ def main(argv: list[str]) -> int:
         vault = DEFAULT_VAULT
     source = args.cli_source or cli_source(existing)
 
-    cfg = write_config(vault, source)
+    cli = None
+    if args.cli_path == "auto":
+        cli = discover_cli({**existing, "cli_source": source})
+        if not cli:
+            print("CLI_PATH=(자동 탐지 실패 — 경로를 직접 주세요)")
+    elif args.cli_path:
+        p = Path(args.cli_path).expanduser().resolve()
+        if not (p.is_file() and os.access(p, os.X_OK)):
+            print(f"실패: 실행 가능한 파일이 아닙니다 — {p}")
+            return 2
+        cli = str(p)
+
+    cfg = write_config(vault, source, cli)
     print(f"CONFIG={CONFIG_PATH}")
     print(f"VAULT={cfg.get('vault')}")
     print(f"CLI_SOURCE={cfg.get('cli_source') or '(미정 — 사내 git URL 이 필요합니다)'}")
+
+    resolved = cli_argv(cfg)
+    print(f"CLI={' '.join(resolved) if resolved else '(못 찾음)'}")
+    if not resolved:
+        hint = discover_cli(cfg)
+        if hint:
+            print(f"  설치는 돼 있는데 PATH 에 없습니다. 기록하려면:")
+            print(f"    setup_vault.py --cli-path {hint}")
 
     if args.register_permissions:
         print(register_permissions(vault))

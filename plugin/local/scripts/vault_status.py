@@ -81,36 +81,67 @@ def _parse_cursor(raw: str | None) -> datetime | None:
     return None
 
 
-def find_cli(cfg: dict) -> str:
+def cli_argv(cfg: dict | None = None) -> list[str]:
     """
-    볼트를 만들 CLI 를 찾는다. 검색에는 필요 없고 setup/sync 에만 필요하다.
+    볼트를 만들 CLI 를 어떻게 실행할지 정한다. 검색에는 필요 없고 setup/sync 에만 쓴다.
 
-    마켓플레이스 등록 정보를 마지막 후보로 쓰는 이유: 이 저장소를 로컬 경로로 등록해
-    쓰는 동안에는 그게 CLI 소스를 가리키는 유일한 단서다.
+    **여기가 유일한 해석처다.** `wikilens_cli.sh` 도 자기 힘으로 찾지 않고 이 함수의
+    결과를 받아 쓴다 — 둘이 각자 찾으면 스킬은 "CLI 있음"이라 하고 래퍼는 못 찾는
+    상태가 생긴다.
+
+    `config.json` 의 `cli` 를 **가장 먼저** 본다. venv 나 pipx 에 설치하면 그 셸을
+    활성화하지 않는 한 PATH 에도 없고 기본 python 으로 import 도 안 되는데, Claude Code
+    가 띄우는 셸이 바로 그런 셸이다(실측: 이 저장소의 `cli/.venv` 에 설치했더니 래퍼가
+    CLI 를 못 찾았다). 명시 경로를 적어두는 것이 그 상황의 정답이다.
     """
+    cfg = _config() if cfg is None else cfg
+
+    explicit = cfg.get("cli")
+    if isinstance(explicit, str) and explicit:
+        p = Path(explicit).expanduser()
+        if p.is_file() and os.access(p, os.X_OK):
+            return [str(p)]
+
     exe = shutil.which("wikilens")
     if exe:
-        return exe
+        return [exe]
 
-    # 설치는 됐는데 콘솔 스크립트가 PATH 에 없는 경우
+    # 설치는 됐는데 콘솔 스크립트가 PATH 에 없는 경우. cwd 를 sys.path 에서 빼고 본다 —
+    # 이 저장소 안에서 돌리면 `cli/wikilens/` 소스 디렉터리를 보고 "설치됨"으로 오판한다.
     try:
         import importlib.util
-        if importlib.util.find_spec("wikilens") is not None:
-            return f"{sys.executable} -m wikilens.cli"
+        saved = sys.path[:]
+        sys.path = [q for q in sys.path if q not in ("", ".", os.getcwd())]
+        try:
+            found = importlib.util.find_spec("wikilens") is not None
+        finally:
+            sys.path = saved
+        if found:
+            return [sys.executable, "-m", "wikilens.cli"]
     except (ImportError, ValueError):
         pass
+    return []
 
-    if cfg.get("cli_source"):
-        return ""   # 설치 소스는 알지만 아직 설치 안 됨
 
-    known = Path.home() / ".claude" / "plugins" / "known_marketplaces.json"
-    try:
-        for entry in json.loads(known.read_text(encoding="utf-8")).values():
-            loc = entry.get("installLocation")
-            if loc and (Path(loc) / "cli" / "pyproject.toml").exists():
-                return ""
-    except (OSError, json.JSONDecodeError, AttributeError):
-        pass
+def find_cli(cfg: dict) -> str:
+    """사람이 읽는 한 줄 표현. 분기 판단은 `cli_argv()` 를 쓸 것."""
+    return " ".join(cli_argv(cfg))
+
+
+def discover_cli(cfg: dict) -> str:
+    """
+    설치돼 있는데 안 잡히는 CLI 를 찾아 **제안**한다. setup 이 쓴다.
+
+    가장 흔한 형태가 저장소 옆 venv 다 — `pip install -e ./cli` 를 하면 여기 생긴다.
+    """
+    src = cli_source(cfg)
+    if not src or src.startswith("git+"):
+        return ""
+    base = Path(src).expanduser()
+    for cand in (base / ".venv" / "bin" / "wikilens",
+                 base.parent / ".venv" / "bin" / "wikilens"):
+        if cand.is_file() and os.access(cand, os.X_OK):
+            return str(cand)
     return ""
 
 
@@ -227,6 +258,15 @@ def inspect(vault: Path) -> dict:
 
 def main(argv: list[str]) -> int:
     cfg = _config()
+
+    # 래퍼 전용 경로. 볼트 스캔을 건너뛰고 실행할 argv 만 한 줄에 하나씩 내놓는다
+    # (경로에 공백이 있어도 안전하다). 못 찾으면 아무것도 안 찍고 1 을 반환한다.
+    if "--cli" in argv:
+        parts = cli_argv(cfg)
+        for part in parts:
+            print(part)
+        return 0 if parts else 1
+
     vault = resolve_vault(cfg)
     info = inspect(vault)
     info["cli"] = find_cli(cfg)

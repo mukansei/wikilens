@@ -146,6 +146,11 @@ check "두 판 모두 사용자용 안내를 플러그인에 포함 (설치자�
 # 부르는 경로가 하나라도 남으면 그쪽만 조용히 실패한다 (2026-08-05 실측).
 check "로컬판이 CLI 를 항상 래퍼로 호출 (맨 wikilens 는 자격증명 없이 죽음)" \
   '[ -f plugin/local/scripts/wikilens_cli.sh ] && ! grep -rnE "(^|[\`\" '"'"'])wikilens (doctor|stats|--root|sync|build)" plugin/local/'
+# CLI 위치 해석이 두 군데면 스킬은 "CLI 있음"이라 하는데 래퍼는 못 찾는 상태가 생긴다.
+# venv·pipx 설치가 정확히 그 경우다 — PATH 에도 없고 기본 python 으로 import 도 안 된다
+# (실측: 이 저장소의 cli/.venv 에 설치했더니 래퍼가 못 찾았다). 해석처는 vault_status 하나.
+check "래퍼가 CLI 를 직접 찾지 않고 vault_status 에 물어봄 (해석처 1곳)" \
+  'grep -q "vault_status.py\" --cli" plugin/local/scripts/wikilens_cli.sh && ! grep -qE "^[[:space:]]*(if )?command -v wikilens" plugin/local/scripts/wikilens_cli.sh'
 # 두 판 모두 설정이 환경변수 전용이면 Claude Code 를 앱으로 띄웠을 때 조용히 빈다.
 # 정본은 `~/.wikilens/` 하나다 — 비밀 아닌 설정은 config.json, 토큰류는 env.sh(600).
 check "두 판 모두 설정을 ~/.wikilens 에서 읽음 (env 단독은 세션 간 안 삶)" \

@@ -305,6 +305,95 @@ def test_exported_value_beats_the_file(tmp_path):
     assert got.stdout == "https://from-shell"
 
 
+def _fake_cli(d: Path, name: str = "wikilens") -> Path:
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / name
+    p.write_text('#!/bin/sh\nprintf %s "$CONFLUENCE_URL"\n')
+    p.chmod(0o755)
+    return p
+
+
+def test_config_cli_path_is_used_when_not_on_path(tmp_path):
+    """
+    venv·pipx 에 설치하면 PATH 에도 없고 기본 python 으로 import 도 안 된다.
+    Claude Code 가 띄우는 셸이 정확히 그 상태다 — 명시 경로가 유일한 답이다.
+    """
+    exe = _fake_cli(tmp_path / "somewhere" / "bin")
+    setup_vault(tmp_path, "--cli-path", str(exe))
+    assert status(tmp_path)["cli"] == str(exe)
+
+    got = subprocess.run(
+        ["bash", str(WRAPPER), "doctor"], capture_output=True, text=True,
+        env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin",
+             "CONFLUENCE_URL": "https://w.example.com"})
+    assert got.stdout == "https://w.example.com", got.stderr
+
+
+def test_config_cli_path_beats_path_lookup(tmp_path):
+    """명시 경로를 적어두고도 PATH 의 다른 설치가 이기면 기록한 의미가 없다."""
+    chosen = _fake_cli(tmp_path / "chosen" / "bin")
+    other = tmp_path / "other"
+    _fake_cli(other)
+    setup_vault(tmp_path, "--cli-path", str(chosen))
+    assert status(tmp_path, PATH=f"{other}:/usr/bin:/bin")["cli"] == str(chosen)
+
+
+def test_stale_config_cli_path_falls_back(tmp_path):
+    """기록해둔 경로가 사라졌는데 그것만 믿으면 되살릴 방법이 없다."""
+    gone = tmp_path / "gone" / "bin" / "wikilens"
+    (tmp_path / ".wikilens").mkdir(exist_ok=True)
+    (tmp_path / ".wikilens" / "config.json").write_text(
+        json.dumps({"cli": str(gone)}), encoding="utf-8")
+    on_path = tmp_path / "onpath"
+    _fake_cli(on_path)
+    assert status(tmp_path, PATH=f"{on_path}:/usr/bin:/bin")["cli"] == str(on_path / "wikilens")
+
+
+def test_cli_path_rejects_non_executable(tmp_path):
+    plain = tmp_path / "not-exec"
+    plain.write_text("")
+    r = setup_vault(tmp_path, "--cli-path", str(plain))
+    assert r.returncode == 2
+    assert "실행 가능한 파일이 아닙니다" in r.stdout
+
+
+def test_cli_mode_prints_argv_one_per_line(tmp_path):
+    """경로에 공백이 있어도 래퍼가 온전히 복원해야 한다."""
+    exe = _fake_cli(tmp_path / "has space" / "bin")
+    setup_vault(tmp_path, "--cli-path", str(exe))
+    r = subprocess.run(
+        [sys.executable, str(PLUGIN / "scripts" / "vault_status.py"), "--cli"],
+        capture_output=True, text=True,
+        env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"})
+    assert r.returncode == 0
+    assert r.stdout.splitlines() == [str(exe)]
+
+    got = subprocess.run(
+        ["bash", str(WRAPPER), "doctor"], capture_output=True, text=True,
+        env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin",
+             "CONFLUENCE_URL": "https://w.example.com"})
+    assert got.stdout == "https://w.example.com", got.stderr
+
+
+def test_wrapper_and_resolver_agree_on_the_cli(tmp_path):
+    """
+    둘이 각자 찾으면 스킬은 "CLI 있음"이라 하는데 래퍼는 못 찾는 상태가 생긴다.
+    래퍼가 vault_status 에 물어보므로 어긋날 수 없어야 한다.
+
+    래퍼와 **같은 인터프리터**(맨 `python3`)로 대조한다 — 해석은 그것을 실행하는
+    파이썬 기준이라, venv 파이썬으로 물어보면 답이 달라지는 게 정상이다.
+    """
+    on_path = _fake_cli(tmp_path / "p").parent
+    for extra in ({}, {"PATH": f"{on_path}:/usr/bin:/bin"}):
+        e = {"HOME": str(tmp_path), "PATH": "/usr/bin:/bin", **extra}
+        resolved = subprocess.run(
+            ["python3", str(PLUGIN / "scripts" / "vault_status.py"), "--cli"],
+            capture_output=True, text=True, env=e)
+        rc = subprocess.run(["bash", str(WRAPPER), "doctor"],
+                            capture_output=True, text=True, env=e).returncode
+        assert (resolved.returncode == 0) == (rc != 127), (extra, resolved.stdout, rc)
+
+
 def test_wrapper_points_at_setup_when_cli_is_absent(tmp_path):
     got = subprocess.run(
         ["bash", str(WRAPPER), "doctor"], capture_output=True, text=True,
