@@ -4,9 +4,9 @@ Confluence 위키를 미러링하고 **앵커 텍스트**(다른 문서들이 �
 색인해 어휘 격차를 메운다. 그 위에 에이전트 탐색 궤적을 축적하는 학습 레이어를 얹는다.
 
 ```
-cli/       Python  싱크·파싱·앵커 전치·로컬판        74 테스트
+cli/       Python  싱크·파싱·앵커 전치·로컬판        93 테스트
 server/    Kotlin  Lucene/Nori 색인 + 학습 레이어    51 테스트 / 배선 검증됨(Acme 실데이터)
-plugin/    local=스킬만 · server=MCP 도구 4개        24 테스트
+plugin/    local=스킬+커맨드 · server=MCP 도구 4개   43 테스트
 contract/  교차 언어 계약 검사 + 공유 픽스처
 docs/      아키텍처 · 임베딩 설계 제안
 ```
@@ -17,8 +17,8 @@ docs/      아키텍처 · 임베딩 설계 제안
 ## 먼저 실행할 것
 
 ```bash
-./contract/shared_contract.sh                     # 교차 언어 계약 16개
-cd cli    && python -m pytest tests/ -q           # 74
+./contract/shared_contract.sh                     # 교차 언어 계약 20개
+cd cli    && python -m pytest tests/ -q           # 93
 cd server && ./gradlew test                       # 51 (JUnit)
 ```
 
@@ -105,6 +105,12 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 - **마켓플레이스 매니페스트가 저장소 루트에 있다** — `.claude-plugin/marketplace.json`.
   하위 디렉터리로 옮기면 플러그인 `source` 상대 경로가 잘못 해석돼 설치가
   `"source type your Claude Code version does not support"` 로 실패한다(실측).
+- **로컬판 볼트 경로 정본이 `~/.wikilens/config.json` 이다** — 환경변수가 아니라.
+  Claude Code 가 띄우는 셸에서 `export` 해도 다음 세션엔 없어서, env 단독으로는
+  "어디서든 검색"이 성립하지 않는다. `WIKILENS_VAULT` 는 일회성 재정의로만 남겨뒀다.
+- **로컬판은 MCP 를 안 쓴다** — 서버판과 달리 스킬 + 네이티브 grep 이다. 로컬판의
+  정의적 성질이 "검색 경로 런타임 의존성 0"이라, 프로세스 기동이 끼면 파이썬 환경
+  문제가 검색 실패로 나타난다. 근거와 전환 조건은 `DECISIONS.md` D8.
 - **검사 장치가 둘이다** — `shared_contract.sh`(grep, 빠르지만 리팩터링에 취약)와
   `contract/shared-fixture/`(실제 파싱·생성 후 비교, 느리지만 동작을 잠금). 겹쳐 보이지만
   잡는 실패가 다르다 — grep 은 문자열만 바뀌어도 오탐이고, 픽스처는 포맷이 조용히

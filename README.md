@@ -18,9 +18,9 @@ OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 붙이기 | 2
 
 | 경로 | 내용 | 언어 | 상태 |
 |---|---|---|---|
-| **`cli/`** | Confluence 싱크 · 앵커 전치 · 로컬판 | Python | **74 테스트 통과** |
+| **`cli/`** | Confluence 싱크 · 앵커 전치 · 로컬판 | Python | **93 테스트 통과** |
 | **`server/`** | Lucene/Nori 색인 · 학습 레이어 | Kotlin | **51 테스트 통과** / 배선 검증됨(Acme 실데이터) |
-| **`plugin/local/`** | 스킬만 (로컬판) | — | 형식 검증 |
+| **`plugin/local/`** | 스킬 + 커맨드 2개 (로컬판) | Python | **19 테스트 통과** |
 | **`plugin/server/`** | MCP 도구 4개 + 스킬 (서버판) | Python | **24 테스트 통과** |
 | `.claude-plugin/` | 마켓플레이스 매니페스트 (조직 배포용) | — | — |
 | `docs/` | 아키텍처 · 임베딩 설계 제안 | — | — |
@@ -92,12 +92,21 @@ export CONFLUENCE_PREFIX=""      # Server/DC 강제 (자동판별 건너뜀)
 **여기서 판단하세요.** `stats`가 "제목과 다른 별칭을 가진 페이지" 비율을 냅니다.
 낮으면 어휘 격차가 없다는 뜻이고 **이 프로젝트 전체가 값어치가 없습니다.**
 
-플러그인은 스킬만 설치하면 됩니다 (MCP도 훅도 불필요):
+플러그인을 설치하면 **어느 프로젝트에서든** 볼트를 검색할 수 있습니다
+(MCP도 훅도 불필요 — 파일 읽기와 grep만 씁니다):
 
-```bash
-mkdir -p ~/wiki/.claude/skills/wikilens
-cp plugin/local/skills/wikilens/SKILL.md ~/wiki/.claude/skills/wikilens/
 ```
+/plugin marketplace add ./
+/plugin install wikilens-local@wikilens-tools
+/wikilens-local:setup
+```
+
+`setup` 이 볼트 위치를 `~/.wikilens/config.json` 에 기록합니다. **이미 볼트가 있으면
+옮길 필요 없이 그 경로를 등록**하면 됩니다. 갱신은 `/wikilens-local:sync`.
+
+볼트는 프로젝트 밖에 있으므로, 등록하지 않으면 프로젝트마다 읽기 승인을 다시 받습니다.
+`setup` 이 마지막에 `~/.claude/settings.json` 등록 여부를 묻습니다(전역 설정 변경이라
+승낙해야만 씁니다).
 
 ### 2단계 — 궤적 관측만 (몇 주)
 
@@ -144,8 +153,9 @@ export WIKILENS_USER=alice@corp
 Claude Code 2.1.220). 루트에 두면 `source` 가 `./plugin/server` 처럼 하위 경로여도
 정상 동작합니다.
 
-`source` 가 `plugin/server`·`plugin/local` 을 직접 가리키므로 사본이 없습니다 —
-플러그인을 고치면 마켓플레이스에 그대로 반영됩니다.
+`source` 가 `plugin/server`·`plugin/local` 을 직접 가리키므로 **저장소 안에는** 사본이
+없습니다. 다만 **설치는 버전별 캐시로 복사**되므로, 플러그인을 고쳐도 이미 설치된 것에는
+자동 반영되지 않습니다(실측). 고친 뒤에는 재설치하거나 version 을 올려야 합니다.
 
 ---
 
@@ -216,7 +226,8 @@ Lucene Nori가 그 문제의 프로덕션 해답입니다. 색인이 서버에 �
 | Confluence 클라이언트 | 17개 통과 (가짜 서버 — Cloud/Server·429·페이지네이션·재개·`--follow-refs`) |
 | 인증 계층 (SSO/IAM) | 12개 통과 (가짜 IAM — OAuth2·만료 갱신·401 재시도) |
 | Python 서버 스코어링 (`server/scoring.py`) | 13개 통과. Kotlin `Scoring.kt`와 나란히 유지되는 정본 — 공유 Python 서버 자체(구 훅 기반 설계)는 제거됨 |
-| MCP 프록시 | 24개 테스트 통과 (핸드셰이크·도구 4개·세션·404·환경변수) |
+| MCP 프록시 (서버판) | 24개 테스트 통과 (핸드셰이크·도구 4개·세션·404·환경변수) |
+| 로컬판 플러그인 | 19개 통과 (경로 해석·상태 판정·스킬 정합성·포맷 드리프트) |
 | Kotlin 학습 레이어 (`learn/`) | JUnit 12개 통과, Python/scipy와 1e-6 일치 |
 | Kotlin 서비스 계층 (search·content·acl·tree) | JUnit 51개 통과 |
 | Kotlin Lucene/Spring 배선 | 빌드·bootRun·재색인 검증됨 (Acme 실데이터 2,378건). 검색 랭킹 품질은 별도 미검증 |
