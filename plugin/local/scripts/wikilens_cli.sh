@@ -17,13 +17,20 @@ set -euo pipefail
 
 ENV_FILE="${WIKILENS_ENV:-$HOME/.wikilens/env.sh}"
 if [ -f "$ENV_FILE" ]; then
-  # 이미 export 된 값이 있으면 그쪽이 이긴다 — 일회성 재정의를 파일이 덮으면 안 된다.
-  _url="${CONFLUENCE_URL:-}"
+  # 이미 export 된 값이 있으면 그쪽이 이긴다 — 일회성 재정의(토큰 교체 등)를 파일이
+  # 덮으면 낡은 자격증명으로 조용히 인증한다.
+  #
+  # `export -p` 로 통째로 떠서 소싱 뒤 되돌린다. 변수를 하나씩 나열하면 새 변수를
+  # 추가할 때 빠뜨리고, 실제로 그래서 CONFLUENCE_URL 만 보존되고 TOKEN·PREFIX 는
+  # 파일이 덮고 있었다. `${!v}` 간접 확장을 안 쓰는 이유는 값이 빈 문자열인 경우
+  # ("설정함"과 "미설정"이 다르다 — CONFLUENCE_PREFIX="" 가 Coway 필수 설정이다)
+  # 를 구분하기 위해서다. `export -p` 는 빈 값도 선언째 보존한다.
+  _pre="$(export -p | grep -E '(CONFLUENCE|IAM)_[A-Z_]+=' || true)"
   set -a
   # shellcheck disable=SC1090
   . "$ENV_FILE"
   set +a
-  [ -n "$_url" ] && export CONFLUENCE_URL="$_url"
+  [ -n "$_pre" ] && eval "$_pre"
 fi
 
 # CLI 위치는 **직접 찾지 않는다.** `vault_status.py` 가 유일한 해석처이고

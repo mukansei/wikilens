@@ -251,6 +251,49 @@ def test_empty_prefix_survives_capture(tmp_path):
     assert "export CONFLUENCE_PREFIX=''" in body
 
 
+def test_capture_env_merges_instead_of_overwriting(tmp_path):
+    """
+    예전에는 파일을 통째로 새로 써서, 토큰이 export 안 된 셸에서 한 번 더 실행하면
+    **파일에 있던 토큰이 사라졌다.** 문서 세 곳이 이 명령을 안내하므로 두 번째
+    실행은 자연스럽게 일어난다 — 데이터 손실이었다.
+    """
+    d = tmp_path / ".wikilens"
+    d.mkdir()
+    (d / "env.sh").write_text(
+        "export CONFLUENCE_URL=https://old\n"
+        "export CONFLUENCE_TOKEN=long-lived\n"
+        "# 사용자가 직접 적은 줄\n"
+        "export MY_OTHER_THING=keepme\n", encoding="utf-8")
+
+    setup_vault(tmp_path, "--capture-env", CONFLUENCE_URL="https://new")
+
+    body = (d / "env.sh").read_text(encoding="utf-8")
+    assert "export CONFLUENCE_URL=https://new" in body, "새 값이 제자리 교체돼야 한다"
+    assert "https://old" not in body
+    # 교체이지 추가가 아니다 — 같은 키가 두 번 있으면 나중 것이 이겨 혼란스럽다
+    assert body.count("export CONFLUENCE_URL=") == 1
+    assert "export CONFLUENCE_TOKEN=long-lived" in body, "토큰이 사라졌다"
+    assert "# 사용자가 직접 적은 줄" in body, "주석이 사라졌다"
+    assert "export MY_OTHER_THING=keepme" in body, "무관한 변수가 사라졌다"
+
+
+def test_capture_env_reports_when_still_incomplete(tmp_path):
+    """URL 만 있고 토큰이 없는데 '이제 동작합니다'라고 하면 거짓 보고다."""
+    r = setup_vault(tmp_path, "--capture-env", CONFLUENCE_URL="https://only-url")
+    assert r.returncode == 2, r.stdout
+    assert "CONFLUENCE_TOKEN" in r.stdout
+    assert "동작합니다" not in r.stdout
+
+
+def test_capture_env_keeps_file_permissions_on_merge(tmp_path):
+    d = tmp_path / ".wikilens"
+    d.mkdir()
+    (d / "env.sh").write_text("export CONFLUENCE_TOKEN=t\n", encoding="utf-8")
+    (d / "env.sh").chmod(0o644)          # 느슨한 상태에서 시작해도
+    setup_vault(tmp_path, "--capture-env", CONFLUENCE_URL="https://x")
+    assert (d / "env.sh").stat().st_mode & 0o777 == 0o600
+
+
 def test_capture_env_without_credentials_offers_a_template(tmp_path):
     """대신 토큰을 넣어주지 않고, 사용자가 직접 실행할 명령을 내놔야 한다."""
     r = setup_vault(tmp_path, "--capture-env")
@@ -290,19 +333,46 @@ def test_wrapper_loads_credentials_from_env_file(tmp_path):
     assert got.stdout == "https://w.example.com"
 
 
-def test_exported_value_beats_the_file(tmp_path):
-    """일회성 재정의가 파일에 덮이면 안 된다."""
-    setup_vault(tmp_path, "--capture-env", CONFLUENCE_URL="https://from-file")
+@pytest.mark.parametrize("var,shell_value", [
+    ("CONFLUENCE_URL", "https://from-shell"),
+    ("CONFLUENCE_TOKEN", "token-from-shell"),
+    ("CONFLUENCE_PREFIX", "/from-shell"),
+    ("CONFLUENCE_HEADERS", "X-Forwarded-User: me@corp"),
+])
+def test_exported_value_beats_the_file(tmp_path, var, shell_value):
+    """
+    일회성 재정의(토큰 교체 등)가 파일에 덮이면 **낡은 자격증명으로 조용히 인증**한다.
+
+    변수 하나만 검사하던 탓에 구멍이 가려져 있었다 — 실제로는 `CONFLUENCE_URL` 만
+    보존되고 TOKEN·PREFIX 는 파일이 덮고 있었다. 그래서 전부 돌린다.
+    """
+    setup_vault(tmp_path, "--capture-env",
+                CONFLUENCE_URL="https://from-file", CONFLUENCE_TOKEN="token-from-file",
+                CONFLUENCE_PREFIX="/from-file", CONFLUENCE_HEADERS="from-file")
     fake = tmp_path / "bin"
     fake.mkdir()
-    (fake / "wikilens").write_text('#!/bin/sh\nprintf %s "$CONFLUENCE_URL"\n')
+    (fake / "wikilens").write_text(f'#!/bin/sh\nprintf %s "${var}"\n')
     (fake / "wikilens").chmod(0o755)
 
     got = subprocess.run(
         ["bash", str(WRAPPER), "doctor"], capture_output=True, text=True,
-        env={"HOME": str(tmp_path), "PATH": f"{fake}:/usr/bin:/bin",
-             "CONFLUENCE_URL": "https://from-shell"})
-    assert got.stdout == "https://from-shell"
+        env={"HOME": str(tmp_path), "PATH": f"{fake}:/usr/bin:/bin", var: shell_value})
+    assert got.stdout == shell_value, got.stderr
+
+
+def test_empty_prefix_from_shell_beats_the_file(tmp_path):
+    """빈 문자열은 '미설정'이 아니라 유효한 값이다 — Coway 필수 설정."""
+    setup_vault(tmp_path, "--capture-env",
+                CONFLUENCE_URL="https://x", CONFLUENCE_PREFIX="/from-file")
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "wikilens").write_text('#!/bin/sh\nprintf "[%s]" "$CONFLUENCE_PREFIX"\n')
+    (fake / "wikilens").chmod(0o755)
+
+    got = subprocess.run(
+        ["bash", str(WRAPPER), "doctor"], capture_output=True, text=True,
+        env={"HOME": str(tmp_path), "PATH": f"{fake}:/usr/bin:/bin", "CONFLUENCE_PREFIX": ""})
+    assert got.stdout == "[]", got.stdout
 
 
 def _fake_cli(d: Path, name: str = "wikilens") -> Path:

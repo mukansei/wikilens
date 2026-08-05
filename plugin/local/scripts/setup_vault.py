@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import sys
 from pathlib import Path
@@ -34,30 +35,57 @@ CRED_VARS = (
 )
 
 
-def capture_env() -> tuple[list[str], str]:
+HEADER = ["#!/bin/sh",
+          "# WikiLens 자격증명. `source ~/.wikilens/env.sh` 로 직접 쓸 수도 있습니다.",
+          ""]
+
+
+def capture_env() -> tuple[list[str], list[str], str]:
     """
-    지금 셸에 export 된 자격증명을 `~/.wikilens/env.sh` 로 옮긴다.
+    지금 셸에 export 된 자격증명을 `~/.wikilens/env.sh` 에 **병합**한다.
+
+    반환: (기록한 변수, 파일에만 있어 보존한 변수, 파일 경로)
 
     값은 환경에서 파일로 곧장 흘러가고 **어디에도 출력되지 않는다** — 기록했다는
     사실과 변수 이름만 알린다.
+
+    **덮어쓰지 않고 병합하는 이유:** 예전에는 파일을 통째로 새로 썼는데, 토큰이
+    export 안 된 셸에서 한 번 더 실행하면 **파일에 있던 토큰이 사라졌다**. 문서
+    세 곳이 이 명령을 안내하므로 두 번째 실행이 자연스럽게 일어난다. 주석과 사용자가
+    직접 추가한 줄도 그대로 둔다 — 남의 파일을 다시 쓰는 쪽이 예외여야 한다.
 
     `CONFLUENCE_PREFIX` 는 빈 문자열이 유효한 값이므로(Coway 필수 설정) `.get()` 이
     아니라 `in` 으로 판정한다. 이걸 틀리면 인증이 조용히 실패한다.
     """
     present = [k for k in CRED_VARS if k in os.environ]
     if not present:
-        return [], ""
+        return [], [], ""
 
-    lines = ["#!/bin/sh", "# WikiLens 자격증명. `source ~/.wikilens/env.sh` 로 직접 쓸 수도 있습니다.", ""]
-    lines += [f"export {k}={shlex.quote(os.environ[k])}" for k in present]
+    existing = ENV_PATH.read_text(encoding="utf-8").splitlines() if ENV_PATH.exists() else list(HEADER)
+
+    out, seen = [], set()
+    for line in existing:
+        key = None
+        m = re.match(r"\s*export\s+([A-Z_][A-Z0-9_]*)=", line)
+        if m and m.group(1) in present:
+            key = m.group(1)
+        if key:
+            out.append(f"export {key}={shlex.quote(os.environ[key])}")   # 제자리 교체
+            seen.add(key)
+        else:
+            out.append(line)                                             # 주석·타 변수 보존
+    out += [f"export {k}={shlex.quote(os.environ[k])}" for k in present if k not in seen]
+
+    kept = sorted({m.group(1) for line in existing
+                   if (m := re.match(r"\s*export\s+([A-Z_][A-Z0-9_]*)=", line))} - set(present))
 
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     # 토큰이 들어가므로 만들 때부터 600 이어야 한다 — 쓰고 나서 chmod 하면 그 사이가 열려 있다.
     fd = os.open(ENV_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
+        f.write("\n".join(out) + "\n")
     os.chmod(ENV_PATH, 0o600)   # 이미 있던 파일이면 O_CREAT 모드가 적용되지 않는다
-    return present, str(ENV_PATH)
+    return present, kept, str(ENV_PATH)
 
 
 def env_template() -> str:
@@ -139,10 +167,18 @@ def main(argv: list[str]) -> int:
         return 0
 
     if args.capture_env:
-        captured, path = capture_env()
+        captured, kept, path = capture_env()
         if captured:
             print(f"ENV_FILE={path} (600)")
             print("CAPTURED=" + " ".join(captured))
+            if kept:
+                print("KEPT=" + " ".join(kept) + "   (파일에만 있던 값 — 그대로 둡니다)")
+            missing = [k for k in ("CONFLUENCE_URL", "CONFLUENCE_TOKEN")
+                       if k not in captured and k not in kept]
+            if missing:
+                print("\n아직 부족합니다: " + " ".join(missing))
+                print("  이 값들이 없으면 sync 가 동작하지 않습니다.")
+                return 2
             print("\n이제 다음 세션에도 /wikilens-local:sync 가 동작합니다.")
             return 0
         print("CAPTURED=")
