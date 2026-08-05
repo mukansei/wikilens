@@ -238,7 +238,7 @@ def handle(msg: dict) -> None:
         reply(mid, {
             "protocolVersion": want if want in SUPPORTED else PROTOCOL,
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "wikilens", "version": "0.1.0"},
+            "serverInfo": {"name": "wiki", "version": "0.1.0"},
         })
     elif method == "notifications/initialized":
         pass                                    # 알림에는 응답하지 않는다

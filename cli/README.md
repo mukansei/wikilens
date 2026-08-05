@@ -64,7 +64,7 @@ $ wikilens stats
 
 ```bash
 /plugin marketplace add ./marketplace
-/plugin install wikilens@wikilens-tools
+/plugin install wikilens-client@wikilens
 /reload-plugins
 ```
 

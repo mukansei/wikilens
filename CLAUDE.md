@@ -6,7 +6,7 @@ Confluence 위키를 미러링하고 **앵커 텍스트**(다른 문서들이 �
 ```
 cli/       Python  싱크·파싱·앵커 전치·로컬판        93 테스트
 server/    Kotlin  Lucene/Nori 색인 + 학습 레이어    51 테스트 / 배선 검증됨(Coway 실데이터)
-plugin/    local=스킬+커맨드 · server=MCP 도구 4개   43 테스트 · 각 판 사용 안내 포함
+plugin/    local=스킬+커맨드 · client=MCP 도구 4개   43 테스트 · 각 판 사용 안내 포함
 contract/  교차 언어 계약 검사 + 공유 픽스처
 docs/      아키텍처 · 임베딩 설계 제안
 ```
@@ -102,6 +102,17 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
   읽기 59ms. 근거는 `DECISIONS.md` D7.
 - **`raw/` XHTML을 버리지 않는다** — 마크다운 변환은 매크로를 잃는다.
   변환기가 개선되면 재크롤 없이 재변환할 수 있다.
+- **서버판 플러그인 디렉터리가 `plugin/client/` 다** — `plugin/server/` 가 아니라.
+  저장소의 `server/` 가 **진짜 Kotlin 서버**라 같은 단어가 두 물건을 가리키게 된다.
+  플러그인은 서버가 아니라 그 서버의 클라이언트다. 플러그인 이름도 같은 이유로
+  `wikilens-server` 가 아니라 `wikilens-client` 이고, 덤으로 무표지 이름 `wikilens` 가
+  사라져 어느 쪽도 "기본"을 참칭하지 않는다(`client` 는 접속할 서버가 따로 있다는
+  전제까지 이름으로 알린다).
+- **스킬 이름이 플러그인 이름과 다르다** — 양쪽 다 `search` 다. 스킬은 `플러그인:스킬`
+  로 노출되므로 같게 두면 `wikilens-local:wikilens-local` 이 된다(실측). 플러그인
+  이름이 무엇인지를, 스킬 이름이 무엇을 하는지를 말한다 — 커맨드 `:setup`·`:sync` 와
+  같은 층위다. 네임스페이스가 다르므로 두 판의 스킬 이름이 같아도 충돌이 아니지만,
+  그래서 구별 근거가 다시 description 하나뿐이라 계약이 그것을 지킨다.
 - **마켓플레이스 매니페스트가 저장소 루트에 있다** — `.claude-plugin/marketplace.json`.
   하위 디렉터리로 옮기면 플러그인 `source` 상대 경로가 잘못 해석돼 설치가
   `"source type your Claude Code version does not support"` 로 실패한다(실측).

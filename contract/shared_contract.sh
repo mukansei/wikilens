@@ -57,7 +57,7 @@ check "권한 없음은 404 (403 은 존재를 알림)" \
 check "detect_prefix 가 401/403 을 '찾음'으로 취급" \
   'grep -q "status_code in (401, 403)" cli/wikilens/sync.py'
 check "훅 없음 (서버가 읽기를 직접 관측하므로 훅이 불필요)" \
-  '[ ! -d plugin/server/hooks ] && [ ! -d plugin/local/hooks ]'
+  '[ ! -d plugin/client/hooks ] && [ ! -d plugin/local/hooks ]'
 check "위키 쓰기 경로 없음 (사람 링크와 기계 링크가 섞이면 정답 신호가 오염됨)" \
   '! grep -rqE "\.(put|post|delete)\(.*rest/api/content" cli/wikilens/'
 
@@ -71,23 +71,46 @@ echo "배포 구조"
 check "마켓플레이스 매니페스트가 저장소 루트에 있음 (하위에 두면 설치 실패)" \
   '[ -f .claude-plugin/marketplace.json ] && [ ! -d marketplace ]'
 check "source 가 실제 plugin/ 디렉터리를 직접 가리킴 (사본 없음)" \
-  'grep -qF "\"./plugin/server\"" .claude-plugin/marketplace.json && grep -qF "\"./plugin/local\"" .claude-plugin/marketplace.json'
+  'grep -qF "\"./plugin/client\"" .claude-plugin/marketplace.json && grep -qF "\"./plugin/local\"" .claude-plugin/marketplace.json'
 check "source 가 가리키는 경로에 plugin.json 이 실재함" \
-  '[ -f plugin/server/.claude-plugin/plugin.json ] && [ -f plugin/local/.claude-plugin/plugin.json ]'
+  '[ -f plugin/client/.claude-plugin/plugin.json ] && [ -f plugin/local/.claude-plugin/plugin.json ]'
+# 이름이 marketplace·plugin.json·스킬 디렉터리·스킬 name 네 군데에 흩어져 있다.
+# 어긋나면 설치는 되는데 스킬이 안 잡히거나 엉뚱한 이름으로 노출된다. 버전도 두 곳에
+# 있어(marketplace 와 plugin.json) 어긋난 채로 발견된 적이 있다 — 설치는 버전별
+# 캐시로 복사되므로 버전이 안 오르면 고친 코드가 반영되지 않는다.
+#
+# 스킬 이름을 플러그인 이름과 **다르게** 두는 것이 의도다. 스킬은 `플러그인:스킬` 로
+# 노출되므로 같게 두면 `wikilens-local:wikilens-local` 이 된다(실측). 플러그인 이름이
+# 무엇인지를, 스킬 이름이 무엇을 하는지를 말한다 — 커맨드 `:setup`·`:sync` 와 같은 층위다.
+check "플러그인 이름·버전 일치, 스킬은 search 로 통일 (어긋나면 설치가 조용히 어긋남)" \
+  'python3 -c "
+import json,pathlib,re,sys
+mp=json.loads(pathlib.Path(\".claude-plugin/marketplace.json\").read_text())
+for e in mp[\"plugins\"]:
+    src=pathlib.Path(e[\"source\"].lstrip(\"./\"))
+    pj=json.loads((src/\".claude-plugin/plugin.json\").read_text())
+    sk=[d.name for d in (src/\"skills\").iterdir() if d.is_dir()]
+    nm=[re.search(r\"^name: (.+)\$\",(src/\"skills\"/s/\"SKILL.md\").read_text(),re.M).group(1) for s in sk]
+    assert pj[\"name\"]==e[\"name\"], e[\"name\"]
+    assert pj[\"version\"]==e[\"version\"], e[\"name\"]
+    assert sk==nm==[\"search\"], (e[\"name\"], sk, nm)
+"'
 # .mcp.json 에서 미설정 변수를 넘기면 값이 '${WIKILENS_SERVER}' 리터럴로 전달돼
 # 프록시의 기본값을 덮어쓰고 'unknown url type' 으로 죽는다 (2026-08-04 실측).
 # 프록시가 os.environ 에서 직접 읽으므로 여기서 넘길 필요 자체가 없다.
 check ".mcp.json 이 WIKILENS_* env 를 넘기지 않음 (미설정 시 리터럴 주입 방지)" \
-  '! grep -qE "^[[:space:]]*\"WIKILENS_[A-Z]+\"[[:space:]]*:" plugin/server/.mcp.json'
+  '! grep -qE "^[[:space:]]*\"WIKILENS_[A-Z]+\"[[:space:]]*:" plugin/client/.mcp.json'
 
 # 로컬판은 볼트가 프로젝트 밖에 있으므로 cwd 상대경로를 쓰면 볼트 안에서만 동작한다.
 # 그러면 전역 설치가 무의미해진다 — 배포 가능성의 핵심 조건이다.
 check "로컬 스킬이 cwd 상대경로를 쓰지 않음 (볼트가 프로젝트 밖이라 배포 시 깨짐)" \
-  '! grep -qE "path=\"(ALIASES|TREE)\.md\"" plugin/local/skills/wikilens/SKILL.md'
-# 두 스킬의 name 이 같아(wikilens) description 까지 같으면 둘 다 설치했을 때
-# 모델이 어느 쪽을 부를지 갈린다 — 로컬은 볼트가, 서버는 서버가 없어 각각 실패한다.
-check "로컬·서버 스킬 description 이 서로 구별됨 (동시 설치 시 오선택 방지)" \
-  '! diff -q <(sed -n "/^description:/,/^---$/p" plugin/local/skills/wikilens/SKILL.md) <(sed -n "/^description:/,/^---$/p" plugin/server/skills/wikilens/SKILL.md) >/dev/null'
+  '! grep -qE "path=\"(ALIASES|TREE)\.md\"" plugin/local/skills/search/SKILL.md'
+# 두 스킬 name 은 이제 둘 다 `search` 다 — 네임스페이스(wikilens-local: / wikilens-client:)
+# 가 다르므로 충돌은 아니지만, 구별할 근거가 다시 description 하나뿐이라는 뜻이다.
+# 둘은 상호 배타라 설명까지 같아지면 모델이 어느 쪽을 부를지 갈리고, 로컬은 볼트가
+# 서버는 서버가 없어 각각 실패한다.
+check "로컬·클라이언트 스킬 description 이 서로 구별됨 (동시 설치 시 오선택 방지)" \
+  '! diff -q <(sed -n "/^description:/,/^---$/p" plugin/local/skills/search/SKILL.md) <(sed -n "/^description:/,/^---$/p" plugin/client/skills/search/SKILL.md) >/dev/null'
 # 플러그인은 설치 시 버전별 캐시로 복사되고 구버전은 청소된다. CLI 를 동봉하면
 # 캐시가 지워질 때 설치가 죽고, marketplace/plugins/ 수동 사본과 같은 실수가 된다.
 check "plugin/local 에 CLI 사본 없음 (캐시 청소 시 죽고, 사본 금지 계약 위반)" \
@@ -99,7 +122,7 @@ check "로컬판 스크립트가 표준 라이브러리만 씀 (검색 경로 �
 # 설치하면 손에 쥐는 건 플러그인 디렉터리뿐이다 — 저장소 README 는 볼 수 없다.
 # 사용자용 안내가 플러그인 **안에** 있어야 배포된다.
 check "두 판 모두 사용자용 안내를 플러그인에 포함 (설치자는 저장소를 못 본다)" \
-  '[ -f plugin/local/README.md ] && [ -f plugin/server/README.md ]'
+  '[ -f plugin/local/README.md ] && [ -f plugin/client/README.md ]'
 
 echo
 if [ "$fail" -eq 0 ]; then

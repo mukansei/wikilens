@@ -1,5 +1,5 @@
 ---
-name: wikilens
+name: search
 description: |
   **WikiLens 서버**(`WIKILENS_SERVER`)를 통해 사내 Confluence 위키에서 문서를 찾습니다.
   사내 문서·위키·정책·런북·온보딩 자료·아키텍처 문서를 찾아야 할 때 이 스킬을 사용하세요.
@@ -13,7 +13,7 @@ description: |
 
 # 사내 위키 검색
 
-`wikilens` MCP 도구 셋으로 사내 Confluence를 검색합니다. 로컬에 파일이 없으므로
+`wiki` MCP 도구 셋으로 사내 Confluence를 검색합니다. 로컬에 파일이 없으므로
 Read나 Grep 같은 파일 도구로는 접근할 수 없습니다.
 
 ## 반드시 search 부터

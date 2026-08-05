@@ -26,7 +26,7 @@ export WIKILENS_USER=alice@corp                    # 본인 식별자 (권한 �
 
 ```
 /plugin marketplace add <저장소 경로 또는 git URL>
-/plugin install wikilens@wikilens-tools
+/plugin install wikilens-client@wikilens
 /reload-plugins
 ```
 
