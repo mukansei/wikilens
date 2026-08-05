@@ -12,9 +12,10 @@
 |---|---|---|
 | 코퍼스 | 클라이언트 (볼트 전체) | 서버 |
 | 검색 | grep + `ALIASES.md`·`TREE.md` | BM25 + Nori + 앵커 + 학습 힌트 |
-| 인터페이스 | 스킬만 | MCP 도구 4개 |
+| 인터페이스 | 스킬 + 커맨드 2개 (`setup`·`sync`) | MCP 도구 4개 |
 | ACL | 개인 토큰으로 싱크 (자동) | 질의 시점 시행 (취소 가능) |
 | 궤적 관측 | 없음 | 서버가 직접 |
+| 설정 정본 | `~/.wikilens/` (config.json · env.sh) | 같음 — `config.json` 의 `server`·`user` |
 
 ## 컨테이너
 
@@ -36,8 +37,11 @@ flowchart TB
         MD["ALIASES.md · TREE.md<br/>(로컬판이 직접 grep)"]
     end
 
-    subgraph SRV["server/ · Kotlin · 상주"]
+    subgraph CLIENT["plugin/client/ · Python · 세션마다"]
         MCPT["MCP 프록시 (stdio↔HTTP)<br/>search · read · grep · tree"]
+    end
+
+    subgraph SRV["server/ · Kotlin · 상주"]
         QRY["SearchService — RRF 융합"]
         IDX["LuceneIndex — Nori BM25<br/>앵커4 : 제목3 : 본문1 + ACL 필터"]
         TR["TreeIndex / TreeRenderer"]
@@ -75,7 +79,8 @@ flowchart TB
     classDef st fill:#fef3c7,stroke:#d97706,color:#78350f
     class CONF,SESS ext
     class SY,BU py
-    class MCPT,QRY,IDX,TR,L2,ACLR kt
+    class QRY,IDX,TR,L2,ACLR kt
+    class MCPT py
     class RAW,PG,ST,DER,MD,STA st
 ```
 
