@@ -58,7 +58,7 @@ STRAY=0
 이 격차를 메우는 유일한 수단이므로 여기서 시작하세요.
 
 ```
-Grep(pattern="로그인", path="<VAULT>/ALIASES.md", output_mode="content")
+Grep(pattern="로그인", path="<VAULT>/ALIASES.md", output_mode="content", -i=true)
 ```
 
 각 줄은 `스페이스 | 제목 | 별칭 · 별칭 … | 인링크수 | 경로` 형식입니다:
@@ -74,13 +74,13 @@ Read("<VAULT>/mirror/pages/01/200000001.md")
 ```
 
 **첫 필드는 스페이스입니다.** 여러 스페이스를 싱크한 볼트면 같은 낱말이 여러 영역에서
-걸리므로, 사용자가 영역을 말했다면 그걸로 좁히세요 — `Grep(pattern="PLATFORM.*로그인")`.
+걸리므로, 사용자가 영역을 말했다면 그걸로 좁히세요 — `Grep(pattern="PLATFORM.*로그인", -i=true)`.
 `TREE.md` 도 줄마다 `[스페이스]` 를 답니다.
 
 ## 검색 순서
 
 1. **`ALIASES.md` grep** — 사용자 어휘로 찾기. 대부분 여기서 끝납니다
-2. **영역만 알고 이름을 모르면 `TREE.md`** — `Grep(path="<VAULT>/TREE.md")` 로 위에서부터 훑기
+2. **영역만 알고 이름을 모르면 `TREE.md`** — `Grep(path="<VAULT>/TREE.md", -i=true)` 로 위에서부터 훑기
 3. **`<VAULT>/mirror/pages/` 전체 grep** — 그래도 없으면 본문에서 찾기
 4. **인링크 수 참고** — 여러 후보가 나오면 인링크가 많은 쪽이 대개 정본입니다
 
@@ -94,7 +94,7 @@ Read("<VAULT>/mirror/pages/01/200000001.md")
 **낱말 사이를 `.*` 로 잇고, 순서를 모르니 양방향을 씁니다:**
 
 ```
-Grep(pattern="출장.*승인|승인.*출장", path="<VAULT>/ALIASES.md", output_mode="content")
+Grep(pattern="출장.*승인|승인.*출장", path="<VAULT>/ALIASES.md", output_mode="content", -i=true)
 ```
 
 정규식이 부담스러우면 낱말을 하나씩 넣고 **양쪽에 다 나온 줄**을 고르세요 — 결과는
@@ -105,6 +105,16 @@ Grep(pattern="출장.*승인|승인.*출장", path="<VAULT>/ALIASES.md", output_
 **1번을 건너뛰면 조용히 틀린 답을 줍니다.** 본문 grep은 그 표현으로 *링크한* 페이지를
 찾아주지, 찾으려는 문서를 주지 않습니다. "로그인"으로 본문을 뒤지면 OAuth 문서가 아니라
 그것을 "로그인 붙이는 법"이라고 부르며 링크한 온보딩 문서가 나옵니다.
+
+### `-i=true` 를 빼지 마세요
+
+`Grep` 은 ripgrep 이라 **기본이 대소문자 구분**입니다(실측: `coway` 로 `Coway` 를 못
+찾습니다 — 실볼트 `ALIASES.md` 에서 `coway` 가 17건 대 48건입니다). 이 위키는 한국어 문서에 영문 고유명사·식별자가 섞여 있고, 사용자가 그것을
+어떤 표기로 칠지는 알 수 없습니다 — `coway`·`Coway`·`COWAY` 가 다 나옵니다.
+구분한 채로 두면 **결과가 있는데 0건으로 보입니다.**
+
+서버판도 같은 이유로 대소문자를 구분하지 않습니다. 한쪽만 바꾸면 판을 옮긴 사용자가
+같은 질의에 다른 답을 받습니다 — `shared_contract.sh` 가 둘이 어긋나는지 검사합니다.
 
 ### 다 해봐도 없으면 — 거기서 멈추지 마세요
 
@@ -126,7 +136,7 @@ Grep(pattern="출장.*승인|승인.*출장", path="<VAULT>/ALIASES.md", output_
 알 때, 그리고 "링크 안 된 문서 목록"을 물을 때가 `TREE.md` 차례입니다.
 
 ```
-Grep(pattern="영업", path="<VAULT>/TREE.md", output_mode="content")
+Grep(pattern="영업", path="<VAULT>/TREE.md", output_mode="content", -i=true)
 ```
 
 `ALIASES.md` 끝의 "별칭 없는 페이지" 목록이 그 고아들입니다 — 위키 정리에 관심을
