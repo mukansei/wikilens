@@ -39,23 +39,49 @@ class ContentService(
      *
      * Lucene 질의가 아니라 실제 파일 스캔인 이유: 형태소 분석을 거치지 않은
      * 정확 일치가 필요한 경우가 있다(식별자, 코드 조각, 정확한 문구).
-     * 10k 문서 ~100MB 스캔은 수백 ms라 감당 가능하다.
+     * 실측(2026-08-06): 2,383 문서 전체 스캔 0.64초.
+     *
+     * **`regex=true` 는 사용자 정규식을 그대로 실행하는 자리다.** JVM 정규식은
+     * 백트래킹이라 `(.+)+@@@@` 같은 패턴 하나로 CPU 를 무한히 태운다 — 실측으로
+     * 요청이 20초를 넘겨도 안 끝났고, ACL 이 fail-closed 라도 **등록된 사용자면
+     * 누구나** 서버 스레드를 영구히 묶을 수 있었다. 그래서 아래 셋을 건다:
+     *
+     *   1. 패턴 길이 상한 — 폭발적 패턴은 대개 길다
+     *   2. 전체 시간 예산 — 넘으면 지금까지 찾은 것으로 `truncated=true`
+     *   3. 줄 길이 상한 — 한 줄이 길수록 백트래킹이 폭발적으로 는다
+     *
+     * ripgrep 으로 바꾸면 유한 오토마타라 이 문제가 원리적으로 사라지지만, 서버
+     * 배포에 rg 바이너리를 요구하게 된다(jar 하나로 뜨던 것이 깨진다). 지금
+     * 규모에서는 얻는 게 속도뿐이라 미뤘다 — 10만 규모의 재판단은 `DECISIONS.md` D12.
      */
-    fun grep(pattern: String, userKey: String?, limit: Int, regex: Boolean): GrepResponse {
+    fun grep(
+        pattern: String,
+        userKey: String?,
+        limit: Int,
+        regex: Boolean,
+        // 테스트가 예산을 줄여 폭발적 패턴을 몇 초가 아니라 밀리초에 확인하게 한다.
+        budgetNanos: Long = GREP_BUDGET_NANOS,
+    ): GrepResponse {
         val tokens = acl.tokensFor(userKey)
         if (tokens.isEmpty() || pattern.isBlank()) {
             return GrepResponse(pattern, 0, emptyList(), false)
         }
+        // 잘못된 패턴과 너무 긴 패턴을 같게 취급한다 — 둘 다 "이 질의로는 못 찾는다"이고,
+        // 왜 거부됐는지 알려주면 그 자체가 탐색 수단이 된다.
+        if (pattern.length > MAX_PATTERN) return GrepResponse(pattern, 0, emptyList(), false)
         val rx = if (regex) runCatching { Regex(pattern) }.getOrNull() else null
         if (regex && rx == null) return GrepResponse(pattern, 0, emptyList(), false)
 
         val matches = ArrayList<GrepMatch>()
         var scanned = 0
         var truncated = false
+        val deadline = System.nanoTime() + budgetNanos
 
         for (meta in index.allMeta()) {
             // limit 이 찼는데 아직 볼 문서가 남았다 = 잘렸다.
             if (matches.size >= limit) { truncated = true; break }
+            // 시간 예산은 문서 경계에서만 본다 — 줄마다 보면 그 자체가 비용이다.
+            if (System.nanoTime() > deadline) { truncated = true; break }
             // 루프 밖에서 한 번 계산한 tokens 를 재사용한다 (문서마다 재조회하면 수천 회).
             if (!acl.canSee(tokens, meta.id)) continue
             val f = root.resolve(VaultLayout.relPagePath(meta.id))
@@ -67,7 +93,15 @@ class ContentService(
                 // for + break 라야 실제로 읽기를 멈춘다.
                 for ((i, line) in lines.withIndex()) {
                     if (matches.size >= limit) { truncated = true; break }
-                    val hit = rx?.containsMatchIn(line) ?: line.contains(pattern, ignoreCase = true)
+                    // 한 줄 안에서도 예산을 본다. **정규식 하나가 이 줄에서 안 끝나면
+                    // 파일 경계까지 못 가므로, 문서 단위 검사만으로는 못 막는다.**
+                    if ((i and LINE_CHECK_MASK) == 0 && System.nanoTime() > deadline) {
+                        truncated = true; break
+                    }
+                    // 백트래킹 비용은 줄 길이에 비선형이다. 긴 줄은 잘라서 본다.
+                    val target = if (line.length > MAX_LINE) line.take(MAX_LINE) else line
+                    val hit = rx?.containsMatchIn(target)
+                        ?: target.contains(pattern, ignoreCase = true)
                     if (hit) {
                         matches.add(GrepMatch(meta.id, meta.title, i + 1, line.trim().take(300)))
                     }
@@ -75,5 +109,26 @@ class ContentService(
             }
         }
         return GrepResponse(pattern, scanned, matches, truncated)
+    }
+
+    companion object {
+        /** 폭발적 정규식은 대개 길다. 정상 질의가 이 길이를 넘을 일은 없다. */
+        const val MAX_PATTERN = 200
+
+        /**
+         * 한 줄에서 검사할 최대 길이. 백트래킹 비용이 줄 길이에 비선형이라,
+         * 예산만으로는 **한 줄**에 갇히는 것을 못 막는다.
+         */
+        const val MAX_LINE = 4_000
+
+        /**
+         * 전체 시간 예산. 실측 전체 스캔이 0.64초이므로 정상 질의는 여유롭게 들어오고,
+         * 폭발적 패턴은 여기서 끊긴다. 넘으면 실패가 아니라 `truncated=true` 다 —
+         * 부분 결과가 침묵보다 낫고, 클라이언트가 이미 그 플래그를 표시한다.
+         */
+        const val GREP_BUDGET_NANOS = 3_000_000_000L
+
+        /** 예산 검사 간격(줄). 63 = 64줄마다 — 시계 읽기가 매칭보다 비싸지 않게. */
+        const val LINE_CHECK_MASK = 63
     }
 }

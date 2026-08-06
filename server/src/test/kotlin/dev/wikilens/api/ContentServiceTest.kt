@@ -119,4 +119,62 @@ class ContentServiceTest {
         assertEquals(1, r.matches.size)
         assertEquals(1, r.matches[0].line, "줄 번호는 1부터")
     }
+
+    // ---------------------------------------------------------- ReDoS 방어
+    //
+    // `regex=true` 는 사용자 정규식을 그대로 실행한다. JVM 정규식은 백트래킹이라
+    // `(.+)+@@@@` 하나로 CPU 를 무한히 태운다 — 실측으로 요청이 20초를 넘겨도 안
+    // 끝났고, ACL 이 fail-closed 라도 등록된 사용자면 누구나 스레드를 묶을 수 있었다.
+
+    @Test
+    fun `폭발적 정규식이 예산 안에서 끊긴다`() {
+        // **위협은 한 줄이 아니라 누적이다.** 실볼트 실측: `(.+)+@@@@` 는 줄 하나에는
+        // 0.2 초면 끝나지만, 2,383 문서를 훑으면 721 번째 파일에서 이미 20 초를 넘겼다.
+        // 그래서 픽스처도 "여러 문서 × 여러 줄" 이어야 재현된다.
+        repeat(20) { i ->
+            val body = (1..40).joinToString("\n") { "a".repeat(600) }
+            write("doc$i", "문서 $i", body + "\n", listOf("@public"))
+        }
+        acl.putUser(user, listOf("@public"))
+
+        // 예산을 200ms 로 줄여 확인한다 — 기본 3초를 그대로 쓰면 테스트가 그만큼 느려진다.
+        val t0 = System.nanoTime()
+        val r = svc.grep("(.+)+@@@@", user, limit = 5, regex = true, budgetNanos = 200_000_000)
+        val elapsedSec = (System.nanoTime() - t0) / 1e9
+
+        assertTrue(elapsedSec < 5, "예산을 넘겨 %.1f초 걸렸다".format(elapsedSec))
+        assertTrue(r.matches.isEmpty(), "매치가 있을 리 없다")
+        assertTrue(r.truncated, "예산으로 끊었으면 truncated 로 알려야 한다")
+    }
+
+    @Test
+    fun `너무 긴 패턴은 거부한다`() {
+        write("1", "문서", "hello\n", listOf("@public"))
+        acl.putUser(user, listOf("@public"))
+
+        val r = svc.grep("x".repeat(ContentService.MAX_PATTERN + 1), user, 5, regex = false)
+        assertEquals(0, r.scanned, "긴 패턴은 스캔조차 하지 않는다")
+        assertTrue(r.matches.isEmpty())
+    }
+
+    @Test
+    fun `정상 질의는 방어에 걸리지 않는다`() {
+        write("1", "문서", "점유인증 정책 강화\nDEPLOY_TOKEN=abc\n", listOf("@public"))
+        acl.putUser(user, listOf("@public"))
+
+        assertEquals(1, svc.grep("점유인증", user, 5, regex = false).matches.size)
+        assertEquals(1, svc.grep("DEPLOY_[A-Z]+", user, 5, regex = true).matches.size)
+    }
+
+    @Test
+    fun `긴 줄은 잘라서 검사한다`() {
+        // 앞부분은 잘려도 매칭되고, 상한 너머는 안 보인다
+        val head = "찾을말" + "z".repeat(ContentService.MAX_LINE)
+        write("1", "긴 줄", head + "숨은말\n", listOf("@public"))
+        acl.putUser(user, listOf("@public"))
+
+        assertEquals(1, svc.grep("찾을말", user, 5, regex = false).matches.size)
+        assertTrue(svc.grep("숨은말", user, 5, regex = false).matches.isEmpty(),
+            "상한 너머까지 검사하면 긴 줄에서 백트래킹이 폭발한다")
+    }
 }
