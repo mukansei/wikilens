@@ -148,6 +148,36 @@ class ContentServiceTest {
     }
 
     @Test
+    fun `스택을 넘기는 정규식이 500 이 되지 않는다`() {
+        // JVM 정규식은 재귀 백트래킹이라 깊이가 스택을 넘기면 **Error** 가 난다.
+        // 예외가 아니라 Error 라 그대로 위로 던져져 HTTP 500 이 됐다(실측).
+        // 시간 예산으로는 못 막는다 — 터지는 데 0.02초면 된다.
+        //
+        // 재현 조건이 좁다: **매치에 실패하는** 긴 줄이어야 한다. 일찍 매치되면
+        // 백트래킹이 깊어지기 전에 끝나서 실볼트에서는 안 났다.
+        write("1", "긴 줄", "a".repeat(5_000) + "\n", listOf("@public"))
+        acl.putUser(user, listOf("@public"))
+
+        val r = svc.grep("(a|aa)+c", user, limit = 5, regex = true)
+
+        assertTrue(r.matches.isEmpty(), "매치될 리 없다")
+        assertEquals(1, r.scanned, "그 줄만 건너뛰고 문서 스캔은 계속해야 한다")
+    }
+
+    @Test
+    fun `스택을 넘긴 줄 뒤의 문서도 계속 스캔한다`() {
+        write("1", "덫", "a".repeat(5_000) + "\n", listOf("@public"))
+        write("2", "정상", "점유인증 정책\n", listOf("@public"))
+        acl.putUser(user, listOf("@public"))
+
+        // 덫에 걸린 뒤에도 2번 문서에서 찾아야 한다
+        val r = svc.grep("(a|aa)+c|점유인증", user, limit = 5, regex = true)
+        assertEquals(2, r.scanned)
+        assertEquals(1, r.matches.size, "덫 때문에 나머지를 버리면 안 된다")
+        assertEquals("2", r.matches[0].pageId)
+    }
+
+    @Test
     fun `너무 긴 패턴은 거부한다`() {
         write("1", "문서", "hello\n", listOf("@public"))
         acl.putUser(user, listOf("@public"))

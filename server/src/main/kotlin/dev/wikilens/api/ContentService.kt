@@ -80,7 +80,6 @@ class ContentService(
         for (meta in index.allMeta()) {
             // limit 이 찼는데 아직 볼 문서가 남았다 = 잘렸다.
             if (matches.size >= limit) { truncated = true; break }
-            // 시간 예산은 문서 경계에서만 본다 — 줄마다 보면 그 자체가 비용이다.
             if (System.nanoTime() > deadline) { truncated = true; break }
             // 루프 밖에서 한 번 계산한 tokens 를 재사용한다 (문서마다 재조회하면 수천 회).
             if (!acl.canSee(tokens, meta.id)) continue
@@ -93,16 +92,15 @@ class ContentService(
                 // for + break 라야 실제로 읽기를 멈춘다.
                 for ((i, line) in lines.withIndex()) {
                     if (matches.size >= limit) { truncated = true; break }
-                    // 한 줄 안에서도 예산을 본다. **정규식 하나가 이 줄에서 안 끝나면
-                    // 파일 경계까지 못 가므로, 문서 단위 검사만으로는 못 막는다.**
+                    // 줄 단위로도 예산을 본다. 문서 경계에서만 보면 파일 하나가 통째로
+                    // 예산을 넘겨도 못 끊는다. 매 줄 시계를 읽으면 그 자체가 비용이라
+                    // 64줄마다 본다.
                     if ((i and LINE_CHECK_MASK) == 0 && System.nanoTime() > deadline) {
                         truncated = true; break
                     }
                     // 백트래킹 비용은 줄 길이에 비선형이다. 긴 줄은 잘라서 본다.
                     val target = if (line.length > MAX_LINE) line.take(MAX_LINE) else line
-                    val hit = rx?.containsMatchIn(target)
-                        ?: target.contains(pattern, ignoreCase = true)
-                    if (hit) {
+                    if (matchesLine(rx, pattern, target)) {
                         matches.add(GrepMatch(meta.id, meta.title, i + 1, line.trim().take(300)))
                     }
                 }
@@ -110,6 +108,24 @@ class ContentService(
         }
         return GrepResponse(pattern, scanned, matches, truncated)
     }
+
+    /**
+     * 한 줄 매칭. **`StackOverflowError` 를 여기서 삼킨다.**
+     *
+     * JVM 정규식은 재귀로 백트래킹하므로 깊이가 스택을 넘기면 `Error` 가 난다 —
+     * 예외가 아니라 `Error` 라 `runCatching` 의 일반적인 용법으로도 안 잡히고, 그대로
+     * 위로 던져져 **HTTP 500** 이 됐다(실측: `(a|aa)+c` + 매치 안 되는 5,000자 줄).
+     * 시간 예산으로는 못 막는다 — 터지는 데 0.02초밖에 안 걸린다.
+     *
+     * 그 줄만 건너뛴다. 한 줄이 스택을 넘겼다고 나머지 문서까지 버릴 이유가 없고,
+     * 사용자에겐 "이 패턴으로는 그 줄을 못 본다"가 500 보다 낫다.
+     */
+    private fun matchesLine(rx: Regex?, pattern: String, target: String): Boolean =
+        try {
+            rx?.containsMatchIn(target) ?: target.contains(pattern, ignoreCase = true)
+        } catch (e: StackOverflowError) {
+            false
+        }
 
     companion object {
         /** 폭발적 정규식은 대개 길다. 정상 질의가 이 길이를 넘을 일은 없다. */
