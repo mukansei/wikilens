@@ -23,8 +23,8 @@ if [ -f "$ENV_FILE" ]; then
   # `export -p` 로 통째로 떠서 소싱 뒤 되돌린다. 변수를 하나씩 나열하면 새 변수를
   # 추가할 때 빠뜨리고, 실제로 그래서 CONFLUENCE_URL 만 보존되고 TOKEN·PREFIX 는
   # 파일이 덮고 있었다. `${!v}` 간접 확장을 안 쓰는 이유는 값이 빈 문자열인 경우
-  # ("설정함"과 "미설정"이 다르다 — CONFLUENCE_PREFIX="" 가 Acme 필수 설정이다)
-  # 를 구분하기 위해서다. `export -p` 는 빈 값도 선언째 보존한다.
+  # ("설정함"과 "미설정"이 다르다 — CONFLUENCE_PREFIX="" 는 "Server/DC 라 접두사 없음"
+  # 이지 자동 판별이 아니다) 를 구분하기 위해서다. `export -p` 는 빈 값도 선언째 보존한다.
   _pre="$(export -p | grep -E '(CONFLUENCE|IAM)_[A-Z_]+=' || true)"
   set -a
   # shellcheck disable=SC1090

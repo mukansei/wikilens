@@ -242,8 +242,9 @@ def test_env_file_is_not_world_readable(tmp_path):
 
 def test_empty_prefix_survives_capture(tmp_path):
     """
-    `CONFLUENCE_PREFIX=""` 는 Acme 필수 설정이고 **빈 문자열이 유효한 값**이다.
-    `.get()` 으로 판정하면 조용히 빠지고 인증이 실패한다.
+    `CONFLUENCE_PREFIX=""` 는 **빈 문자열이 유효한 값**이다 — "Server/DC 라 접두사가
+    없다"는 뜻이고, "미설정"(자동 판별에 맡김)과 다르다. `.get()` 으로 판정하면
+    조용히 빠지고 인증이 실패한다.
     """
     setup_vault(tmp_path, "--capture-env", CONFLUENCE_URL="https://w.example.com",
                 CONFLUENCE_TOKEN="tok", CONFLUENCE_PREFIX="")
@@ -361,7 +362,7 @@ def test_exported_value_beats_the_file(tmp_path, var, shell_value):
 
 
 def test_empty_prefix_from_shell_beats_the_file(tmp_path):
-    """빈 문자열은 '미설정'이 아니라 유효한 값이다 — Acme 필수 설정."""
+    """빈 문자열은 '미설정'이 아니라 유효한 값이다 — Server/DC 를 뜻한다."""
     setup_vault(tmp_path, "--capture-env",
                 CONFLUENCE_URL="https://x", CONFLUENCE_PREFIX="/from-file")
     fake = tmp_path / "bin"
@@ -562,7 +563,7 @@ def test_setup_reference_covers_the_argument_order_trap():
     text = SETUP_REF.read_text(encoding="utf-8")
     assert "--root <VAULT> sync" in text
     assert "앞에" in text
-    assert "CONFLUENCE_PREFIX" in text, "Acme 필수 설정이 빠졌다"
+    assert "CONFLUENCE_PREFIX" in text, "접두사 강제 지정 탈출구 안내가 빠졌다"
 
 
 # --------------------------------------------------------------- 검색 절차
@@ -570,7 +571,7 @@ def test_setup_reference_covers_the_argument_order_trap():
 # `Grep` 은 정규식을 받지만 매칭이 **한 줄 안에서** 일어난다. 여러 낱말 질의를 그대로
 # 넣으면 그 순서 그대로 붙어 있어야 하므로 0건이 된다. 스킬이 그걸 모르면
 # 3번(본문 grep)으로 떨어지는데, 스킬 자신이 그건 틀린 답을 준다고 경고한다.
-# 실측(Acme 볼트): "출장 신청 승인" 그대로 0건, 낱말을 `.*` 로 이으면 3건.
+# 실측(개발 코퍼스): 구절을 그대로 넣으면 0건, 낱말을 `.*` 로 이으면 3건.
 
 def test_skill_explains_line_scoped_matching():
     text = SKILL.read_text(encoding="utf-8")
