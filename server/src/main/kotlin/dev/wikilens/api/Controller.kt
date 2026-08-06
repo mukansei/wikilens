@@ -74,7 +74,7 @@ class Controller(
         return TreeResponse(rendered.markdown, rendered.truncated)
     }
 
-    /** MCP 프록시가 종료 시 호출한다. 놓쳐도 sweep 이 처리한다. */
+    /** MCP 프록시가 종료 시 호출한다. 놓치면 `SessionSweeper` 가 주기적으로 거둔다. */
     @PostMapping("/session/end")
     fun endSession(@RequestBody req: SessionEndRequest): Map<String, Any> =
         mapOf("finalized" to store.onEnd(req.sessionId))

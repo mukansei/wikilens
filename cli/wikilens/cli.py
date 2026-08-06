@@ -75,9 +75,12 @@ def _cmd_sync(args) -> int:
 
 def _cmd_build(args) -> int:
     rep = build(Path(args.root))
+    changed = rep.pages_written + rep.structures_written
+    # 안 바뀐 파일은 안 쓴다. 그래서 "변경 없음" 이 정상이고, 그것 자체가 빌드
+    # 멱등성이 지켜졌다는 신호다 — 같은 입력으로 두 번 돌리면 두 번째는 0 이어야 한다.
     print(
-        f"빌드 완료: 파싱 {rep.parsed} · 페이지 {rep.pages_written} · "
-        f"구조 {rep.structures_written}"
+        f"빌드 완료: 파싱 {rep.parsed} · 기록 {changed}"
+        + (" (변경 없음 — 멱등)" if changed == 0 and rep.parsed else "")
     )
     print(
         f"링크 {rep.total_links}개 중 {rep.resolved_links}개 해석 "
