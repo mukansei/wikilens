@@ -1,7 +1,7 @@
 """
 스코어링 **대조 구현** 테스트.
 
-`wikilens.scoring_ref` 는 런타임에 안 쓰인다. Kotlin `Scoring.kt` 의 짝으로만 존재한다 —
+`wikilens.scoring_reference` 는 런타임에 안 쓰인다. Kotlin `Scoring.kt` 의 짝으로만 존재한다 —
 서버에는 scipy 가 없어 Beta 분위수를 손으로 구현했고(`_betacf`·`_beta_ppf` 뉴턴법),
 그게 맞는지 판정할 기준이 필요하다.
 
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from wikilens.scoring_ref import (
+from wikilens.scoring_reference import (
     PRIOR_CEIL, QueryKind, classify, eb_lower, wilson_lower,
 )
 from wikilens.tokenizer import tokenize

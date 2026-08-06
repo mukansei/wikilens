@@ -166,7 +166,7 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 | | 상태 |
 |---|---|
 | 손익분기 `p_hit > p_wrong/(n−1)` | 대수적 유도로 성립. **`1/n`은 틀린 공식**(한때 시뮬레이션으로 실측 일치까지 확인했으나 그 산출물은 제거됨 — 유도는 재현 가능) |
-| EB 수치 | Python↔Kotlin 1e-6 일치 (`LearnLayerTest.kt` 의 기대값 6개가 `scoring_ref.py` 산출). **scipy 대조는 성립하지 않는다** — `scoring_ref` 가 scipy 를 일부러 안 쓰고(뉴턴법 자체 구현) venv 에도 없다 |
+| EB 수치 | Python↔Kotlin 1e-6 일치 (`LearnLayerTest.kt` 의 기대값 6개가 `scoring_reference.py` 산출). **scipy 대조는 성립하지 않는다** — `scoring_reference` 가 scipy 를 일부러 안 쓰고(뉴턴법 자체 구현) venv 에도 없다 |
 | 실사용 적중률 | **측정된 바 없음** |
 | Kotlin Lucene/Spring 배선 | 빌드·bootRun·재색인 검증됨 (Acme 실데이터 2,378건, 2026-08). 검색 랭킹 **품질**은 별도 미검증 |
 
