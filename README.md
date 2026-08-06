@@ -45,8 +45,27 @@ Confluence 고유 개념에만 의존하므로(`ac:link` storage format, `ancest
 빠지는 것은 **굴절 처리**입니다. 문서가 `production servers` 인데 질의가
 `production server` 면 Nori 는 못 찾습니다 — 굴절 쌍 5개 중 **Nori 0 · EnglishAnalyzer 5**
 였습니다. 불용어도 안 걸러집니다(`the deploy to a server` → Nori 5토큰 · English 2토큰).
-**영어가 주된 코퍼스라면 `KoreanAnalyzer` 를 `EnglishAnalyzer` 로 바꿔야 하고, 그 자리는
-`LuceneIndex.analyzer` 한 곳입니다** — 아직 설정으로 빼지 않았습니다.
+**영어가 주된 코퍼스라면 색인할 때 분석기를 지정하세요:**
+
+```bash
+java -jar wikilens-server.jar --wikilens.analyzer=english   # korean(기본) · english · standard
+```
+
+**바꾸면 반드시 재색인해야 합니다.** 색인과 질의가 다른 분석기를 쓰면 예외가 아니라
+**조용히 0건**이 됩니다 — 이 프로젝트가 겪은 대표적 실패입니다. 그래서 선택을 색인
+커밋 데이터에 기록해 두고 기동 시 대조합니다:
+
+```
+색인은 'korean' 분석기로 지어졌는데 지금 설정은 'english' 입니다 —
+재색인 전까지 **검색이 에러 없이 0건**이 됩니다. POST /api/admin/reindex 로 다시 지으세요.
+```
+
+이름을 잘못 적으면 조용히 기본값으로 떨어지지 않고 **기동이 실패합니다** —
+오타가 "검색이 0건" 의 원인이 되면 그때는 설정이 아니라 색인을 의심하게 되기 때문입니다.
+
+학습 궤적도 함께 봐야 합니다. `trajectories.jsonl` 에는 **분석된 항**이 저장돼 있어서,
+분석기를 바꾸면 옛 항과 새 질의가 안 맞아 그만큼 학습이 무효가 됩니다. 궤적은 유일한
+복구 불가 자산이라 지우지는 않습니다.
 
 빠지는 것이 한국어에서 조사를 못 떼는 것과 **같은 종류의 실패**라는 점이 중요합니다.
 Nori 를 쓰는 이유가 정확히 그것이므로, 영어 코퍼스에 Nori 를 쓰는 것은

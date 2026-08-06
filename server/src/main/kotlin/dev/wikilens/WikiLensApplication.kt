@@ -3,6 +3,7 @@ package dev.wikilens
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.wikilens.acl.AclRegistry
 import dev.wikilens.config.WikiLensProperties
+import dev.wikilens.index.AnalyzerKind
 import dev.wikilens.index.LuceneIndex
 import dev.wikilens.learn.FileTrajectorySink
 import dev.wikilens.learn.TrajectoryStore
@@ -38,9 +39,11 @@ class WikiLensApplication {
 
     // 경로는 전부 절대경로로 푼다 — 기본값이 상대경로라 그대로 두면 실행 디렉터리에
     // 따라 다른 자리를 쓰고, 로그·오류 메시지도 어디였는지 말해주지 못한다.
+    // 오타는 여기서 죽는 편이 낫다. 조용히 기본값으로 떨어지면 그게 "검색이 0건" 의
+    // 원인이 되고, 그때는 설정이 아니라 색인을 의심하게 된다.
     @Bean
     fun luceneIndex(props: WikiLensProperties): LuceneIndex =
-        LuceneIndex(abs(props.indexDir)).also { it.openIfExists() }
+        LuceneIndex(abs(props.indexDir), AnalyzerKind.of(props.analyzer)).also { it.openIfExists() }
 
     @Bean
     fun trajectorySink(props: WikiLensProperties, mapper: ObjectMapper): FileTrajectorySink =

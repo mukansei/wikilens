@@ -73,18 +73,66 @@ data class Scored(val id: String, val title: String, val space: String, val scor
 /** 색인된 문서의 메타데이터. 본문은 담지 않는다 — 콘텐츠는 미러에서 읽는다. */
 data class PageMeta(val id: String, val title: String, val space: String)
 
-class LuceneIndex(private val dir: Path) : AutoCloseable {
+/**
+ * 본문 분석기 선택지.
+ *
+ * **색인과 질의가 같은 분석기를 써야 한다.** 다르면 예외가 아니라 **조용히 0건**이 되고,
+ * 그것이 이 프로젝트가 겪은 대표적 실패다(`CLAUDE.md` 조용히 실패하는 것들 1번).
+ * 그래서 선택을 색인에 기록하고([LuceneIndex.ANALYZER_KEY]) 기동 시 대조한다.
+ */
+enum class AnalyzerKind(val key: String) {
+    /**
+     * 한국어. 교착어라 조사가 붙는다 — '로그인을/로그인은/로그인이'.
+     * 형태소 분석 없이는 BM25 가 무너진다. 이것이 JVM 을 고른 유일하고 결정적인 이유다.
+     *
+     * 영문도 깨뜨리지 않는다 — 공백·구두점으로 자르고 소문자화한다(실측:
+     * `OAuth 2.0 authorization code flow` → `[oauth, 2, 0, authorization, code, flow]`).
+     * 다만 **어간을 안 줄인다.** 문서 `production servers` 에 질의 `production server` 가
+     * 안 맞는다(실측: 굴절 쌍 5개 중 Nori 0 · English 5). 한국어 문서에 영문
+     * 고유명사·식별자가 섞인 코퍼스에서는 그것들이 굴절하지 않으므로 문제가 안 된다.
+     */
+    KOREAN("korean"),
+
+    /**
+     * 영어. 어간 추출과 불용어 제거를 한다 — `the deploy to a server` 가 2토큰이 된다.
+     * **영어가 주된 코퍼스일 때만 고를 것.** 한국어 본문에 쓰면 조사를 못 떼서
+     * Nori 를 쓰는 이유가 그대로 사라진다 — 대칭인 실패다.
+     */
+    ENGLISH("english"),
+
+    /**
+     * 언어 규칙 없이 유니코드 단어 경계로만 자르고 소문자화한다.
+     * 어느 언어에도 최선은 아니지만 **어느 언어도 망가뜨리지 않는다** —
+     * 다국어가 섞였는데 주 언어를 못 고르겠을 때의 안전한 기본값이다.
+     */
+    STANDARD("standard");
+
+    companion object {
+        /** 모르는 이름은 거부한다 — 오타가 조용히 기본값으로 떨어지면 그게 0건의 원인이 된다. */
+        fun of(key: String): AnalyzerKind =
+            entries.firstOrNull { it.key.equals(key.trim(), ignoreCase = true) }
+                ?: throw IllegalArgumentException(
+                    "알 수 없는 분석기 '$key'. 가능한 값: ${entries.joinToString("·") { it.key }}"
+                )
+    }
+}
+
+class LuceneIndex(
+    private val dir: Path,
+    val kind: AnalyzerKind = AnalyzerKind.KOREAN,
+) : AutoCloseable {
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
-     * Nori. 한국어는 교착어라 조사가 붙는다 — '로그인을/로그인은/로그인이'.
-     * 형태소 분석 없이는 BM25가 무너진다. 이것이 JVM을 고른 유일하고 결정적인 이유다.
-     *
      * ID/SPACE/ACL 은 분석하지 않는다 (StringField 이므로 실제로는 무시되지만
      * 질의 파싱 경로에서 일관성을 위해 명시한다).
      */
     private val analyzer: Analyzer = PerFieldAnalyzerWrapper(
-        KoreanAnalyzer(),
+        when (kind) {
+            AnalyzerKind.KOREAN -> KoreanAnalyzer()
+            AnalyzerKind.ENGLISH -> org.apache.lucene.analysis.en.EnglishAnalyzer()
+            AnalyzerKind.STANDARD -> org.apache.lucene.analysis.standard.StandardAnalyzer()
+        },
         mapOf(
             Fields.ID to org.apache.lucene.analysis.core.KeywordAnalyzer(),
             Fields.SPACE to org.apache.lucene.analysis.core.KeywordAnalyzer(),
@@ -135,6 +183,9 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
             }
             IndexWriter(d, cfg).use { w ->
                 for (p in pages) w.addDocument(toDocument(p))
+                // **어떤 분석기로 지었는지를 색인 안에 남긴다.** 커밋 데이터라 커밋과
+                // 원자적이다 — 옆에 파일을 두면 색인과 따로 놀 수 있다.
+                w.setLiveCommitData(mapOf(ANALYZER_KEY to kind.key).entries)
                 w.commit()
             }
         }
@@ -183,7 +234,34 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
     fun openIfExists() {
         runCatching { swap() }
             .onFailure { log.info("기존 색인 없음 — reindex 필요") }
+        checkAnalyzerMatches()
     }
+
+    /**
+     * 디스크 색인을 지은 분석기와 지금 설정된 분석기가 같은지 본다.
+     *
+     * **어긋나면 예외가 아니라 조용히 0건이 된다.** 색인에는 `production servers` 가
+     * Nori 토큰으로 들어가 있는데 질의는 English 토큰으로 오면 아무것도 안 맞는다.
+     * 에러도 경고도 없이 "문서가 없다" 로 보인다 — 이 프로젝트가 겪은 실패 1번이
+     * 정확히 이 모양이었다(클라이언트와 서버가 각자 토큰화한 경우).
+     *
+     * 기동 시에는 `vaultBootstrap` 이 어차피 전량 재색인하므로 스스로 낫는다. 문제는
+     * **볼트를 못 읽어 재색인이 건너뛰어진 경우**다 — 그때 옛 분석기 색인이 그대로
+     * 남아 검색만 조용히 빈다. 그래서 여기서 크게 찍는다.
+     */
+    private fun checkAnalyzerMatches() {
+        val built = builtWith() ?: return   // 색인이 없거나 분석기 기록 이전 색인
+        if (built == kind.key) return
+        log.error(
+            "색인은 '{}' 분석기로 지어졌는데 지금 설정은 '{}' 입니다 — 재색인 전까지 " +
+                "**검색이 에러 없이 0건**이 됩니다. POST /api/admin/reindex 로 다시 지으세요.",
+            built, kind.key,
+        )
+    }
+
+    /** 디스크 색인을 지은 분석기 이름. 없으면 null(색인 없음 또는 이 기록 이전 색인). */
+    fun builtWith(): String? =
+        snapshotRef.get().reader?.indexCommit?.userData?.get(ANALYZER_KEY)
 
     /**
      * 검색. [aclTokens] 는 요청자의 권한 토큰(그룹, 사용자 ID, 공개 마커).
@@ -267,5 +345,10 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
 
     override fun close() {
         snapshotRef.getAndSet(Snapshot.EMPTY).close()
+    }
+
+    companion object {
+        /** 색인 커밋 데이터에 분석기 이름을 남기는 키. */
+        const val ANALYZER_KEY = "wikilens.analyzer"
     }
 }

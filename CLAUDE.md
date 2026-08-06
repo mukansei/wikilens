@@ -6,7 +6,9 @@ Confluence 위키를 미러링하고 **앵커 텍스트**(다른 문서들이 �
 **특정 회사 전용이 아니다.** Cloud·Server/DC 양쪽, 인증 4방식을 지원한다. 저장소의
 `Coway 2,383건` 류는 **측정 출처 라벨**이지 종속이 아니며, 배포되는 플러그인·CLI 에는
 회사 고유값이 없다(전에 `setup` 이 만드는 `env.sh` 에 새고 있었다). 언어는 한국어
-하나를 특정한다 — 서버판이 Nori 를 고정해 쓴다. 자세한 범위는 `README.md`.
+하나를 기본으로 한다 — `--wikilens.analyzer=korean|english|standard` 로 **색인 시점에**
+고르고, 그 선택이 색인에 기록돼 기동 시 대조된다(어긋나면 조용히 0건이라서다).
+자세한 범위는 `README.md`.
 
 ```
 cli/       Python  싱크·파싱·앵커 전치·로컬판        pytest
@@ -54,6 +56,7 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 | 항 단위 포스팅 (키워드 **집합** 아님) | `TrajectoryStore` | 표현이 다르면 카운트 분산 |
 | 사전확률 클램프 `[0.05, 0.85]` | `Reliability.PRIOR_CEIL` | 1관측에 신뢰도 1.0 |
 | `LOCALIZATION`만 간선 생성 | `Gate.classify` | 경로 의존 질의에 틀린 답 |
+| 색인·질의 분석기 일치 | `LuceneIndex.ANALYZER_KEY` (커밋 데이터) | **검색이 에러 없이 0건** |
 | 권한 없음은 **404** (403 아님) | `Controller.read` | 문서 존재가 유출됨 |
 
 ---
