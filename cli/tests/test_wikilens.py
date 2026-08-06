@@ -92,6 +92,26 @@ def test_shard_takes_the_tail_not_the_head():
     assert len({layout.shard(f"1027280{i:02}") for i in range(10)}) == 10
 
 
+def test_hi_lo_shaped_ids_spread_evenly():
+    """
+    Confluence 는 Hi/Lo 로 ID 를 만든다 — high 블록이 건너뛰고 그 안의 low 는 연속이다.
+    그 모양을 재현해, 앞자르기는 뭉치고 뒤자르기는 흩어지는지 확인한다.
+
+    실코퍼스 실측(2,377건)과 같은 방향이어야 한다: 앞2/앞4 최대 378 vs 뒤2 최대 37.
+    """
+    ids = [str(hi * 100_000 + lo) for hi in (355, 439, 1027, 2853) for lo in range(600)]
+
+    def head(pid: str) -> str:            # 옛 규칙
+        p = pid.rjust(4, "0")
+        return p[:2] + "/" + p[2:4]
+
+    from collections import Counter
+    worst_head = max(Counter(head(i) for i in ids).values())
+    worst_tail = max(Counter(layout.shard(i) for i in ids).values())
+    assert worst_tail * 5 < worst_head, (worst_tail, worst_head)
+    assert worst_tail <= len(ids) // 100 + 1, "뒤 2자리면 100개 디렉터리에 고르게 퍼져야 한다"
+
+
 def test_page_id_is_the_identifier_not_title():
     """제목이 바뀌어도 경로가 유지되어야 한다."""
     a = layout.rel_page_path("100000001")
