@@ -32,6 +32,9 @@ class ContentServiceTest {
 
     private val user = "tester"
 
+    /** setUp 이 쓰는 문서 중 tester 가 볼 수 있는 것. 나머지 하나는 @secret 이다. */
+    private val pagesBefore = 1
+
     @BeforeTest
     fun setUp() {
         vault = createTempDirectory("content-svc-vault")
@@ -121,41 +124,50 @@ class ContentServiceTest {
         assertEquals(1, r.matches[0].line, "줄 번호는 1부터")
     }
 
-    // ---------------------------------------------------------- ReDoS 방어
+    // ------------------------------------------------------- 폭발적 정규식
     //
-    // `regex=true` 는 사용자 정규식을 그대로 실행한다. JVM 정규식은 백트래킹이라
-    // `(.+)+@@@@` 하나로 CPU 를 무한히 태운다 — 실측으로 요청이 20초를 넘겨도 안
-    // 끝났고, ACL 이 fail-closed 라도 등록된 사용자면 누구나 스레드를 묶을 수 있었다.
+    // `regex=true` 는 사용자 정규식을 그대로 실행한다. `java.util.regex` 를 쓰던
+    // 동안 `(.+)+@@@@` 하나로 CPU 가 무한히 탔다 — 실측으로 요청이 20초를 넘겨도
+    // 안 끝났고, ACL 이 fail-closed 라도 등록된 사용자면 누구나 스레드를 묶었다.
+    // 시간 예산으로 끊는 것이 그때의 대응이었다.
+    //
+    // 지금은 엔진이 RE2(유한 오토마타)라 **끊을 것이 없다.** 아래 테스트가 재는 것도
+    // 바뀌었다 — "예산 안에 끊기는가" 가 아니라 "예산이 필요하지도 않은가" 다.
 
     @Test
-    fun `폭발적 정규식이 예산 안에서 끊긴다`() {
-        // **위협은 한 줄이 아니라 누적이다.** 실볼트 실측: `(.+)+@@@@` 는 줄 하나에는
+    fun `폭발적 정규식이 예산을 쓰지도 않고 끝난다`() {
+        // **위협은 한 줄이 아니라 누적이었다.** 실볼트 실측: `(.+)+@@@@` 는 줄 하나에는
         // 0.2 초면 끝나지만, 2,383 문서를 훑으면 721 번째 파일에서 이미 20 초를 넘겼다.
-        // 그래서 픽스처도 "여러 문서 × 여러 줄" 이어야 재현된다.
+        // 그래서 픽스처가 "여러 문서 × 여러 줄" 이어야 그때의 실패가 재현된다.
         repeat(20) { i ->
             val body = (1..40).joinToString("\n") { "a".repeat(600) }
             write("doc$i", "문서 $i", body + "\n", listOf("@public"))
         }
         acl.putUser(user, listOf("@public"))
 
-        // 예산을 200ms 로 줄여 확인한다 — 기본 3초를 그대로 쓰면 테스트가 그만큼 느려진다.
+        // 예산을 200ms 로 **줄여** 준다. 백트래킹이 남아 있다면 여기서 잘려
+        // truncated 가 서고, RE2 면 그 전에 끝나 안 선다.
         val t0 = System.nanoTime()
         val r = svc.grep("(.+)+@@@@", user, limit = 5, regex = true, budgetNanos = 200_000_000)
         val elapsedSec = (System.nanoTime() - t0) / 1e9
 
-        assertTrue(elapsedSec < 5, "예산을 넘겨 %.1f초 걸렸다".format(elapsedSec))
+        assertTrue(elapsedSec < 5, "%.1f초 걸렸다".format(elapsedSec))
         assertTrue(r.matches.isEmpty(), "매치가 있을 리 없다")
-        assertTrue(r.truncated, "예산으로 끊었으면 truncated 로 알려야 한다")
+        assertFalse(r.truncated, "200ms 예산에도 안 잘렸다 = 백트래킹이 없다")
+        assertEquals(20 + pagesBefore, r.scanned, "잘리지 않았으므로 전 문서를 다 봤다")
     }
 
     @Test
-    fun `스택을 넘기는 정규식이 500 이 되지 않는다`() {
-        // JVM 정규식은 재귀 백트래킹이라 깊이가 스택을 넘기면 **Error** 가 난다.
-        // 예외가 아니라 Error 라 그대로 위로 던져져 HTTP 500 이 됐다(실측).
-        // 시간 예산으로는 못 막는다 — 터지는 데 0.02초면 된다.
+    fun `스택을 넘기던 정규식이 500 이 되지 않는다`() {
+        // `java.util.regex` 시절 이 조합은 재귀 깊이가 스택을 넘겨 **Error** 를 냈고,
+        // 예외가 아니라 Error 라 그대로 HTTP 500 이 됐다(실측). 시간 예산으로는
+        // 못 막았다 — 터지는 데 0.02초면 됐다.
         //
-        // 재현 조건이 좁다: **매치에 실패하는** 긴 줄이어야 한다. 일찍 매치되면
-        // 백트래킹이 깊어지기 전에 끝나서 실볼트에서는 안 났다.
+        // 재현 조건이 좁았다: **매치에 실패하는** 긴 줄이어야 한다. 일찍 매치되면
+        // 깊어지기 전에 끝나서 실볼트에서는 안 났다.
+        //
+        // RE2 로 바꾼 뒤로는 재귀 자체가 없어 이 테스트가 엔진이 아니라 **성질**을
+        // 잠근다 — 어떤 엔진을 쓰든 사용자 패턴이 서버를 죽이면 안 된다.
         write("1", "긴 줄", "a".repeat(5_000) + "\n", listOf("@public"))
         acl.putUser(user, listOf("@public"))
 
@@ -166,7 +178,43 @@ class ContentServiceTest {
     }
 
     @Test
-    fun `스택을 넘긴 줄 뒤의 문서도 계속 스캔한다`() {
+    fun `역참조는 조용히 0건이 아니라 이유를 돌려준다`() {
+        // RE2 에 없는 문법이다. error 가 없으면 사용자는 `\\1` 이 문제인 줄 모르고
+        // "일치 없음" 만 본다 — 이 프로젝트가 가장 싫어하는 실패 방식이다.
+        val r = svc.grep("(\\w+)\\s\\1", user, limit = 5, regex = true)
+
+        assertTrue(r.matches.isEmpty())
+        assertNotNull(r.error, "왜 안 되는지 말해야 한다")
+        assertTrue("역참조" in r.error!!, "고칠 수 있는 말이어야 한다: ${r.error}")
+    }
+
+    @Test
+    fun `전방탐색도 마찬가지다`() {
+        val r = svc.grep("APPLE(?=조사)", user, limit = 5, regex = true)
+        assertNotNull(r.error)
+        assertTrue("전방탐색" in r.error!!)
+    }
+
+    @Test
+    fun `정상 검색에는 error 가 없다`() {
+        assertNull(svc.grep("APPLE", user, limit = 5, regex = false).error)
+    }
+
+    @Test
+    fun `긴 줄 뒤쪽의 일치도 놓치지 않는다`() {
+        // 예전에는 줄을 4,000자에서 잘라 봤다. 백트래킹 비용이 줄 길이에 비선형이라
+        // 어쩔 수 없었는데, 그 대가로 표처럼 긴 줄의 뒤쪽 일치를 **조용히 놓쳤다.**
+        // RE2 는 줄 길이에 선형이라 자를 이유가 없다.
+        write("9", "긴 표", "x".repeat(10_000) + "찾을말\n", listOf("@public"))
+
+        val r = svc.grep("찾을말", user, limit = 5, regex = false)
+
+        assertEquals(1, r.matches.size, "4,000자 뒤에 있어도 찾아야 한다")
+        assertEquals("9", r.matches[0].pageId)
+    }
+
+    @Test
+    fun `스택을 넘기던 줄 뒤의 문서도 계속 스캔한다`() {
         write("1", "덫", "a".repeat(5_000) + "\n", listOf("@public"))
         write("2", "정상", "점유인증 정책\n", listOf("@public"))
         acl.putUser(user, listOf("@public"))
@@ -229,17 +277,5 @@ class ContentServiceTest {
 
         assertEquals(1, svc.grep("점유인증", user, 5, regex = false).matches.size)
         assertEquals(1, svc.grep("DEPLOY_[A-Z]+", user, 5, regex = true).matches.size)
-    }
-
-    @Test
-    fun `긴 줄은 잘라서 검사한다`() {
-        // 앞부분은 잘려도 매칭되고, 상한 너머는 안 보인다
-        val head = "찾을말" + "z".repeat(ContentService.MAX_LINE)
-        write("1", "긴 줄", head + "숨은말\n", listOf("@public"))
-        acl.putUser(user, listOf("@public"))
-
-        assertEquals(1, svc.grep("찾을말", user, 5, regex = false).matches.size)
-        assertTrue(svc.grep("숨은말", user, 5, regex = false).matches.isEmpty(),
-            "상한 너머까지 검사하면 긴 줄에서 백트래킹이 폭발한다")
     }
 }

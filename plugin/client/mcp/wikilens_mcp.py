@@ -223,7 +223,9 @@ TOOLS = [
         "description": (
             "위키 본문에서 리터럴 문자열을 찾습니다. 형태소 분석을 거치지 않으므로 "
             "정확 일치가 필요할 때 씁니다 — 식별자, 코드 조각, 정확한 문구. "
-            "개념을 찾을 때는 search가 낫습니다."
+            "개념을 찾을 때는 search가 낫습니다.\n"
+            "regex=true 는 ripgrep과 같은 RE2 문법입니다 — 역참조(\\1)와 "
+            "전방탐색((?=))은 쓸 수 없고, 쓰면 이유를 알려줍니다."
         ),
         "inputSchema": {
             "type": "object",
@@ -298,6 +300,10 @@ def call_tool(name: str, args: dict) -> tuple[str, bool]:
                 "pattern": args.get("pattern", ""), "userKey": USER, "sessionId": SESSION,
                 "limit": int(args.get("limit", 40)), "regex": bool(args.get("regex", False)),
             })
+            # 패턴 자체가 거부된 경우. 이유를 안 보여주면 "쓸 수 없는 문법" 과
+            # "정말 일치가 없음" 이 똑같이 0건으로 보인다.
+            if r.get("error"):
+                return (f"'{r.get('pattern')}' 을 쓸 수 없습니다: {r['error']}", True)
             ms = r.get("matches", [])
             if not ms:
                 return (f"'{r.get('pattern')}' 일치 없음 (문서 {r.get('scanned',0)}개 스캔)", False)
