@@ -41,7 +41,7 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 | 계약 | 위치 | 깨지면 |
 |---|---|---|
 | 페이지 ID가 식별자 (제목 아님) | `layout.py`, `vault/Layout.kt` | 이름 변경 시 학습 전량 손실 |
-| 샤딩 `{id앞2}/{id다음2}` | 같음 (Kotlin 정의처는 `Layout.kt` 한 곳뿐) | Kotlin이 파일을 못 찾음 |
+| 샤딩 `{id뒤2}` (앞자리는 엔트로피 낮음) | 같음 (Kotlin 정의처는 `Layout.kt` 한 곳뿐) | Kotlin이 파일을 못 찾음 |
 | `canonical_json` 결정적 직렬화 | `models.py` | 매 싱크마다 전 파일이 변경으로 잡힘 |
 | `anchors.jsonl` 스키마 | `build.py` ↔ `VaultReader` | 앵커 색인 유실 |
 | `ancestors` 스키마 (id/title 목록) | `sync.py` ↔ `VaultReader.readAncestors` | 서버 트리가 조용히 평평해짐 |

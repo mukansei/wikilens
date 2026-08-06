@@ -82,8 +82,8 @@ def make_vault(tmp_path: Path) -> Path:
 
 def test_shard_takes_the_tail_not_the_head():
     """
-    Confluence ID 는 시간순 연속 할당이라 앞자리에 엔트로피가 거의 없다 —
-    앞에서 자르면 한 디렉터리에 뭉친다(실측: 앞2/앞4 최대 378개, 뒤2 최대 37개).
+    앞자리는 엔트로피가 낮아 앞에서 자르면 한 디렉터리에 뭉친다
+    (실측: 1번째 자리 1.93 bit vs 9번째 3.32 bit, 앞2/앞4 최대 378개 vs 뒤2 37개).
     """
     assert layout.shard("123456789") == "89"
     assert layout.shard("7") == "07"      # 2자리로 좌측 0 패딩
