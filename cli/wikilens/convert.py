@@ -16,7 +16,7 @@ import re
 from typing import Callable
 
 from bs4 import BeautifulSoup
-from markdownify import markdownify
+from markdownify import MarkdownConverter
 
 from .models import Link, StructureSignature
 
@@ -29,6 +29,21 @@ _DROP_MACROS = {"toc", "children", "pagetree", "recently-updated", "contributors
 
 TitleResolver = Callable[[str, str | None], str | None]
 """(제목, 스페이스키) -> 페이지 ID 또는 None"""
+
+# 이미 파싱한 소프를 **그대로** 넘긴다.
+#
+# `markdownify(html)` 은 내부에서 `BeautifulSoup(html)` 을 다시 만든다. 그래서
+# 예전 코드(`markdownify(str(soup))`)는 페이지마다 트리를 **두 번** 지었다 —
+# 한 번은 여기서 링크·헤딩을 뽑으려고, 또 한 번은 직렬화한 문자열을 되파싱하며.
+# 실측(2,383건): **빌드 전체가 42.4초 → 28.3초(1.5배)**. 변환 단계만 보면 2.07배지만
+# 원본 읽기·첫 파싱·링크 추출·쓰기는 그대로라 전체로는 그만큼 안 준다 — 단계 수치를
+# 전체 수치로 쓰지 말 것. 빌드는 10만 규모에서 먼저 깨지는 것 중 하나다(`DECISIONS.md` D12).
+#
+# 대가: 왕복(직렬화→재파싱)이 공백을 한 번 정규화하던 것이 없어져 **67건(2.8%)의
+# 마크다운에서 공백 하나가 달라진다** — 표 셀의 `**굵게**` 뒤 같은 자리다. 렌더링에도
+# 형태소 토큰화에도 영향이 없다. 인스턴스를 재사용하는 이유는 변환기가 무상태라
+# 페이지마다 새로 만들 이유가 없어서다.
+_MD = MarkdownConverter(heading_style="ATX")
 
 
 def _text(el) -> str:
@@ -179,7 +194,7 @@ def parse(
     links = _extract_links(soup, resolve, source_space=space)
     headings = _extract_headings(soup)
 
-    md = markdownify(str(_normalize_for_markdown(soup)), heading_style="ATX").strip()
+    md = _MD.convert_soup(_normalize_for_markdown(soup)).strip()
     md = re.sub(r"\n{3,}", "\n\n", md)
 
     sig = StructureSignature(
