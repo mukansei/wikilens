@@ -24,7 +24,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 PLUGIN = REPO / "plugin" / "local"
 SKILL = PLUGIN / "skills" / "search" / "SKILL.md"
-SETUP_REF = PLUGIN / "skills" / "search" / "references" / "setup.md"
+SETUP_REF = PLUGIN / "references" / "setup.md"
 FIXTURE = REPO / "contract" / "shared-fixture"
 
 
