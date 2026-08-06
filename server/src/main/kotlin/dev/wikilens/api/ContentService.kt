@@ -6,6 +6,7 @@ import dev.wikilens.index.LuceneIndex
 import dev.wikilens.vault.VaultLayout
 import com.google.re2j.Pattern as Re2
 import com.google.re2j.PatternSyntaxException
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -30,6 +31,8 @@ class ContentService(
     private val index: LuceneIndex,
     private val props: WikiLensProperties,
 ) {
+    private val log = LoggerFactory.getLogger(ContentService::class.java)
+
     private val root: Path get() = Path.of(props.vaultRoot)
 
     fun read(pageId: String, userKey: String?): ReadResponse? {
@@ -37,7 +40,11 @@ class ContentService(
         val meta = index.metaOf(pageId) ?: return null
         val f = root.resolve(VaultLayout.relPagePath(pageId))
         if (!Files.exists(f)) return null
-        val body = runCatching { lenientReader(f).use { it.readText() } }.getOrNull() ?: return null
+        // 읽기 실패를 그냥 null 로 돌리면 **권한 없음과 똑같은 404** 가 되어, 디스크
+        // 문제가 "그런 문서 없음" 으로 보인다. 응답은 그대로 두되(존재 비노출) 로그로 남긴다.
+        val body = runCatching { lenientReader(f).use { it.readText() } }
+            .onFailure { log.warn("페이지 {} 를 읽지 못했습니다 ({}). 404 로 응답합니다.", pageId, f, it) }
+            .getOrNull() ?: return null
         return ReadResponse(pageId, meta.title, meta.space, body)
     }
 
@@ -82,8 +89,10 @@ class ContentService(
         if (tokens.isEmpty() || pattern.isBlank()) {
             return GrepResponse(pattern, 0, emptyList(), false)
         }
-        // 잘못된 패턴과 너무 긴 패턴을 같게 취급한다 — 둘 다 "이 질의로는 못 찾는다"이고,
-        // 왜 거부됐는지 알려주면 그 자체가 탐색 수단이 된다.
+        // 거부된 이유는 알려준다. 한때 침묵시켰는데, 근거였던 "왜 거부됐는지가 탐색
+        // 수단이 된다" 는 **ACL 에만** 해당한다 — 패턴이 길다거나 문법이 틀렸다는 것은
+        // 코퍼스에 대해 아무것도 말해주지 않는다. 침묵하면 "쓸 수 없는 질의" 와
+        // "정말 일치가 없음" 이 똑같이 0건으로 보일 뿐이다.
         if (pattern.length > MAX_PATTERN) {
             return GrepResponse(pattern, 0, emptyList(), false, "패턴이 너무 깁니다 (최대 $MAX_PATTERN 자)")
         }
@@ -96,7 +105,12 @@ class ContentService(
         var rx: Re2? = null
         if (regex) {
             try {
-                rx = Re2.compile(pattern)
+                // **CASE_INSENSITIVE 는 리터럴 경로와 맞추려는 것이다.** 없으면 `regex`
+                // 토글이 문법뿐 아니라 대소문자 민감도까지 바꾼다 — 실측: 본문이
+                // `Acme` 일 때 `acme` 가 리터럴 1건 · 정규식 0건. 도구 설명은 이
+                // 플래그가 문법만 바꾼다고 말하므로 그대로면 설명이 거짓이 된다.
+                // 나중에 rg 프로세스를 붙인다면 `-i` 를 함께 넘겨야 답이 같다.
+                rx = Re2.compile(pattern, Re2.CASE_INSENSITIVE)
             } catch (e: PatternSyntaxException) {
                 return GrepResponse(pattern, 0, emptyList(), false, syntaxError(e))
             }
