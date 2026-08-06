@@ -45,9 +45,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/setup_vault.py" --capture-env
 
 SSO 환경이어도 대개 PAT가 동작한다. **PAT를 먼저 시도할 것.**
 
-**Coway(`wiki.coway.com`)에서는 `CONFLUENCE_PREFIX=""` 가 필수다.** 사내 게이트웨이가
-`/wiki/rest/api/space`만 열어두고 나머지는 로그인 페이지로 리다이렉트해서, 자동 판별이
-`/wiki` 접두사를 잘못 고른다. 빈 문자열로 강제하면 해결된다(빈 문자열이 유효한 값이다).
+**인증이 이상하게 실패하면 `CONFLUENCE_PREFIX=""` 가 탈출구다**(빈 문자열이 유효한 값이다).
+게이트웨이가 `/wiki/rest/api/space`만 열어두고 나머지는 로그인 페이지로 리다이렉트하면
+자동 판별이 `/wiki` 를 잘못 고른다. **다만 먼저 의심할 자리는 아니다** —
+`detect_prefix()` 가 `/user/current` 까지 이중 검증하도록 고쳐진 뒤로는 강제 지정 없이
+동작하는 것을 실측했다(2026-08-06). 자격증명이 파일에 있는지(`CREDS=file`)를 먼저 본다.
 
 이후 CLI 호출은 **전부 래퍼를 거친다.** 래퍼가 env.sh를 싣고 CLI 위치까지 찾는다:
 

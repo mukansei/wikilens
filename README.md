@@ -21,10 +21,10 @@ PLATFORM | OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 �
 
 | 경로 | 내용 | 언어 | 상태 |
 |---|---|---|---|
-| **`cli/`** | Confluence 싱크 · 앵커 전치 · 로컬판 | Python | **pytest 120 통과** (로컬판 46 포함) |
-| **`server/`** | Lucene/Nori 색인 · 학습 레이어 | Kotlin | **51 테스트 통과** / 배선 검증됨(Coway 실데이터) |
+| **`cli/`** | Confluence 싱크 · 앵커 전치 · 로컬판 | Python | pytest |
+| **`server/`** | Lucene/Nori 색인 · 학습 레이어 | Kotlin | JUnit · 배선 검증됨(Coway 실데이터) |
 | **`plugin/local/`** | 스킬 + 커맨드 2개 + [사용 안내](plugin/local/README.md) | Python | 테스트는 `plugin/tests/` (배포 밖) |
-| **`plugin/client/`** | MCP 도구 4개 + 스킬 + [사용 안내](plugin/client/README.md) | Python | **프록시 33 통과** (별도 실행) |
+| **`plugin/client/`** | MCP 도구 4개 + 스킬 + [사용 안내](plugin/client/README.md) | Python | 프록시 테스트 (별도 실행) |
 | `.claude-plugin/` | 마켓플레이스 매니페스트 (조직 배포용) | — | — |
 | `docs/` | 아키텍처 · 임베딩 설계 제안 | — | — |
 | `DECISIONS.md` | 뒤집힌 결정과 지우면 안 되는 것들 — 되돌리기 전에 읽으세요 | — | — |
@@ -60,18 +60,32 @@ PLATFORM | OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 �
 
 ```bash
 cd cli && pip install -e .
-export CONFLUENCE_URL=https://confluence.mycompany.com
+```
 
-# 인증은 환경에 따라 넷 중 하나 (자동 판별)
-export CONFLUENCE_TOKEN=<PAT>                    # Server/DC — SSO 써도 대개 이게 동작
-# export CONFLUENCE_EMAIL=me@corp                #   + Cloud API 토큰이면 이메일 추가
-# export IAM_TOKEN_URL=... IAM_CLIENT_ID=...     #   사내 IAM OAuth2
+**자격증명은 `~/.wikilens/env.sh`(권한 600)에 둡니다** — `export` 가 아니라. `export` 는
+그 셸에서만 살아서, Claude Code 를 앱으로 띄우면 없는 것과 같습니다. 실제로 그것 때문에
+**검색은 되는데 `sync` 만 조용히 죽는** 상태를 오래 겪었습니다(D10).
+
+```bash
+mkdir -p ~/.wikilens
+cat > ~/.wikilens/env.sh <<'EOF'
+export CONFLUENCE_URL=https://confluence.mycompany.com
+export CONFLUENCE_TOKEN=<PAT>                  # Server/DC — SSO 써도 대개 이게 동작
+# export CONFLUENCE_EMAIL=me@corp              #   + Cloud API 토큰이면 이메일 추가
+# export IAM_TOKEN_URL=... IAM_CLIENT_ID=...   #   사내 IAM OAuth2
 # export CONFLUENCE_HEADERS='X-Forwarded-User: me@corp'   # 리버스 프록시
+EOF
+chmod 600 ~/.wikilens/env.sh
+source ~/.wikilens/env.sh
 
 wikilens doctor                            # 먼저 이것부터
 wikilens --root ~/wiki sync --space PLATFORM
 wikilens --root ~/wiki stats
 ```
+
+플러그인을 설치했다면 이 파일을 손으로 만들 필요가 없습니다 — `/wikilens-local:setup` 이
+만들어 줍니다. 이미 셸에 `export` 해뒀다면
+`plugin/local/scripts/setup_vault.py --capture-env` 가 값을 화면에 찍지 않고 그대로 옮깁니다.
 
 `doctor`가 배포 형태(Cloud/Server·경로 접두사), 인증 방식, 접근 가능한 스페이스,
 본문 확장 가능 여부를 실행 전에 확인합니다. 여기서 막히면 `sync`는 어차피 실패합니다.
@@ -86,11 +100,13 @@ IAM OAuth2가 필요합니다. 인증 계층은 `cli/wikilens/auth.py` 한 곳�
 사내 리버스 프록시가 `/space`만 허용하고 그 아래 다른 엔드포인트는 로그인
 페이지로 리다이렉트하는 구성을 겪은 적이 있어, 한 엔드포인트만 더 검증하도록
 고쳤습니다. 그래도 회사마다 게이트웨이 구성이 다 달라서 자동판별이 또 속을
-수 있습니다 — 그럴 땐 직접 지정하세요:
+수 있습니다 — 그럴 땐 직접 지정하세요(`env.sh` 에 넣거나 일회성으로):
 ```bash
 export CONFLUENCE_PREFIX=""      # Server/DC 강제 (자동판별 건너뜀)
 # export CONFLUENCE_PREFIX="/wiki"   # Cloud 강제
 ```
+**첫 번째로 의심할 자리는 아닙니다.** 이중 검증을 넣은 뒤로는 강제 지정 없이 동작하는
+것을 실측했습니다(2026-08-06, Coway DC).
 
 **여기서 판단하세요.** `stats`가 "제목과 다른 별칭을 가진 페이지" 비율을 냅니다.
 낮으면 어휘 격차가 없다는 뜻이고 **이 프로젝트 전체가 값어치가 없습니다.**
@@ -137,17 +153,21 @@ cd server && ./gradlew bootRun
 curl -XPOST localhost:8787/api/admin/reindex
 ```
 
-사용자는 볼트를 받지 않습니다. MCP 플러그인만 설치하면 됩니다:
+사용자는 볼트를 받지 않습니다. MCP 플러그인만 설치하고 `~/.wikilens/config.json` 에
+주소와 본인 식별자를 넣으면 됩니다:
 
-```bash
-export WIKILENS_SERVER=http://wikilens.corp:8787
-export WIKILENS_USER=alice@corp
+```json
+{ "server": "http://wikilens.corp:8787", "user": "alice@corp" }
 ```
 ```
 /plugin marketplace add ./          # 또는 팀 배포 시 저장소의 git URL
 /plugin install wikilens-client@wikilens
 /reload-plugins
 ```
+
+`WIKILENS_SERVER`·`WIKILENS_USER` 환경변수로도 되고 파일보다 우선하지만, **그 셸에서만
+유지됩니다** — 앱으로 띄우면 비어서 전 결과가 빕니다. `user` 가 없으면 서버가 요청자를
+식별하지 못해 **결과가 항상 빈손**인데, 그게 "문서가 없다"처럼 보입니다(D10).
 
 **매니페스트는 반드시 저장소 루트의 `.claude-plugin/marketplace.json` 이어야 합니다.**
 하위 디렉터리(`marketplace/.claude-plugin/…`)에 두고 그 경로를 `add` 하면 등록은 되지만
@@ -224,26 +244,34 @@ Lucene Nori가 그 문제의 프로덕션 해답입니다. 색인이 서버에 �
 
 | | 검증 |
 |---|---|
-| Python CLI · 앵커 전치 · 파서 | 23개 통과 (골든 픽스처 포함) |
-| CLI 배선 (서브커맨드·진단 메시지) | 9개 통과 |
-| Confluence 클라이언트 | 17개 통과 (가짜 서버 — Cloud/Server·429·페이지네이션·재개·`--follow-refs`) |
-| 인증 계층 (SSO/IAM) | 통과 (가짜 IAM — OAuth2·만료 갱신·401 재시도) |
-| Python 스코어링 대조 구현 (`cli/wikilens/scoring_reference.py`) | 13개 통과. 런타임에 안 쓰이고 Kotlin `Scoring.kt` 의 짝으로만 존재 — `LearnLayerTest.kt` 의 기대값 6개가 여기서 나온다 |
-| MCP 프록시 (서버판) | 24개 테스트 통과 (핸드셰이크·도구 4개·세션·404·환경변수) |
-| 로컬판 플러그인 | 19개 통과 (경로 해석·상태 판정·스킬 정합성·포맷 드리프트) |
+| Python CLI · 앵커 전치 · 파서 | 통과 — 공유 골든 픽스처로 Kotlin 과 같은 산출물 대조 |
+| CLI 배선 (서브커맨드·진단 메시지) | 통과 |
+| Confluence 클라이언트 | 통과 — 가짜 서버로 Cloud/Server·429·페이지네이션·재개·`--follow-refs` |
+| 인증 계층 (SSO/IAM) | 통과 — 가짜 IAM 으로 OAuth2·만료 갱신·401 재시도 |
+| Python 스코어링 대조 구현 (`cli/wikilens/scoring_reference.py`) | 통과. 런타임에 안 쓰이고 Kotlin `Scoring.kt` 의 짝으로만 존재 — `LearnLayerTest.kt` 의 기대값 6개가 여기서 나온다 (scipy 는 안 쓴다 — 뉴턴법 자체 구현) |
+| MCP 프록시 (서버판) | 통과 — 핸드셰이크·도구 4개·세션·404·설정 해석 |
+| 로컬판 플러그인 | 통과 — 경로 해석·상태 판정·스킬 정합성·포맷 드리프트 |
 | Kotlin 학습 레이어 (`learn/`) | JUnit 통과. 기대값 6개가 `scoring_reference.py` 산출과 1e-6 일치 |
 | Kotlin 서비스 계층 (search·content·acl·tree) | JUnit 통과 |
-| Kotlin Lucene/Spring 배선 | 빌드·bootRun·재색인 검증됨 (Coway 실데이터 2,378건). 검색 랭킹 품질은 별도 미검증 |
+| Kotlin Lucene/Spring 배선 | 빌드·bootRun·재색인 검증됨 (Coway 실데이터 2,383건). 검색 랭킹 품질은 별도 미검증 |
+
+**개수는 일부러 안 적습니다** — 늘 때마다 낡습니다. 실제 수는 위 네 스위트를 돌리면 나옵니다.
 
 ---
 
 ## 미해결
 
-**"유용했다"의 판정.** 훅은 무엇을 읽었는지만 보여줍니다. 마지막 읽기와 질의 재구성
-두 가지 약한 신호에 의존하고, 노이즈 크기는 `pWrong`으로만 알 수 있습니다.
-학습 레이어 전체가 이 레이블에 걸려 있습니다.
+**"유용했다"의 판정.** 서버는 무엇을 읽었는지만 보고 그게 답이었는지는 모릅니다
+(훅은 없습니다 — 읽기가 서버를 거치므로 서버가 직접 관측합니다). 신호 다섯을 씁니다:
+마지막 읽기, 질의 재구성, **서빙했는데 끝내 안 읽힌 힌트**, 지나친 읽기, 그리고
+`dest` 의 검색 순위. 셋째가 유일하게 학습을 **되돌리는** 신호입니다.
+노이즈 크기는 `pWrong`(= 거부된 힌트 / 서빙한 힌트)으로만 알 수 있고, 학습 레이어
+전체가 이 레이블에 걸려 있습니다. `dest = reads.last()` 라는 전제 자체는 그대로입니다.
 
-**ACL 싱크 주기.** 권한 변경은 `lastModified`를 건드리지 않아 콘텐츠 증분 싱크가
-놓칩니다. 공유 서버에서는 그 창이 곧 유출 창입니다.
+**서버판 인증.** `sync` 가 Confluence 권한을 안 가져와 모든 페이지가 공개로 들어오고,
+`/api/admin/*` 에는 인증이 아예 없어 서버에 닿는 누구나 스스로 권한을 부여할 수 있습니다.
+게다가 권한 변경은 `lastModified`를 건드리지 않아 콘텐츠 증분 싱크가 놓칩니다 —
+공유 서버에서는 그 창이 곧 유출 창입니다. **셋이 한 묶음이고, 다중 사용자 배포의
+선결 조건입니다**(로컬판에는 해당 없음 — 개인 토큰이 곧 권한 범위).
 
 **질의 원문이 서버로 갑니다.** 콘텐츠는 아니지만 질의어 자체가 민감할 수 있습니다.
