@@ -4,6 +4,8 @@ import dev.wikilens.acl.AclRegistry
 import dev.wikilens.config.WikiLensProperties
 import dev.wikilens.index.LuceneIndex
 import dev.wikilens.vault.VaultLayout
+import com.google.re2j.Pattern as Re2
+import com.google.re2j.PatternSyntaxException
 import org.springframework.stereotype.Service
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -46,18 +48,27 @@ class ContentService(
      * 정확 일치가 필요한 경우가 있다(식별자, 코드 조각, 정확한 문구).
      * 실측(2026-08-06): 2,383 문서 전체 스캔 0.64초.
      *
-     * **`regex=true` 는 사용자 정규식을 그대로 실행하는 자리다.** JVM 정규식은
-     * 백트래킹이라 `(.+)+@@@@` 같은 패턴 하나로 CPU 를 무한히 태운다 — 실측으로
-     * 요청이 20초를 넘겨도 안 끝났고, ACL 이 fail-closed 라도 **등록된 사용자면
-     * 누구나** 서버 스레드를 영구히 묶을 수 있었다. 그래서 아래 셋을 건다:
+     * **정규식 엔진은 RE2 다 — `java.util.regex` 가 아니다.** 표준 엔진은 재귀
+     * 백트래킹이라 사용자 패턴 하나로 두 가지가 났다(둘 다 실측):
      *
-     *   1. 패턴 길이 상한 — 폭발적 패턴은 대개 길다
-     *   2. 전체 시간 예산 — 넘으면 지금까지 찾은 것으로 `truncated=true`
-     *   3. 줄 길이 상한 — 한 줄이 길수록 백트래킹이 폭발적으로 는다
+     *   - `(.+)+@@@@` — 요청이 20초를 넘겨도 안 끝나고 스레드가 영구히 묶임
+     *   - `(a|aa)+c` + 매치 실패하는 긴 줄 — 스택을 넘겨 0.02초 만에 HTTP 500
      *
-     * ripgrep 으로 바꾸면 유한 오토마타라 이 문제가 원리적으로 사라지지만, 서버
-     * 배포에 rg 바이너리를 요구하게 된다(jar 하나로 뜨던 것이 깨진다). 지금
-     * 규모에서는 얻는 게 속도뿐이라 미뤘다 — 10만 규모의 재판단은 `DECISIONS.md` D12.
+     * 시간 예산·줄 길이 상한·`StackOverflowError` 삼키기로 하나씩 막았지만, 전부
+     * **증상을 재는 장치**였다. RE2 는 유한 오토마타라 입력 길이에 선형이고 재귀를
+     * 안 써서 두 실패가 **원리적으로 없다.** ripgrep 이 쓰는 것과 같은 계열이라,
+     * 10만 규모에서 속도 때문에 rg 서브프로세스를 붙이더라도 두 경로가 같은 답을
+     * 낸다 — 문법이 다르면 조용히 갈리는 자리다(`DECISIONS.md` D12).
+     *
+     * 대가는 **역참조와 전방탐색을 못 쓰는 것**이다. ripgrep 도 같은 이유로 못 쓴다.
+     * 어휘 격차를 메우는 것이 이 프로젝트의 일이고 그 둘이 필요한 질의는 없었다.
+     * 다만 쓰면 **조용히 0건이 되지 않게** `error` 로 돌려준다 — 정규식 문법 오류는
+     * ACL 과 달리 코퍼스에 대해 아무것도 알려주지 않으므로 숨길 이유가 없다.
+     *
+     * 남은 상한은 안전장치가 아니라 자원 배분이다:
+     *   - 패턴 길이 — 사람이 쓰는 질의가 넘을 일이 없는 선
+     *   - 시간 예산 — 백트래킹이 아니라 **I/O** 를 끊는다(10만 문서면 27초다)
+     *   - `limit` — 응답 크기
      */
     fun grep(
         pattern: String,
@@ -73,13 +84,23 @@ class ContentService(
         }
         // 잘못된 패턴과 너무 긴 패턴을 같게 취급한다 — 둘 다 "이 질의로는 못 찾는다"이고,
         // 왜 거부됐는지 알려주면 그 자체가 탐색 수단이 된다.
-        if (pattern.length > MAX_PATTERN) return GrepResponse(pattern, 0, emptyList(), false)
+        if (pattern.length > MAX_PATTERN) {
+            return GrepResponse(pattern, 0, emptyList(), false, "패턴이 너무 깁니다 (최대 $MAX_PATTERN 자)")
+        }
         // limit 은 클라이언트가 정한다. 상한이 없으면 매치 하나당 최대 300자를 담은
         // 객체가 매치 줄 수만큼 쌓인다 — 이 볼트가 16.4만 줄이니 `.` 한 글자로 65MB,
         // 10만 문서면 수 GB 다. 잘린 것은 `truncated` 가 이미 알려준다.
         val cap = limit.coerceIn(1, MAX_LIMIT)
-        val rx = if (regex) runCatching { Regex(pattern) }.getOrNull() else null
-        if (regex && rx == null) return GrepResponse(pattern, 0, emptyList(), false)
+        // RE2 는 역참조·전방탐색을 파싱 단계에서 거부한다. 그 메시지를 그대로 넘기는
+        // 편이 낫다 — 사용자는 `\1` 을 쓴 줄도 모르고 "일치 없음" 을 볼 것이다.
+        var rx: Re2? = null
+        if (regex) {
+            try {
+                rx = Re2.compile(pattern)
+            } catch (e: PatternSyntaxException) {
+                return GrepResponse(pattern, 0, emptyList(), false, syntaxError(e))
+            }
+        }
 
         val matches = ArrayList<GrepMatch>()
         var scanned = 0
@@ -107,9 +128,9 @@ class ContentService(
                     if ((i and LINE_CHECK_MASK) == 0 && System.nanoTime() > deadline) {
                         truncated = true; break
                     }
-                    // 백트래킹 비용은 줄 길이에 비선형이다. 긴 줄은 잘라서 본다.
-                    val target = if (line.length > MAX_LINE) line.take(MAX_LINE) else line
-                    if (matchesLine(rx, pattern, target)) {
+                    // 줄을 자르지 않는다. RE2 는 줄 길이에 선형이라 자를 이유가 없고,
+                    // 자르면 긴 줄(표 등) 뒤쪽의 일치를 **조용히 놓친다.**
+                    if (rx?.matcher(line)?.find() ?: line.contains(pattern, ignoreCase = true)) {
                         matches.add(GrepMatch(meta.id, meta.title, i + 1, line.trim().take(300)))
                     }
                 }
@@ -117,24 +138,6 @@ class ContentService(
         }
         return GrepResponse(pattern, scanned, matches, truncated)
     }
-
-    /**
-     * 한 줄 매칭. **`StackOverflowError` 를 여기서 삼킨다.**
-     *
-     * JVM 정규식은 재귀로 백트래킹하므로 깊이가 스택을 넘기면 `Error` 가 난다 —
-     * 예외가 아니라 `Error` 라 `runCatching` 의 일반적인 용법으로도 안 잡히고, 그대로
-     * 위로 던져져 **HTTP 500** 이 됐다(실측: `(a|aa)+c` + 매치 안 되는 5,000자 줄).
-     * 시간 예산으로는 못 막는다 — 터지는 데 0.02초밖에 안 걸린다.
-     *
-     * 그 줄만 건너뛴다. 한 줄이 스택을 넘겼다고 나머지 문서까지 버릴 이유가 없고,
-     * 사용자에겐 "이 패턴으로는 그 줄을 못 본다"가 500 보다 낫다.
-     */
-    private fun matchesLine(rx: Regex?, pattern: String, target: String): Boolean =
-        try {
-            rx?.containsMatchIn(target) ?: target.contains(pattern, ignoreCase = true)
-        } catch (e: StackOverflowError) {
-            false
-        }
 
     /**
      * 볼트 파일 읽기. **깨진 바이트를 예외가 아니라 대체 문자로 넘긴다.**
@@ -157,19 +160,29 @@ class ContentService(
         return BufferedReader(InputStreamReader(Files.newInputStream(f), dec))
     }
 
+    /**
+     * RE2 의 파싱 오류를 사용자가 고칠 수 있는 말로 바꾼다.
+     *
+     * 원문은 ``error parsing regexp: invalid escape sequence: `\1` `` 처럼 나오는데,
+     * 왜 안 되는지(엔진이 다르다)를 모르면 고칠 수가 없다.
+     */
+    private fun syntaxError(e: PatternSyntaxException): String {
+        val why = when {
+            "invalid escape sequence" in (e.message ?: "") -> "역참조(\\1)는 쓸 수 없습니다"
+            "Perl syntax" in (e.message ?: "") -> "전방탐색((?=), (?!))은 쓸 수 없습니다"
+            else -> "정규식 문법 오류"
+        }
+        return "$why — 이 서버는 ripgrep 과 같은 RE2 엔진을 씁니다. ${e.message}"
+    }
+
     companion object {
-        /** 폭발적 정규식은 대개 길다. 정상 질의가 이 길이를 넘을 일은 없다. */
+        /** 사람이 쓰는 질의가 넘을 일이 없는 선. RE2 로 바꾼 뒤로는 안전장치가 아니다. */
         const val MAX_PATTERN = 200
 
         /**
-         * 한 줄에서 검사할 최대 길이. 백트래킹 비용이 줄 길이에 비선형이라,
-         * 예산만으로는 **한 줄**에 갇히는 것을 못 막는다.
-         */
-        const val MAX_LINE = 4_000
-
-        /**
-         * 전체 시간 예산. 실측 전체 스캔이 0.64초이므로 정상 질의는 여유롭게 들어오고,
-         * 폭발적 패턴은 여기서 끊긴다. 넘으면 실패가 아니라 `truncated=true` 다 —
+         * 전체 시간 예산. **이제 막는 것은 백트래킹이 아니라 I/O 다** — RE2 로 바꾼
+         * 뒤로 폭발적 패턴이 없어졌고, 남은 비용은 파일을 읽는 시간이다(10만 문서면
+         * 27초, `DECISIONS.md` D12). 넘으면 실패가 아니라 `truncated=true` 다 —
          * 부분 결과가 침묵보다 낫고, 클라이언트가 이미 그 플래그를 표시한다.
          */
         const val GREP_BUDGET_NANOS = 3_000_000_000L
