@@ -5,6 +5,10 @@ import dev.wikilens.config.WikiLensProperties
 import dev.wikilens.index.LuceneIndex
 import dev.wikilens.vault.VaultLayout
 import org.springframework.stereotype.Service
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -31,7 +35,8 @@ class ContentService(
         val meta = index.metaOf(pageId) ?: return null
         val f = root.resolve(VaultLayout.relPagePath(pageId))
         if (!Files.exists(f)) return null
-        return ReadResponse(pageId, meta.title, meta.space, Files.readString(f))
+        val body = runCatching { lenientReader(f).use { it.readText() } }.getOrNull() ?: return null
+        return ReadResponse(pageId, meta.title, meta.space, body)
     }
 
     /**
@@ -69,6 +74,10 @@ class ContentService(
         // 잘못된 패턴과 너무 긴 패턴을 같게 취급한다 — 둘 다 "이 질의로는 못 찾는다"이고,
         // 왜 거부됐는지 알려주면 그 자체가 탐색 수단이 된다.
         if (pattern.length > MAX_PATTERN) return GrepResponse(pattern, 0, emptyList(), false)
+        // limit 은 클라이언트가 정한다. 상한이 없으면 매치 하나당 최대 300자를 담은
+        // 객체가 매치 줄 수만큼 쌓인다 — 이 볼트가 16.4만 줄이니 `.` 한 글자로 65MB,
+        // 10만 문서면 수 GB 다. 잘린 것은 `truncated` 가 이미 알려준다.
+        val cap = limit.coerceIn(1, MAX_LIMIT)
         val rx = if (regex) runCatching { Regex(pattern) }.getOrNull() else null
         if (regex && rx == null) return GrepResponse(pattern, 0, emptyList(), false)
 
@@ -79,19 +88,19 @@ class ContentService(
 
         for (meta in index.allMeta()) {
             // limit 이 찼는데 아직 볼 문서가 남았다 = 잘렸다.
-            if (matches.size >= limit) { truncated = true; break }
+            if (matches.size >= cap) { truncated = true; break }
             if (System.nanoTime() > deadline) { truncated = true; break }
             // 루프 밖에서 한 번 계산한 tokens 를 재사용한다 (문서마다 재조회하면 수천 회).
             if (!acl.canSee(tokens, meta.id)) continue
             val f = root.resolve(VaultLayout.relPagePath(meta.id))
             // exists + open 두 번 왕복하는 대신 열어보고 실패하면 넘어간다.
-            val reader = runCatching { Files.newBufferedReader(f) }.getOrNull() ?: continue
+            val reader = runCatching { lenientReader(f) }.getOrNull() ?: continue
             scanned++
             reader.useLines { lines ->
                 // forEach + return@forEach 는 그 줄만 건너뛸 뿐 파일 잔여를 계속 읽는다.
                 // for + break 라야 실제로 읽기를 멈춘다.
                 for ((i, line) in lines.withIndex()) {
-                    if (matches.size >= limit) { truncated = true; break }
+                    if (matches.size >= cap) { truncated = true; break }
                     // 줄 단위로도 예산을 본다. 문서 경계에서만 보면 파일 하나가 통째로
                     // 예산을 넘겨도 못 끊는다. 매 줄 시계를 읽으면 그 자체가 비용이라
                     // 64줄마다 본다.
@@ -127,6 +136,27 @@ class ContentService(
             false
         }
 
+    /**
+     * 볼트 파일 읽기. **깨진 바이트를 예외가 아니라 대체 문자로 넘긴다.**
+     *
+     * `Files.newBufferedReader`·`readString` 의 기본 디코더는 `CodingErrorAction.REPORT`
+     * 라, 잘못된 바이트를 만나면 **읽는 도중에** `MalformedInputException` 을 던진다.
+     * 파일 열기만 `runCatching` 으로 감싸도 소용없다 — 터지는 건 열 때가 아니라 줄을
+     * 당길 때이고, 그대로 위로 나가 **HTTP 500** 이 된다. grep 은 파일 하나 때문에
+     * 나머지 문서 전부를 잃었다.
+     *
+     * 볼트는 Python 싱크가 UTF-8 로 쓰므로 정상 경로에서는 안 생긴다. 다만 디스크가
+     * 차거나 싱크가 도중에 죽으면 멀티바이트 문자가 반토막 난 파일이 남고, 그 한 개가
+     * 전원의 검색을 죽인다. 건너뛰는 대신 `REPLACE` 로 읽는 이유는 깨진 지점만
+     * `U+FFFD` 가 되고 **나머지 본문은 온전히 검색·열람되기** 때문이다.
+     */
+    private fun lenientReader(f: Path): BufferedReader {
+        val dec = StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPLACE)
+            .onUnmappableCharacter(CodingErrorAction.REPLACE)
+        return BufferedReader(InputStreamReader(Files.newInputStream(f), dec))
+    }
+
     companion object {
         /** 폭발적 정규식은 대개 길다. 정상 질의가 이 길이를 넘을 일은 없다. */
         const val MAX_PATTERN = 200
@@ -143,6 +173,9 @@ class ContentService(
          * 부분 결과가 침묵보다 낫고, 클라이언트가 이미 그 플래그를 표시한다.
          */
         const val GREP_BUDGET_NANOS = 3_000_000_000L
+
+        /** 클라이언트가 요청할 수 있는 최대 매치 수. 기본값 40 의 25배까지 허용한다. */
+        const val MAX_LIMIT = 1_000
 
         /** 예산 검사 간격(줄). 63 = 64줄마다 — 시계 읽기가 매칭보다 비싸지 않게. */
         const val LINE_CHECK_MASK = 63

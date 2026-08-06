@@ -13,6 +13,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -175,6 +176,40 @@ class ContentServiceTest {
         assertEquals(2, r.scanned)
         assertEquals(1, r.matches.size, "덫 때문에 나머지를 버리면 안 된다")
         assertEquals("2", r.matches[0].pageId)
+    }
+
+    @Test
+    fun `깨진 UTF-8 파일이 스캔 전체를 죽이지 않는다`() {
+        // 볼트는 Python 싱크가 UTF-8 로 쓰지만, 디스크가 차거나 싱크가 도중에 죽으면
+        // 멀티바이트 문자가 반토막 난 파일이 남는다. 기본 디코더는 REPORT 라
+        // **읽는 중에** MalformedInputException 을 던지고, 그건 파일 열기를 감싼
+        // runCatching 밖이라 그대로 500 이 됐다 — 파일 하나가 나머지 전부를 날렸다.
+        val f = vault.resolve(VaultLayout.relPagePath("1"))
+        Files.write(f, byteArrayOf(0x61, 0xFF.toByte(), 0xFE.toByte(), 0x0A))
+
+        val r = svc.grep("APPLE", user, limit = 5, regex = false)
+
+        assertEquals(1, r.scanned, "깨진 파일도 스캔한다 — 건너뛰는 게 아니라 대체 문자로 읽는다")
+        assertTrue(r.matches.isEmpty(), "깨진 파일에는 APPLE 이 없다")
+    }
+
+    @Test
+    fun `깨진 UTF-8 문서도 읽힌다`() {
+        val f = vault.resolve(VaultLayout.relPagePath("1"))
+        Files.write(f, "정상".toByteArray() + byteArrayOf(0xFF.toByte()) + "부분".toByteArray())
+
+        val r = svc.read("1", user)
+
+        assertNotNull(r, "깨진 바이트 하나로 문서 전체를 못 읽게 하면 안 된다")
+        assertTrue(r.markdown.startsWith("정상"), "깨진 지점 앞은 온전해야 한다")
+        assertTrue(r.markdown.endsWith("부분"), "깨진 지점 뒤도 살아야 한다")
+    }
+
+    @Test
+    fun `limit 은 클라이언트가 무한히 키울 수 없다`() {
+        // limit 은 요청 본문에서 온다. 상한이 없으면 매치 객체가 매치 줄 수만큼 쌓인다.
+        val r = svc.grep("APPLE", user, limit = Int.MAX_VALUE, regex = false)
+        assertTrue(r.matches.size <= ContentService.MAX_LIMIT)
     }
 
     @Test
