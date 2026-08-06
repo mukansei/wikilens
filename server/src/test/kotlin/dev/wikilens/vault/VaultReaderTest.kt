@@ -38,7 +38,7 @@ class VaultReaderTest {
     fun `샤딩 경로가 Python 레이아웃과 일치한다`() {
         val pages = readFixture().associateBy { it.id }
         // 픽스처 ID 는 전부 00 으로 끝나 같은 샤드에 모인다 — 분산은
-        // LayoutCheckTest 가 실제 ID 로 확인한다. 여기서 잠그는 것은 경로 형식이다.
+        // LayoutTest 가 실제 ID 로 확인한다. 여기서 잠그는 것은 경로 형식이다.
         assertEquals("mirror/pages/00/100.md", pages.getValue("100").path)
         assertEquals("mirror/pages/00/200.md", pages.getValue("200").path)
         assertEquals("mirror/pages/00/300.md", pages.getValue("300").path)

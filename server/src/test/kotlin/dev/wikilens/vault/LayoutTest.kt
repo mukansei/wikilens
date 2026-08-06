@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test
  * 특히 **뒤에서 자른다**는 점이 핵심이다. 앞자리는 엔트로피가 낮아 한 디렉터리에
  * 뭉친다(실측: 앞2/앞4 최대 378개 → 뒤2 최대 37개).
  */
-class LayoutCheckTest {
+class LayoutTest {
 
     @Test
     fun `Python 과 같은 경로를 낸다`() {
