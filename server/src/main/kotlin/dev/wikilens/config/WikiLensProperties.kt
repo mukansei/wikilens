@@ -9,6 +9,18 @@ data class WikiLensProperties(
     val vaultRoot: String = "./mirror-root",
     val indexDir: String = "./.wikilens/index",
     val stateDir: String = "./.wikilens/state",
+    /**
+     * 본문 분석기: `korean`(기본) · `english` · `standard`.
+     *
+     * **바꾸면 반드시 재색인해야 한다.** 색인과 질의가 다른 분석기를 쓰면 예외가 아니라
+     * 조용히 0건이 된다. 선택은 색인 커밋 데이터에 기록되고 기동 시 대조한다
+     * (`LuceneIndex.checkAnalyzerMatches`).
+     *
+     * 학습 궤적도 영향을 받는다 — `trajectories.jsonl` 에는 **분석된 항**이 저장돼
+     * 있어서, 분석기를 바꾸면 옛 항과 새 질의가 안 맞아 그만큼 학습이 무효가 된다.
+     * 궤적은 유일한 복구 불가 자산이므로 지우지는 않는다.
+     */
+    val analyzer: String = "korean",
     @NestedConfigurationProperty val learn: LearnProps = LearnProps(),
 )
 
