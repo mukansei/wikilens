@@ -34,7 +34,7 @@ echo "교차 언어 계약"
 check "샤딩 규칙 Python/Kotlin/플러그인 일치(뒤에서 자름), Kotlin 정의처 1곳(Layout.kt)" \
   'grep -q "SHARD_DEPTH = 1" cli/wikilens/layout.py && grep -q "SHARD_DEPTH = 1" plugin/local/scripts/vault_status.py && grep -qF "takeLast(SHARD_WIDTH)" server/src/main/kotlin/dev/wikilens/vault/Layout.kt && [ $(grep -rl "fun relPagePath" server/src/main/kotlin | wc -l) -eq 1 ]'
 check "사전확률 클램프 양쪽 동일 (0.05, 0.85)" \
-  'grep -q "PRIOR_CEIL = 0.85" server/src/main/kotlin/dev/wikilens/learn/Scoring.kt && grep -q "PRIOR_FLOOR, PRIOR_CEIL = 0.05, 0.85" cli/wikilens/server/scoring.py'
+  'grep -q "PRIOR_CEIL = 0.85" server/src/main/kotlin/dev/wikilens/learn/Scoring.kt && grep -q "PRIOR_FLOOR, PRIOR_CEIL = 0.05, 0.85" cli/wikilens/scoring_ref.py'
 # `ALIASES.md` 한 줄에 스페이스가 들어간다. 여러 스페이스를 싱크하면 같은 낱말이
 # 여러 영역에서 걸리는데, 줄에 스페이스가 없으면 grep 결과만 보고는 구분이 안 된다
 # (경로도 스페이스로 안 나뉜다 — 샤딩은 페이지 ID 만 쓴다).
@@ -54,14 +54,29 @@ assert tr and all(\"[DOCS]\" in l for l in tr), (\"TREE 줄에 스페이스가 �
 sk=pathlib.Path(\"plugin/local/skills/search/SKILL.md\").read_text()
 assert \"스페이스 | 제목\" in sk, \"스킬 설명이 산출물과 갈라졌다\"
 "'
+# `LearnLayerTest.kt` 의 EB 기대값은 **손으로 적은 상수가 아니라** `scoring_ref.py` 의
+# 산출물이다. Kotlin 에는 scipy 가 없어 Beta 분위수를 뉴턴법으로 직접 구현했고, 그게
+# 맞는지 판정할 기준이 이 Python 구현뿐이다. 둘이 갈라지면 **양쪽 테스트가 각자
+# 통과하면서** 서로 다른 값을 믿게 된다 — grep 으로는 못 잡으므로 실제로 계산해 본다.
+check "Kotlin EB 기대값이 scoring_ref.py 산출과 1e-6 이내" \
+  '(cd cli && ../.venv/bin/python -c "
+import re,pathlib
+from wikilens.scoring_ref import eb_lower
+src=pathlib.Path(\"../server/src/test/kotlin/dev/wikilens/learn/LearnLayerTest.kt\").read_text()
+cases=re.findall(r\"Triple\((\d+),\s*(\d+),\s*([\d.]+)\)\s*to\s*([\d.]+)\", src)
+assert cases, \"LearnLayerTest 에서 EB 기대값을 못 찾았다\"
+for h,m,p,exp in cases:
+    got=eb_lower(int(h),int(m),float(p))
+    assert abs(got-float(exp))<1e-6, (h,m,p,exp,got)
+")'
 check "canonical_json 결정적 직렬화" \
   'grep -q "sort_keys=True, ensure_ascii=False" cli/wikilens/models.py'
 check "ancestors 스키마 Python↔Kotlin 일치 (sync.py 가 쓰고 VaultReader 가 같은 키로 읽음)" \
   'grep -qF "\"ancestors\": ancestors" cli/wikilens/sync.py && grep -qF "meta[\"ancestors\"]" server/src/main/kotlin/dev/wikilens/vault/VaultReader.kt'
 check "Gate LOCALIZATION 폴백 임계값 Python/Kotlin 일치 (8토큰)" \
-  'grep -qF ".size <= 8" server/src/main/kotlin/dev/wikilens/learn/Scoring.kt && grep -qF "len(query.strip().split()) <= 8" cli/wikilens/server/scoring.py'
+  'grep -qF ".size <= 8" server/src/main/kotlin/dev/wikilens/learn/Scoring.kt && grep -qF "len(query.strip().split()) <= 8" cli/wikilens/scoring_ref.py'
 check "RATIONALE 마커 '배경' Python/Kotlin 양쪽 존재" \
-  'grep -qF "\"배경\"" server/src/main/kotlin/dev/wikilens/learn/Scoring.kt && grep -qF "\"배경\"" cli/wikilens/server/scoring.py'
+  'grep -qF "\"배경\"" server/src/main/kotlin/dev/wikilens/learn/Scoring.kt && grep -qF "\"배경\"" cli/wikilens/scoring_ref.py'
 
 echo "빌드 구조"
 # 학습 레이어는 프레임워크와 분리돼 있어야 한다. EB·게이트·궤적은 순수 알고리즘이고,

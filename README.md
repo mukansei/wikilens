@@ -228,7 +228,7 @@ Lucene Nori가 그 문제의 프로덕션 해답입니다. 색인이 서버에 �
 | CLI 배선 (서브커맨드·진단 메시지) | 9개 통과 |
 | Confluence 클라이언트 | 17개 통과 (가짜 서버 — Cloud/Server·429·페이지네이션·재개·`--follow-refs`) |
 | 인증 계층 (SSO/IAM) | 12개 통과 (가짜 IAM — OAuth2·만료 갱신·401 재시도) |
-| Python 스코어링 대조 구현 (`cli/wikilens/server/scoring.py`) | 13개 통과. Kotlin `Scoring.kt`와 나란히 유지되는 정본 — 공유 Python 서버 자체(구 훅 기반 설계)는 제거됨 |
+| Python 스코어링 대조 구현 (`cli/wikilens/scoring_ref.py`) | 13개 통과. 런타임에 안 쓰이고 Kotlin `Scoring.kt` 의 짝으로만 존재 — `LearnLayerTest.kt` 의 기대값 6개가 여기서 나온다 |
 | MCP 프록시 (서버판) | 24개 테스트 통과 (핸드셰이크·도구 4개·세션·404·환경변수) |
 | 로컬판 플러그인 | 19개 통과 (경로 해석·상태 판정·스킬 정합성·포맷 드리프트) |
 | Kotlin 학습 레이어 (`learn/`) | JUnit 12개 통과, Python/scipy와 1e-6 일치 |
