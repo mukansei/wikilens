@@ -253,6 +253,17 @@ check "모델용 지시 문서가 명령형 존댓말로 통일됨 (평서형은
    && ! grep -qnE "(말 것\.|한다\.$|않는다\.)" plugin/local/commands/setup.md plugin/local/commands/sync.md plugin/local/references/setup.md'
 
 
+# 이 도구는 Cloud·Server/DC 어느 조직 인스턴스에도 붙는다. 그런데 개발 코퍼스가 한
+# 회사 것이라 그 이름이 **배포물로 새기 쉽다** — 실제로 `setup` 이 만들어 주는
+# `~/.wikilens/env.sh` 템플릿에 "Coway(wiki.coway.com)라면" 이 들어가 있었다. 남의
+# 회사 사람이 설치하면 자기 자격증명 파일에서 그 이름을 보게 된다.
+# 검사 대상은 **사용자가 통째로 받는 플러그인**이다. `cli/wikilens/layout.py` 의
+# "측정한 것 (Coway 2,377건)" 같은 주석은 남긴다 — 문서의 같은 표기와 마찬가지로
+# 수치의 출처를 밝히는 라벨이고, 지우면 그 수가 어디서 나왔는지 알 수 없게 된다.
+check "설치되는 플러그인에 회사 고유값이 없음 (측정 라벨은 주석·문서에만)" \
+  '! grep -rniE "coway|cwdomesticdt|megazone|메가존" plugin/local plugin/client'
+
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."

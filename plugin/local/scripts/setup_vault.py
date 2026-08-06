@@ -54,8 +54,9 @@ def capture_env() -> tuple[list[str], list[str], str]:
     세 곳이 이 명령을 안내하므로 두 번째 실행이 자연스럽게 일어난다. 주석과 사용자가
     직접 추가한 줄도 그대로 둔다 — 남의 파일을 다시 쓰는 쪽이 예외여야 한다.
 
-    `CONFLUENCE_PREFIX` 는 빈 문자열이 유효한 값이므로(Coway 필수 설정) `.get()` 이
-    아니라 `in` 으로 판정한다. 이걸 틀리면 인증이 조용히 실패한다.
+    `CONFLUENCE_PREFIX` 는 **빈 문자열이 유효한 값**이라 `.get()` 이 아니라 `in` 으로
+    판정한다 — `""` 는 "Server/DC 라 접두사가 없다"는 뜻이고 "미설정"(자동 판별)과 다르다.
+    이걸 틀리면 인증이 조용히 실패한다.
     """
     present = [k for k in CRED_VARS if k in os.environ]
     if not present:
@@ -94,7 +95,10 @@ def env_template() -> str:
         f"(umask 077; cat > {ENV_PATH} <<'EOF'\n"
         "export CONFLUENCE_URL=https://wiki.example.com\n"
         "export CONFLUENCE_TOKEN=<발급받은 PAT를 여기에>\n"
-        "# Coway(wiki.coway.com)라면 아래 줄도 필요합니다 (빈 문자열이 맞습니다)\n"
+        "# Cloud 는 보통 이메일도 필요합니다 (Server/DC 는 PAT 하나면 됩니다)\n"
+        "# export CONFLUENCE_EMAIL=me@example.com\n"
+        "# 주소 자동 판별이 게이트웨이 구성에 속으면 접두사를 직접 지정합니다\n"
+        "#   Cloud=\"/wiki\" · Server/DC=\"\" (빈 문자열이 유효한 값입니다)\n"
         "# export CONFLUENCE_PREFIX=\"\"\n"
         "EOF\n"
         ")"
