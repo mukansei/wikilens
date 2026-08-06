@@ -27,8 +27,12 @@ check() {
 echo "교차 언어 계약"
 # vault_status.py 가 샤딩 규칙을 **다시 정의**한다(CLI 없이 동작해야 하므로 import 불가).
 # 갈라지면 정상 파일이 전부 '샤드 밖'으로 잡힌다. 동작 대조는 test_local_plugin.py 가 한다.
-check "샤딩 규칙 Python/Kotlin/플러그인 일치, Kotlin 정의처 1곳(Layout.kt)" \
-  'grep -q "SHARD_WIDTH = 2" cli/wikilens/layout.py && grep -q "SHARD_WIDTH = 2" plugin/local/scripts/vault_status.py && grep -qE "substring\(0,[[:space:]]*2\)" server/src/main/kotlin/dev/wikilens/vault/Layout.kt && [ $(grep -rl "fun relPagePath" server/src/main/kotlin | wc -l) -eq 1 ]'
+#
+# ID 의 **뒤**를 쓴다는 것이 규칙의 핵심이다 — Confluence ID 는 시간순 연속 할당이라
+# 앞자리로 쪼개면 뭉친다(실측: 앞2/앞4 는 최대 378개, 뒤2 는 37개). 한쪽만 앞으로
+# 되돌리면 서버가 파일을 못 찾는데 에러는 안 난다.
+check "샤딩 규칙 Python/Kotlin/플러그인 일치(뒤에서 자름), Kotlin 정의처 1곳(Layout.kt)" \
+  'grep -q "SHARD_DEPTH = 1" cli/wikilens/layout.py && grep -q "SHARD_DEPTH = 1" plugin/local/scripts/vault_status.py && grep -qF "takeLast(SHARD_WIDTH)" server/src/main/kotlin/dev/wikilens/vault/Layout.kt && [ $(grep -rl "fun relPagePath" server/src/main/kotlin | wc -l) -eq 1 ]'
 check "사전확률 클램프 양쪽 동일 (0.05, 0.85)" \
   'grep -q "PRIOR_CEIL = 0.85" server/src/main/kotlin/dev/wikilens/learn/Scoring.kt && grep -q "PRIOR_FLOOR, PRIOR_CEIL = 0.05, 0.85" cli/wikilens/server/scoring.py'
 check "canonical_json 결정적 직렬화" \

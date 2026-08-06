@@ -33,7 +33,9 @@ ENV_PATH = CONFIG_DIR / "env.sh"
 # `cli/wikilens/layout.py` 의 값과 **반드시 같아야 한다.** 여기서 다시 정의하는 이유는
 # 로컬판이 CLI 없이도 동작해야 해서다(CLI 는 볼트 구축에만 필요하고, 검색·진단에는
 # 없을 수 있다). 계약 검사가 두 값의 일치를 강제한다.
-SHARD_DEPTH = 2
+#
+# ID 의 **뒤**를 쓴다 — 시간순 연속 할당이라 앞자리가 뭉친다. 근거는 layout.py 주석.
+SHARD_DEPTH = 1
 SHARD_WIDTH = 2
 
 # mirror 하위 디렉터리별로 확장자가 정해져 있다. 확장자까지 대조하므로
@@ -179,8 +181,9 @@ def creds_state() -> str:
 
 def _expected_rel(page_id: str, kind: str, ext: str) -> str:
     """`layout.rel_page_path()` 와 같은 규칙. 여기선 세 디렉터리에 일반화했다."""
-    padded = page_id.rjust(SHARD_DEPTH * SHARD_WIDTH, "0")
-    seg = "/".join(padded[i * SHARD_WIDTH : (i + 1) * SHARD_WIDTH] for i in range(SHARD_DEPTH))
+    n = SHARD_DEPTH * SHARD_WIDTH
+    tail = page_id.rjust(n, "0")[-n:]
+    seg = "/".join(tail[i * SHARD_WIDTH : (i + 1) * SHARD_WIDTH] for i in range(SHARD_DEPTH))
     return f"{kind}/{seg}/{page_id}{ext}"
 
 

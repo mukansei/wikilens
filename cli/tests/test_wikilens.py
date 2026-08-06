@@ -80,10 +80,16 @@ def make_vault(tmp_path: Path) -> Path:
 
 # --------------------------------------------------------------- 레이아웃
 
-def test_shard_is_stable_and_padded():
-    assert layout.shard("123456789") == "12/34"
-    assert layout.shard("7") == "00/07"   # 4자리로 좌측 0 패딩
-    assert layout.rel_page_path("123456789") == "mirror/pages/12/34/123456789.md"
+def test_shard_takes_the_tail_not_the_head():
+    """
+    Confluence ID 는 시간순 연속 할당이라 앞자리에 엔트로피가 거의 없다 —
+    앞에서 자르면 한 디렉터리에 뭉친다(실측: 앞2/앞4 최대 378개, 뒤2 최대 37개).
+    """
+    assert layout.shard("123456789") == "89"
+    assert layout.shard("7") == "07"      # 2자리로 좌측 0 패딩
+    assert layout.rel_page_path("123456789") == "mirror/pages/89/123456789.md"
+    # 앞부분이 같아도 흩어져야 한다 — 이게 앞자르기와 갈리는 지점이다
+    assert len({layout.shard(f"1027280{i:02}") for i in range(10)}) == 10
 
 
 def test_page_id_is_the_identifier_not_title():
@@ -197,7 +203,7 @@ def test_transpose_inverts_links(tmp_path):
     # 두 페이지가 같은 구어체로 부른다 -> 전치의 핵심 산출물
     assert "로그인 붙이는 법" in texts
     assert oauth["indeg"] == 2
-    assert oauth["path"] == "mirror/pages/10/00/100000001.md"
+    assert oauth["path"] == "mirror/pages/01/100000001.md"
 
     # 제목에는 그 표현이 없다. 이것이 어휘 격차다.
     assert "로그인" not in oauth["title"]
@@ -226,7 +232,7 @@ def test_aliases_puts_path_next_to_alias(tmp_path):
     hits = [l for l in text.splitlines() if "로그인 붙이는 법" in l]
     assert hits, "별칭이 색인에 있어야 함"
     # 컨텍스트 플래그 없이 grep 해도 경로가 나와야 한다
-    assert "mirror/pages/10/00/100000001.md" in hits[0], "경로가 같은 줄에 있어야 함"
+    assert "mirror/pages/01/100000001.md" in hits[0], "경로가 같은 줄에 있어야 함"
 
 
 # --------------------------------------------------------------- 멱등성

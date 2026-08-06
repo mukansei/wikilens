@@ -131,7 +131,7 @@ def test_exit_code_distinguishes_searchable_from_setup_needed(tmp_path):
 
 def _vault_with(tmp_path, *rels: str) -> Path:
     v = tmp_path / "v"
-    for rel in ("mirror/pages/20/00/200000001.md", "mirror/raw/20/00/200000001.xhtml", *rels):
+    for rel in ("mirror/pages/01/200000001.md", "mirror/raw/01/200000001.xhtml", *rels):
         p = v / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("", encoding="utf-8")
@@ -147,8 +147,8 @@ def test_clean_vault_has_no_strays(tmp_path):
     "mirror/pages/.DS_Store",                        # Finder 부산물
     "mirror/pages/Project Task List.md",               # 제목이 파일명 (ID 계약 위반)
     "mirror/pages/상위기획] 제품/서비스 개선](.md",      # 링크 텍스트를 경로로 삼음
-    "mirror/pages/20/00/200000002.xhtml",            # 확장자가 디렉터리와 안 맞음
-    "mirror/pages/99/99/200000001.md",               # 샤드 위치가 ID 와 안 맞음
+    "mirror/pages/02/200000002.xhtml",               # 확장자가 디렉터리와 안 맞음
+    "mirror/pages/99/200000001.md",                  # 샤드 위치가 ID 와 안 맞음
 ])
 def test_stray_file_is_detected(tmp_path, rel):
     got = status(tmp_path, WIKILENS_VAULT=_vault_with(tmp_path, rel))
