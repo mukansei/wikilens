@@ -37,7 +37,12 @@ class Controller(
     fun search(@RequestBody req: SearchRequest): SearchResponse {
         val res = searchService.search(req)
         // 질의 관측. 별도 훅 없이 도구 호출 자체가 궤적이 된다.
-        req.sessionId?.let { store.onQuery(it, req.query, res.terms) }
+        req.sessionId?.let { sid ->
+            store.onQuery(sid, req.query, res.terms)
+            // 학습 레이어가 서빙한 힌트를 함께 넘긴다. 세션이 끝까지 안 읽으면 그
+            // 힌트가 틀린 것이므로 미스로 되돌아간다 — `pWrong` 이 재려던 값이다.
+            store.onServed(sid, res.hits.filter { it.source != "lexical" }.map { it.pageId })
+        }
         return res
     }
 

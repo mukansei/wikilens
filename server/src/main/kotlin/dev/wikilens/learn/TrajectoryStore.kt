@@ -28,11 +28,20 @@ data class Trajectory(
     val reads: List<String>,
     val dest: String,
     val success: Boolean,
+    /**
+     * 학습 레이어가 이 질의에 **서빙한** 힌트 페이지들. 그중 세션이 끝까지 읽지 않은
+     * 것은 **틀린 힌트**이므로 미스로 charge 한다 — `pWrong` 이 원래 재려던 값이다.
+     *
+     * 옛 로그에는 이 필드가 없다. 기본값이 빈 목록이라 재생이 그대로 통과한다.
+     */
+    val served: List<String> = emptyList(),
 )
 
 /** 한 질의와 그 뒤에 이어진 읽기들. */
 class QuerySpan(val keywords: List<String>, val kind: QueryKind) {
     val reads = ArrayList<String>()
+    /** 이 질의에 학습 레이어가 서빙한 힌트 페이지들 (`onServed` 가 채운다). */
+    var served: List<String> = emptyList()
     /** on_query와 on_end가 같은 스팬을 두 번 확정하는 것을 막는다. */
     var finalized = false
 
@@ -81,6 +90,12 @@ class TrajectoryStore(
     private val trajMisses = AtomicInteger()
     private val trajCount = AtomicInteger()
 
+    // 서빙한 힌트와 그중 거부된 것. `pWrong` 은 **이 비율**이어야 한다 —
+    // 손익분기 `p_hit > p_wrong/(n−1)` 의 p_wrong 은 "캐시가 틀린 지름길을 줘서
+    // n 대신 1+n 을 읽게 될 확률"이지, 세션이 실패할 확률이 아니다.
+    private val servedCount = AtomicInteger()
+    private val rejectedCount = AtomicInteger()
+
     // ---------------------------------------------------------- 관측
 
     fun onQuery(sessionId: String, query: String, keywords: List<String>) {
@@ -94,6 +109,18 @@ class TrajectoryStore(
             s.spans.add(QuerySpan(normalize(keywords), Gate.classify(query)))
             s.lastTouch = System.currentTimeMillis()
         }
+    }
+
+    /**
+     * 학습 레이어가 이 질의에 서빙한 힌트를 기록한다. `onQuery` 직후에 부른다.
+     *
+     * 이걸 알아야 **틀린 힌트를 미스로 되돌릴 수 있다.** 그전에는 미스가 나는 경로가
+     * "무언가 읽고 나서 비슷한 말로 다시 검색" 하나뿐이라, 힌트가 아무리 엉뚱해도
+     * 세션이 그냥 끝나면 아무 벌점이 없었다 — 실측 `pWrong` 이 계속 0.0 이던 이유다.
+     */
+    fun onServed(sessionId: String, pageIds: List<String>) {
+        val s = sessions[sessionId] ?: return
+        synchronized(s) { s.current?.served = pageIds.toList() }
     }
 
     fun onRead(sessionId: String, pageId: String) {
@@ -110,7 +137,9 @@ class TrajectoryStore(
         synchronized(s) {
             var n = 0
             for (span in s.spans) {
-                if (span.reads.isNotEmpty() && !span.finalized) {
+                // 읽기가 없어도 서빙한 힌트가 있으면 확정한다 — 거부된 힌트가 곧
+                // 실패 신호다. 판정은 `finalize` 가 한다(읽기 없음 → success=false).
+                if ((span.reads.isNotEmpty() || span.served.isNotEmpty()) && !span.finalized) {
                     finalize(sessionId, span, success = true)
                     n++
                 }
@@ -129,7 +158,9 @@ class TrajectoryStore(
      * pWrong 이 그 노이즈의 크기다.
      */
     private fun finalize(sessionId: String, span: QuerySpan, success: Boolean) {
-        if (span.reads.isEmpty() || span.finalized) return
+        // 읽기가 없어도 **서빙한 힌트가 있으면** 기록한다 — 그 힌트가 거부됐다는 뜻이라
+        // 가장 강한 실패 신호다. 둘 다 없으면 배울 것이 없다.
+        if ((span.reads.isEmpty() && span.served.isEmpty()) || span.finalized) return
         span.finalized = true
         val t = Trajectory(
             ts = System.currentTimeMillis(),
@@ -137,8 +168,9 @@ class TrajectoryStore(
             keywords = span.keywords,
             kind = span.kind,
             reads = span.reads.toList(),
-            dest = span.reads.last(),
-            success = success,
+            dest = span.reads.lastOrNull().orEmpty(),
+            success = success && span.reads.isNotEmpty(),
+            served = span.served,
         )
         sink.append(t)
         apply(t)
@@ -151,10 +183,22 @@ class TrajectoryStore(
         trajCount.incrementAndGet()
         if (t.success) trajHits.incrementAndGet() else trajMisses.incrementAndGet()
         if (!t.kind.cacheable) return   // 경로 의존 질의는 간선을 만들지 않는다
+
+        // 서빙했는데 **끝내 안 읽힌** 힌트 = 틀린 힌트. dest 와 겹치지 않게 뺀다.
+        val rejected = t.served.toSet() - t.reads.toSet()
+        servedCount.addAndGet(t.served.size)
+        rejectedCount.addAndGet(rejected.size)
+
         for (term in normalize(t.keywords)) {
             val byPage = postings.computeIfAbsent(term) { ConcurrentHashMap() }
-            val slot = byPage.computeIfAbsent(t.dest) { IntArray(2) }
-            synchronized(slot) { slot[if (t.success) 0 else 1]++ }
+            if (t.dest.isNotEmpty()) {
+                val slot = byPage.computeIfAbsent(t.dest) { IntArray(2) }
+                synchronized(slot) { slot[if (t.success) 0 else 1]++ }
+            }
+            for (pid in rejected) {
+                val slot = byPage.computeIfAbsent(pid) { IntArray(2) }
+                synchronized(slot) { slot[1]++ }
+            }
         }
     }
 
@@ -198,10 +242,17 @@ class TrajectoryStore(
             "terms" to postings.size,
             "termPagePairs" to postings.values.sumOf { it.size },
             "ambiguousTerms" to postings.values.count { it.size > 1 },
+            // 궤적(세션) 단위 성공률. 사람이 원하는 것을 찾았는가.
             "hits" to h,
             "misses" to m,
-            // 손익분기 p_hit > p_wrong/(n-1) 의 분자. 적중률보다 이게 중요하다.
-            "pWrong" to if (n > 0) m.toDouble() / n else null,
+            // 힌트 단위. 서빙한 지름길 중 몇이 거부됐나 — 손익분기 공식의 p_wrong 이다.
+            // 예전엔 pWrong 을 궤적 성공률로 계산했는데 그건 다른 값이다.
+            "served" to servedCount.get(),
+            "rejected" to rejectedCount.get(),
+            "pWrong" to servedCount.get().let { s ->
+                if (s > 0) rejectedCount.get().toDouble() / s else null
+            },
+            "sessionFailureRate" to if (n > 0) m.toDouble() / n else null,
             "trajectories" to trajCount.get(),
             "activeSessions" to sessions.size,
         )
