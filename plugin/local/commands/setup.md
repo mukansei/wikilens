@@ -4,7 +4,7 @@ description: WikiLens 로컬판을 설정합니다 — 자격증명 고정, 볼�
 
 WikiLens 로컬판 설정을 진행한다.
 
-절차 정본은 `${CLAUDE_PLUGIN_ROOT}/skills/search/references/setup.md` 에 있다.
+절차 정본은 `${CLAUDE_PLUGIN_ROOT}/references/setup.md` 에 있다.
 **그 파일을 먼저 Read 하고 거기 적힌 순서를 그대로 따를 것** — 절차를 여기 옮겨 적으면
 두 곳이 갈라진다.
 

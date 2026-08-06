@@ -20,7 +20,7 @@
       "name": "wikilens-local",
       "source": "./plugin/local",
       "description": "로컬 볼트를 별칭 색인으로 검색합니다 (서버 불필요, 각자 자기 토큰으로 싱크). wikilens-client 와 함께 설치하지 마세요 — 하나만 고르세요.",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "category": "documentation"
     }
   ]

@@ -45,7 +45,7 @@ STRAY=0
    멈춰 세우면 안 됩니다.
 2. 그런 다음 한 줄로 제안합니다 — *"사내 위키에서도 찾아보려면 설정이 필요합니다.
    지금 할까요? (약 5분, Confluence에서 문서를 받아옵니다)"*
-3. 승낙하면 `${CLAUDE_PLUGIN_ROOT}/skills/search/references/setup.md` 를 읽고
+3. 승낙하면 `${CLAUDE_PLUGIN_ROOT}/references/setup.md` 를 읽고
    그대로 따릅니다. 절차를 지어내지 마세요.
 4. 거절하거나 답이 없으면 **이 세션에서 다시 꺼내지 마세요.**
 
