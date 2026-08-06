@@ -218,11 +218,21 @@ class TrajectoryStore(
             if (t.dest.isNotEmpty()) {
                 val slot = byPage.computeIfAbsent(t.dest) { IntArray(2) }
                 synchronized(slot) {
+                    // 히트만 가중한다. 깊은 순위로 배운 간선(×3)은 미스 3번이라야
+                    // 상쇄된다 — 강한 증거에는 강한 반증이 필요하다는 뜻이라 의도한
+                    // 비대칭이다. 다만 "1위로 서빙한 힌트를 거부한 것"이 "5위로 서빙한
+                    // 것을 거부한 것"보다 강한 반증일 여지는 남는다 — 미스도 순위로
+                    // 가중할지는 `pWrong` 을 보고 판단할 것.
                     if (t.success) slot[0] += weight else slot[1]++
                 }
             }
+            // **이미 배운 페이지만** 끌어내린다. 미스의 목적은 서빙될 것을 밀어내는
+            // 것인데, 항목이 없는 페이지는 애초에 서빙되지 않으므로 만들어봐야 스캔
+            // 비용만 는다. `computeIfAbsent` 를 쓰면 한 번 스쳐본 페이지가 전부 영구히
+            // 남는다 — 실측(100세션·5읽기)에서 항-페이지쌍이 200 → 1,200 으로 6배였고
+            // `hints()` 가 질의당 2.3ms 였다.
             for (pid in rejected + passedOver) {
-                val slot = byPage.computeIfAbsent(pid) { IntArray(2) }
+                val slot = byPage[pid] ?: continue
                 synchronized(slot) { slot[1]++ }
             }
         }

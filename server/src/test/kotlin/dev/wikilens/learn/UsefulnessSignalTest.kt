@@ -71,20 +71,34 @@ class UsefulnessSignalTest {
     // ---------------------------------------------------------- 읽기 개수
 
     @Test
-    fun `열어보고 지나친 페이지는 미스가 된다`() {
+    fun `이미 배운 페이지를 지나치면 끌어내린다`() {
         // `dest = reads.last()` 라는 전제를 따르면 앞서 읽은 것들은 지나친 것이다.
         // 1건만 읽으면 확신, 여러 건을 헤매면 그만큼 약한 증거가 된다.
+        val s = store()
+        // 먼저 111 을 답으로 배운다
+        s.onQuery("s0", "점유인증 정책 어디", listOf("점유인증"))
+        s.onRead("s0", "111"); s.onEnd("s0")
+        assertNotNull(served(s, "점유인증", "111"), "선행 학습이 안 됐다")
+
+        // 다음 세션은 111 을 열어보고 지나쳐 222 로 갔다
+        s.onQuery("s1", "점유인증 정책 어디", listOf("점유인증"))
+        s.onRead("s1", "111"); s.onRead("s1", "222")
+        s.onEnd("s1")
+
+        assertEquals(1, served(s, "점유인증", "111")!!.misses, "지나친 페이지가 벌점을 안 받았다")
+        assertNotNull(served(s, "점유인증", "222"), "마지막 읽기가 답이다")
+    }
+
+    @Test
+    fun `배운 적 없는 페이지는 미스만으로 항목을 만들지 않는다`() {
+        // 미스의 목적은 **서빙될 것을 끌어내리는 것**이다. 항목이 없는 페이지는 애초에
+        // 서빙되지 않으므로 만들어봐야 스캔 비용만 는다 — 실측으로 항-페이지쌍이
+        // 6배(200→1,200), `hints()` 가 2.3ms/질의였다.
         val s = store()
         s.onQuery("s1", "점유인증 정책 어디", listOf("점유인증"))
         s.onRead("s1", "111"); s.onRead("s1", "222"); s.onRead("s1", "333")
         s.onEnd("s1")
-
-        // 셋 다 포스팅에는 들어갔지만(지나친 것도 기록된다)
-        assertEquals(3, s.stats()["termPagePairs"], "지나친 페이지가 기록되지 않았다")
-        // 지나친 것은 벌점 때문에 힌트로 안 나가고, 마지막 읽기만 나간다
-        assertNull(served(s, "점유인증", "111"), "지나친 페이지가 힌트로 서빙된다")
-        assertNull(served(s, "점유인증", "222"))
-        assertNotNull(served(s, "점유인증", "333"), "마지막 읽기가 답이다")
+        assertEquals(1, s.stats()["termPagePairs"], "지나친 페이지가 항목을 만들었다")
     }
 
     @Test
