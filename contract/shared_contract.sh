@@ -35,6 +35,25 @@ check "샤딩 규칙 Python/Kotlin/플러그인 일치(뒤에서 자름), Kotlin
   'grep -q "SHARD_DEPTH = 1" cli/wikilens/layout.py && grep -q "SHARD_DEPTH = 1" plugin/local/scripts/vault_status.py && grep -qF "takeLast(SHARD_WIDTH)" server/src/main/kotlin/dev/wikilens/vault/Layout.kt && [ $(grep -rl "fun relPagePath" server/src/main/kotlin | wc -l) -eq 1 ]'
 check "사전확률 클램프 양쪽 동일 (0.05, 0.85)" \
   'grep -q "PRIOR_CEIL = 0.85" server/src/main/kotlin/dev/wikilens/learn/Scoring.kt && grep -q "PRIOR_FLOOR, PRIOR_CEIL = 0.05, 0.85" cli/wikilens/server/scoring.py'
+# `ALIASES.md` 한 줄에 스페이스가 들어간다. 여러 스페이스를 싱크하면 같은 낱말이
+# 여러 영역에서 걸리는데, 줄에 스페이스가 없으면 grep 결과만 보고는 구분이 안 된다
+# (경로도 스페이스로 안 나뉜다 — 샤딩은 페이지 ID 만 쓴다).
+#
+# **소스를 grep 하지 않고 체크인된 산출물을 본다.** 렌더 코드가 두 군데(별칭 있음/없음)
+# 라 문자열 grep 은 한쪽만 고쳐도 통과한다 — 실제로 그렇게 빠져나가는 것을 확인했다.
+check "ALIASES.md·TREE.md 산출물에 스페이스가 있고 스킬 설명과 일치" \
+  'python3 -c "
+import pathlib,re
+F=pathlib.Path(\"contract/shared-fixture\")
+al=[l for l in (F/\"ALIASES.md\").read_text().splitlines()
+    if \" | \" in l and l.rsplit(\" | \",1)[1].startswith(\"mirror/pages/\")]
+assert al, \"픽스처에 데이터 줄이 없다\"
+assert all(l.split(\" | \")[0].strip()==\"DOCS\" for l in al), (\"첫 필드가 스페이스가 아니다\", al[0])
+tr=[l for l in (F/\"TREE.md\").read_text().splitlines() if \"mirror/pages/\" in l]
+assert tr and all(\"[DOCS]\" in l for l in tr), (\"TREE 줄에 스페이스가 없다\", tr[:1])
+sk=pathlib.Path(\"plugin/local/skills/search/SKILL.md\").read_text()
+assert \"스페이스 | 제목\" in sk, \"스킬 설명이 산출물과 갈라졌다\"
+"'
 check "canonical_json 결정적 직렬화" \
   'grep -q "sort_keys=True, ensure_ascii=False" cli/wikilens/models.py'
 check "ancestors 스키마 Python↔Kotlin 일치 (sync.py 가 쓰고 VaultReader 가 같은 키로 읽음)" \
