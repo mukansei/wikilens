@@ -179,6 +179,34 @@ def creds_state() -> str:
     return "none"
 
 
+def other_plugin() -> str:
+    """
+    서버판(`wikilens-client`)도 함께 켜져 있는지.
+
+    한때 "둘은 배타적" 이라고 문서에 적었는데 **강제할 수단이 없었다.** 이 머신에도
+    둘 다 켜진 채였고 아무 경고도 없었다. 게다가 서버판이 켜져 있으면 그 MCP 도구
+    4개는 스킬 선택과 무관하게 **항상** 모델에게 보여서, 로컬판이 이긴다는 규칙은
+    애초에 성립할 수 없다.
+
+    그래서 배타성 대신 **우선순위**로 바꿨고(`DECISIONS.md` D13), 이 값은 두 가지에
+    쓰인다 — 스킬이 서버판에 양보할지 판단하는 근거, 그리고 정리하고 싶은 사용자에게
+    `claude plugin disable` 을 안내할 자리.
+
+    설정을 못 읽으면 빈 문자열이다. 진단 한 줄 때문에 검색이 막히면 안 된다.
+    """
+    try:
+        settings = json.loads((Path.home() / ".claude" / "settings.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return ""
+    enabled = settings.get("enabledPlugins")
+    if not isinstance(enabled, dict):
+        return ""
+    for name, on in enabled.items():
+        if on and name.split("@")[0] == "wikilens-client":
+            return name
+    return ""
+
+
 def _expected_rel(page_id: str, kind: str, ext: str) -> str:
     """`layout.rel_page_path()` 와 같은 규칙. 여기선 세 디렉터리에 일반화했다."""
     n = SHARD_DEPTH * SHARD_WIDTH
@@ -275,6 +303,7 @@ def main(argv: list[str]) -> int:
     info["cli"] = find_cli(cfg)
     info["cli_source"] = cli_source(cfg)
     info["creds"] = creds_state()
+    info["other"] = other_plugin()
 
     # 이상 파일은 검색을 막지 않으므로 STATUS 와 종료코드를 건드리지 않는다.
     # -1 은 "검사하지 않음"(볼트가 없거나 --no-scan).
@@ -295,6 +324,7 @@ def main(argv: list[str]) -> int:
         print(f"CLI_SOURCE={info['cli_source']}")
         print(f"CREDS={info['creds']}")
         print(f"STRAY={info['stray']}")
+        print(f"OTHER={info['other']}")
         for rel in stray_paths:
             print(f"STRAY_PATH={rel}")
 

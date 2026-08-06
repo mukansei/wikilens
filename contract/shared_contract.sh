@@ -221,6 +221,19 @@ check "두 판 모두 설정을 ~/.wikilens 에서 읽음 (env 단독은 세션 
 # 않았다. 검색이 빈손일 때 주소·식별자·색인 중 무엇이 막혔는지 구분할 길이 없었다.
 check "서버판에 진단 경로 있음 (--status 가 health/stats 를 실제로 씀)" \
   'grep -q -- "--status" plugin/client/mcp/wikilens_mcp.py && grep -q "/api/health" plugin/client/mcp/wikilens_mcp.py && grep -q "/api/stats" plugin/client/mcp/wikilens_mcp.py'
+# 한때 "둘은 배타적" 이라고 적었지만 **강제할 수단이 없었다** — 이 머신에도 둘 다 켜진
+# 채였고 아무 경고가 없었다. 게다가 서버판이 켜져 있으면 그 MCP 도구는 스킬 선택과
+# 무관하게 항상 모델에게 보이므로 "로컬판이 이긴다" 는 애초에 성립 불가다. 그래서
+# 배타성 대신 **우선순위**(서버판 우선)를 양쪽에 적었다 — D13. 한쪽만 되돌리면
+# 두 스킬이 서로 양보하거나 서로 자기라고 주장하는 상태가 되므로 함께 검사한다.
+check "두 스킬이 같은 우선순위를 말함 (서버판 우선 · 배타성 주장 없음)" \
+  'grep -q "서버판 MCP 도구" plugin/local/skills/search/SKILL.md \
+   && grep -q "이쪽이 우선입니다" plugin/client/skills/search/SKILL.md \
+   && ! grep -q "둘은 배타적" plugin/local/skills/search/SKILL.md \
+   && ! grep -q "둘은 배타적" plugin/client/skills/search/SKILL.md \
+   && ! grep -q "하나만 고르세요" .claude-plugin/marketplace.json \
+   && grep -q "OTHER=" plugin/local/scripts/vault_status.py'
+
 # 두 판이 대소문자를 다르게 다루면 **판을 옮긴 사용자가 같은 질의에 다른 답을 받는다.**
 # 두 경로가 어긋나기 쉬운 이유는 각자의 기본값이 반대라서다 — ripgrep(로컬판의 Grep)은
 # 대소문자를 구분하고, 서버는 리터럴 경로가 ignoreCase 라 정규식도 거기 맞췄다.
