@@ -1,7 +1,7 @@
 {
   "name": "wikilens-local",
   "description": "로컬 미러링된 Confluence 볼트를 별칭 색인으로 검색합니다. 서버 불필요. 첫 실행 시 볼트를 감지해 설정을 안내하고, 개인 설정은 ~/.wikilens/ 에 둡니다.",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "keywords": [
     "confluence",
     "wiki",

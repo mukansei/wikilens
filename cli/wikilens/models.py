@@ -63,6 +63,7 @@ class AnchorEntry:
 
     target: str
     title: str
+    space: str
     path: str
     anchors: list[dict[str, str]]
     indeg: int
@@ -71,6 +72,7 @@ class AnchorEntry:
         return {
             "target": self.target,
             "title": self.title,
+            "space": self.space,
             "path": self.path,
             "anchors": self.anchors,
             "indeg": self.indeg,

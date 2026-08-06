@@ -15,7 +15,7 @@ WikiLens는 그 링크를 대상 기준으로 뒤집어(전치) 색인합니다.
 
 ```console
 $ grep "로그인" ALIASES.md
-OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 붙이기 | 2 | mirror/pages/20/00/200000001.md
+PLATFORM | OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 붙이기 | 2 | mirror/pages/01/200000001.md
 ```
 
 본문만 뒤졌다면 **엉뚱한 문서**가 나옵니다:

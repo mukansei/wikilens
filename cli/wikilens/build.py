@@ -137,6 +137,7 @@ def transpose(
             AnchorEntry(
                 target=pid,
                 title=sig.title,
+                space=sig.space,
                 path=layout.rel_page_path(pid),
                 anchors=uniq,
                 indeg=len(uniq),
@@ -185,7 +186,8 @@ def _write_aliases(
         "",
         "다른 문서들이 각 페이지를 **실제로 부르는 이름**입니다. 자동 생성 — 직접 수정하지 마세요.",
         "",
-        "형식: `제목 | 별칭 · 별칭 … | 인링크수 | 경로` — 한 줄이라 grep 결과에 경로가 항상 포함됩니다.",
+        "형식: `스페이스 | 제목 | 별칭 · 별칭 … | 인링크수 | 경로`"
+        " — 한 줄이라 grep 결과에 스페이스와 경로가 항상 포함됩니다.",
         "",
         "## 색인",
         "",
@@ -196,7 +198,7 @@ def _write_aliases(
     without = [e for e, terms in scored if not terms]
 
     for e, terms in sorted(with_alias, key=lambda x: -x[0].indeg):
-        lines.append(f"{e.title} | {' · '.join(terms)} | {e.indeg} | {e.path}")
+        lines.append(f"{e.space} | {e.title} | {' · '.join(terms)} | {e.indeg} | {e.path}")
 
     if without:
         lines += [
@@ -208,7 +210,7 @@ def _write_aliases(
             "",
         ]
         for e in sorted(without, key=lambda x: x.title):
-            lines.append(f"{e.title} | (별칭 없음) | 0 | {e.path}")
+            lines.append(f"{e.space} | {e.title} | (별칭 없음) | 0 | {e.path}")
 
     lines.append("")
     layout.aliases_path(root).write_text("\n".join(lines), encoding="utf-8")
@@ -247,7 +249,11 @@ def _write_tree(
     ]
 
     def render(pid: str, depth: int) -> None:
-        lines.append(f"{'  ' * depth}- {valid[pid].get('title', '')} — {layout.rel_page_path(pid)}")
+        m = valid[pid]
+        lines.append(
+            f"{'  ' * depth}- {m.get('title', '')} [{m.get('space', '')}]"
+            f" — {layout.rel_page_path(pid)}"
+        )
         for child in sorted(children.get(pid, []), key=lambda c: valid[c].get("title", "")):
             render(child, depth + 1)
 

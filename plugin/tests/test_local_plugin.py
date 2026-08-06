@@ -521,9 +521,10 @@ def test_skill_example_matches_real_aliases_format():
     """
     from wikilens import layout
 
-    # 형식 설명 줄도 파이프를 3개 갖고 있으므로, 경로 필드가 실제 경로인 줄만 고른다.
+    # 필드 수로 거르지 않는다 — 스페이스 필드가 늘면서 한 번 깨졌다. 마지막 필드가
+    # 실제 경로인 줄이 데이터 줄이라는 성질만 쓴다.
     lines = [l for l in (FIXTURE / "ALIASES.md").read_text(encoding="utf-8").splitlines()
-             if l.count(" | ") == 3 and l.rsplit(" | ", 1)[1].startswith("mirror/pages/")]
+             if " | " in l and l.rsplit(" | ", 1)[1].startswith("mirror/pages/")]
     assert lines, "픽스처 ALIASES.md 에 색인 줄이 없다"
 
     path_field = lines[0].rsplit(" | ", 1)[1]
@@ -533,7 +534,11 @@ def test_skill_example_matches_real_aliases_format():
         "스킬의 경로 결합 규칙도 함께 고쳐야 한다"
     )
     # 스킬이 안내하는 결합 규칙이 실제 형식과 맞는가
-    assert "mirror/pages/" in SKILL.read_text(encoding="utf-8")
+    skill = SKILL.read_text(encoding="utf-8")
+    assert "mirror/pages/" in skill
+    # 스페이스가 첫 필드다 — 스킬 설명과 실제 산출물이 갈라지면 안 된다
+    assert "스페이스 | 제목" in skill, "스킬이 스페이스 필드를 설명하지 않는다"
+    assert lines[0].split(" | ")[0] == "DOCS", f"첫 필드가 스페이스가 아니다: {lines[0]}"
 
 
 # --------------------------------------------------------------- 커맨드
