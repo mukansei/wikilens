@@ -558,3 +558,37 @@ def test_setup_reference_covers_the_argument_order_trap():
     assert "--root <VAULT> sync" in text
     assert "앞에" in text
     assert "CONFLUENCE_PREFIX" in text, "Coway 필수 설정이 빠졌다"
+
+
+# --------------------------------------------------------------- 검색 절차
+#
+# grep 은 리터럴이라 여러 낱말 질의를 그대로 넣으면 0건이 된다. 스킬이 그걸 모르면
+# 3번(본문 grep)으로 떨어지는데, 스킬 자신이 그건 틀린 답을 준다고 경고한다.
+# 실측(Coway 2,377건): "출장 신청 승인" 그대로 0건, 낱말 AND 로는 정확히 1건.
+
+def test_skill_warns_that_grep_is_literal():
+    text = SKILL.read_text(encoding="utf-8")
+    assert "리터럴" in text, "grep 이 리터럴이라는 사실이 없다"
+    assert "쪼개" in text, "낱말로 쪼개라는 지시가 없다"
+
+
+def test_phrase_grep_fails_where_token_and_succeeds(tmp_path):
+    """
+    스킬이 시키는 것(낱말 AND)이 실제로 통하고, 시키지 않는 것(구절 그대로)이
+    실제로 실패하는지 — 픽스처 형식 그대로 재현해 확인한다.
+    """
+    aliases = tmp_path / "ALIASES.md"
+    aliases.write_text(
+        "## 색인\n"
+        "02-05-01. [POLICY] 정책 | 출장 신청 승인 절차 | 3 | mirror/pages/01/1.md\n"
+        "10-1. 마케팅 수신 동의 | 동의 데이터 흐름 | 1 | mirror/pages/02/2.md\n",
+        encoding="utf-8")
+    rows = [l for l in aliases.read_text(encoding="utf-8").splitlines() if "mirror/" in l]
+
+    assert [l for l in rows if "출장 신청 승인" in l], "이 픽스처에선 구절이 실제로 있다"
+
+    # 사용자가 흔히 쓰는 어순 — 구절 그대로는 안 걸린다
+    assert not [l for l in rows if "승인 출장" in l]
+    # 낱말 AND 는 걸린다
+    hit = [l for l in rows if all(t in l for t in ("<직군명>", "동의"))]
+    assert len(hit) == 1 and "POLICY" in hit[0]
