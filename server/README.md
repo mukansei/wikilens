@@ -7,9 +7,9 @@ Confluence 미러를 **서버측에서 색인**하고, 탐색 궤적을 축적�
 
 | 레이어 | 검증 |
 |---|---|
-| `learn/` (게이트·EB·궤적·포스팅) | JUnit 12개 통과, Python/scipy와 1e-6 일치 |
+| `learn/` (게이트·EB·궤적·포스팅) | JUnit 통과. 기대값 6개가 `scoring_reference.py` 산출과 1e-6 일치 |
 | `index/` `api/` `vault/` `acl/` (Lucene·Spring 배선) | 빌드·`bootRun`·재색인 검증됨 (Acme 실데이터 2,378건, 2026-08) |
-| JUnit 전체 | 51개 통과 |
+| JUnit 전체 | 통과 (`./gradlew test`) |
 | 검색 랭킹 **품질** | **미검증.** 배선이 도는 것과 랭킹이 좋은 것은 다른 문제다 |
 
 ```bash

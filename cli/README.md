@@ -22,7 +22,7 @@ PLATFORM | OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 �
 
 ```console
 $ grep -rl "로그인" mirror/pages/
-mirror/pages/20/00/200000004.md    ← "온보딩 체크리스트". OAuth 문서를 그렇게 부르며 링크한 페이지
+mirror/pages/04/200000004.md       ← "온보딩 체크리스트". OAuth 문서를 그렇게 부르며 링크한 페이지
 ```
 
 그 표현으로 *링크한* 페이지지, 찾으려는 문서가 아닙니다. 이 차이가 이 도구의 전부입니다.
@@ -79,9 +79,9 @@ grep과 Read로 볼트를 쓰고, 스킬은 "본문보다 `ALIASES.md`를 먼저
 
 ```
 ALIASES.md                        별칭 색인. 한 줄에 제목·별칭·경로 전부
-mirror/raw/{sh}/{ard}/{id}.xhtml  Confluence 원본. 무손실. 권위
-mirror/pages/{sh}/{ard}/{id}.md   마크다운. 사람·grep용
-mirror/structure/{sh}/{ard}/{id}.json  구조 서명 (제목·헤딩·링크집합)
+mirror/raw/{id뒤2}/{id}.xhtml     Confluence 원본. 무손실. 권위
+mirror/pages/{id뒤2}/{id}.md      마크다운. 사람·grep용
+mirror/structure/{id뒤2}/{id}.json  구조 서명 (제목·헤딩·링크집합)
 mirror/.sync-state.json           커서 + 페이지 메타데이터
 derived/anchors.jsonl             별칭 원자료
 ```

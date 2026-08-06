@@ -6,7 +6,7 @@ Confluence 위키를 로컬 마크다운으로 미러링하고, **다른 문서�
 
 ```console
 $ grep "로그인" ALIASES.md
-OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 붙이기 | 2 | mirror/pages/20/00/200000001.md
+PLATFORM | OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 붙이기 | 2 | mirror/pages/01/200000001.md
 ```
 
 본문만 뒤졌다면 **엉뚱한 문서**가 나옵니다 — 그 표현으로 *링크한* 온보딩 페이지지,
@@ -227,12 +227,12 @@ Lucene Nori가 그 문제의 프로덕션 해답입니다. 색인이 서버에 �
 | Python CLI · 앵커 전치 · 파서 | 23개 통과 (골든 픽스처 포함) |
 | CLI 배선 (서브커맨드·진단 메시지) | 9개 통과 |
 | Confluence 클라이언트 | 17개 통과 (가짜 서버 — Cloud/Server·429·페이지네이션·재개·`--follow-refs`) |
-| 인증 계층 (SSO/IAM) | 12개 통과 (가짜 IAM — OAuth2·만료 갱신·401 재시도) |
+| 인증 계층 (SSO/IAM) | 통과 (가짜 IAM — OAuth2·만료 갱신·401 재시도) |
 | Python 스코어링 대조 구현 (`cli/wikilens/scoring_reference.py`) | 13개 통과. 런타임에 안 쓰이고 Kotlin `Scoring.kt` 의 짝으로만 존재 — `LearnLayerTest.kt` 의 기대값 6개가 여기서 나온다 |
 | MCP 프록시 (서버판) | 24개 테스트 통과 (핸드셰이크·도구 4개·세션·404·환경변수) |
 | 로컬판 플러그인 | 19개 통과 (경로 해석·상태 판정·스킬 정합성·포맷 드리프트) |
-| Kotlin 학습 레이어 (`learn/`) | JUnit 12개 통과, Python/scipy와 1e-6 일치 |
-| Kotlin 서비스 계층 (search·content·acl·tree) | JUnit 51개 통과 |
+| Kotlin 학습 레이어 (`learn/`) | JUnit 통과. 기대값 6개가 `scoring_reference.py` 산출과 1e-6 일치 |
+| Kotlin 서비스 계층 (search·content·acl·tree) | JUnit 통과 |
 | Kotlin Lucene/Spring 배선 | 빌드·bootRun·재색인 검증됨 (Acme 실데이터 2,378건). 검색 랭킹 품질은 별도 미검증 |
 
 ---
