@@ -567,14 +567,15 @@ def test_setup_reference_covers_the_argument_order_trap():
 
 # --------------------------------------------------------------- 검색 절차
 #
-# grep 은 리터럴이라 여러 낱말 질의를 그대로 넣으면 0건이 된다. 스킬이 그걸 모르면
+# `Grep` 은 정규식을 받지만 매칭이 **한 줄 안에서** 일어난다. 여러 낱말 질의를 그대로
+# 넣으면 그 순서 그대로 붙어 있어야 하므로 0건이 된다. 스킬이 그걸 모르면
 # 3번(본문 grep)으로 떨어지는데, 스킬 자신이 그건 틀린 답을 준다고 경고한다.
-# 실측(Coway 2,377건): "출장 신청 승인" 그대로 0건, 낱말 AND 로는 정확히 1건.
+# 실측(Coway 볼트): "출장 신청 승인" 그대로 0건, 낱말을 `.*` 로 이으면 3건.
 
-def test_skill_warns_that_grep_is_literal():
+def test_skill_explains_line_scoped_matching():
     text = SKILL.read_text(encoding="utf-8")
-    assert "리터럴" in text, "grep 이 리터럴이라는 사실이 없다"
-    assert "쪼개" in text, "낱말로 쪼개라는 지시가 없다"
+    assert "한 줄 안에서" in text, "한 줄 매칭이라는 사실이 없다"
+    assert ".*" in text, "낱말을 잇는 방법이 없다"
 
 
 def test_phrase_grep_fails_where_token_and_succeeds(tmp_path):
