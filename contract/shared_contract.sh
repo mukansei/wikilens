@@ -221,6 +221,15 @@ check "두 판 모두 설정을 ~/.wikilens 에서 읽음 (env 단독은 세션 
 # 않았다. 검색이 빈손일 때 주소·식별자·색인 중 무엇이 막혔는지 구분할 길이 없었다.
 check "서버판에 진단 경로 있음 (--status 가 health/stats 를 실제로 씀)" \
   'grep -q -- "--status" plugin/client/mcp/wikilens_mcp.py && grep -q "/api/health" plugin/client/mcp/wikilens_mcp.py && grep -q "/api/stats" plugin/client/mcp/wikilens_mcp.py'
+# 두 판이 대소문자를 다르게 다루면 **판을 옮긴 사용자가 같은 질의에 다른 답을 받는다.**
+# 두 경로가 어긋나기 쉬운 이유는 각자의 기본값이 반대라서다 — ripgrep(로컬판의 Grep)은
+# 대소문자를 구분하고, 서버는 리터럴 경로가 ignoreCase 라 정규식도 거기 맞췄다.
+# 실측: rg 로 `acme` 가 `Acme` 를 못 찾고, 서버는 찾는다. 합의가 파일로만 이어져 있어
+# 한쪽만 고쳐도 아무 에러가 안 난다.
+check "두 판이 대소문자를 똑같이 무시함 (로컬 Grep -i · 서버 RE2 CASE_INSENSITIVE)" \
+  'grep -q "Re2.compile(pattern, Re2.CASE_INSENSITIVE)" server/src/main/kotlin/dev/wikilens/api/ContentService.kt \
+   && grep -q "ignoreCase = true" server/src/main/kotlin/dev/wikilens/api/ContentService.kt \
+   && ! grep -n "Grep(" plugin/local/skills/search/SKILL.md | grep -qv -- "-i=true"'
 
 echo
 if [ "$fail" -eq 0 ]; then
