@@ -14,8 +14,35 @@ Confluence 미러를 **서버측에서 색인**하고, 탐색 궤적을 축적�
 
 ```bash
 ./gradlew test       # JUnit 전체
-./gradlew bootRun    # 서버 기동
+./gradlew bootRun    # 개발용 기동 (작업 디렉터리가 server/ 로 고정된다)
 ```
+
+## 배포할 때는 경로를 절대경로로 주세요
+
+기본값이 **상대경로**입니다(`./mirror-root`, `./.wikilens/index`, `./.wikilens/state`).
+`bootRun` 은 Gradle 이 작업 디렉터리를 `server/` 로 고정해서 늘 같은 자리를 쓰지만,
+**jar 로 띄우면 실행한 디렉터리 기준**이 됩니다.
+
+엉뚱한 디렉터리에서 띄우면 **에러 없이 정상 기동합니다** — 빈 볼트를 보고 문서 0개로
+뜨고, `state/` 도 새로 만들어 **학습 궤적이 분기됩니다**(실측 2026-08-06).
+궤적은 유일한 복구 불가 자산입니다.
+
+```bash
+java -jar wikilens-server.jar \
+  --wikilens.vault-root=/srv/wikilens/mirror \
+  --wikilens.index-dir=/srv/wikilens/index \
+  --wikilens.state-dir=/srv/wikilens/state
+```
+
+기동 로그 첫 줄이 **실제로 쓰는 절대경로**를 찍습니다. systemd·cron 처럼 작업
+디렉터리를 못 믿는 환경에서는 이 줄부터 확인하세요:
+
+```
+볼트 /srv/wikilens/mirror · 색인 /srv/wikilens/index · 상태 /srv/wikilens/state
+기동 적재 완료: 문서 2377 · ACL 페이지 2377
+```
+
+문서가 0개면 `기동 적재 완료` 대신 **ERROR** 가 찍힙니다.
 
 `learn/` 에는 Spring·Lucene import 가 없다 — EB·게이트·궤적은 순수 알고리즘이라
 프레임워크와 섞이면 단위 테스트가 통합 테스트로 변질된다. `shared_contract.sh` 가 강제한다.

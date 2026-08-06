@@ -45,6 +45,17 @@ class VaultBootstrapTest {
     }
 
     @Test
+    fun `상대경로 볼트를 절대경로로 푼다`(@TempDir tmp: Path) {
+        // 기본값이 `./mirror-root` 라 실제 위치가 **실행 디렉터리에 달려 있다.**
+        // jar 로 다른 디렉터리에서 띄우면 빈 볼트를 보고 문서 0개로 정상 기동한다
+        // (2026-08-06 실측). 절대경로로 풀어야 로그가 어디를 봤는지 말할 수 있다.
+        val got = WikiLensApplication().vaultBootstrap(
+            props("./없는볼트", tmp.resolve("index")),
+            VaultReader(ObjectMapper()), LuceneIndex(tmp.resolve("index")), AclRegistry())
+        assertEquals(0, got.indexed)
+    }
+
+    @Test
     fun `볼트를 못 읽어도 기동은 계속된다`(@TempDir tmp: Path) {
         // 설정이 틀렸다고 서버가 안 뜨면 --status 로 진단할 길까지 사라진다.
         val got = WikiLensApplication().vaultBootstrap(

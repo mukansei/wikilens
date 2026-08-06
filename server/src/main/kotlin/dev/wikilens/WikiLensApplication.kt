@@ -32,13 +32,15 @@ import java.nio.file.Path
 @EnableConfigurationProperties(WikiLensProperties::class)
 class WikiLensApplication {
 
+    // 경로는 전부 절대경로로 푼다 — 기본값이 상대경로라 그대로 두면 실행 디렉터리에
+    // 따라 다른 자리를 쓰고, 로그·오류 메시지도 어디였는지 말해주지 못한다.
     @Bean
     fun luceneIndex(props: WikiLensProperties): LuceneIndex =
-        LuceneIndex(Path.of(props.indexDir)).also { it.openIfExists() }
+        LuceneIndex(abs(props.indexDir)).also { it.openIfExists() }
 
     @Bean
     fun trajectorySink(props: WikiLensProperties, mapper: ObjectMapper): FileTrajectorySink =
-        FileTrajectorySink(Path.of(props.stateDir), mapper)
+        FileTrajectorySink(abs(props.stateDir), mapper)
 
     @Bean
     fun trajectoryStore(props: WikiLensProperties, sink: FileTrajectorySink): TrajectoryStore =
@@ -76,18 +78,39 @@ class WikiLensApplication {
         acl: AclRegistry,
     ): VaultBootstrap {
         val log = LoggerFactory.getLogger(WikiLensApplication::class.java)
+
+        // **경로를 절대경로로 풀어서 찍는다.** 기본값이 `./mirror-root` 처럼 상대경로라
+        // 실제 위치가 **실행 디렉터리에 달려 있다.** 문서는 `cd server && ./gradlew bootRun`
+        // 만 안내해서 늘 `server/` 였지만, 실배포는 jar 다 — 다른 디렉터리에서 띄우면
+        // 빈 볼트를 보고 `문서 0` 으로 **정상 기동한다**(2026-08-06 실측). 어디를 봤는지
+        // 로그가 말해주지 않으면 그때 원인을 찾을 방법이 없다.
+        val root = abs(props.vaultRoot)
+        log.info("볼트 {} · 색인 {} · 상태 {}", root, abs(props.indexDir), abs(props.stateDir))
+
         return runCatching {
-            val pages = vault.read(Path.of(props.vaultRoot), acl)
+            val pages = vault.read(root, acl)
             index.rebuild(pages)
-            VaultBootstrap(pages.size, acl.pageCount()).also {
-                log.info("기동 적재 완료: 문서 {} · ACL 페이지 {}", it.indexed, it.aclPages)
+            if (pages.isEmpty()) {
+                // `VaultReader` 는 미러가 없어도 예외를 안 던지고 빈 목록을 준다. 그래서
+                // 예전엔 이 경우가 `기동 적재 완료: 문서 0` 으로 찍혀 정상처럼 보였다.
+                log.error(
+                    "볼트에서 문서를 하나도 못 읽었습니다: {} — 검색·읽기가 전부 빕니다. " +
+                        "경로가 맞는지 확인하세요(상대경로는 실행 디렉터리 기준입니다). " +
+                        "기동은 계속합니다 — 그래야 `--status` 로 진단할 수 있습니다.",
+                    root,
+                )
+            } else {
+                log.info("기동 적재 완료: 문서 {} · ACL 페이지 {}", pages.size, acl.pageCount())
             }
+            VaultBootstrap(pages.size, acl.pageCount())
         }.getOrElse { e ->
-            log.error("기동 적재 실패 (vault-root={}). 색인이 빈 채로 시작합니다 — " +
-                "`--status` 가 INDEXED_DOCS=0 으로 잡습니다.", props.vaultRoot, e)
+            log.error("기동 적재 실패 (볼트={}). 색인이 빈 채로 시작합니다 — " +
+                "`--status` 가 INDEXED_DOCS=0 으로 잡습니다.", root, e)
             VaultBootstrap(0, 0)
         }
     }
+
+    private fun abs(p: String): Path = Path.of(p).toAbsolutePath().normalize()
 }
 
 /** 기동 적재 결과. 빈으로 두는 이유는 적재가 실제로 일어났음을 테스트가 확인하기 위해서다. */
