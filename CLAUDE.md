@@ -45,7 +45,7 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 | `canonical_json` 결정적 직렬화 | `models.py` | 매 싱크마다 전 파일이 변경으로 잡힘 |
 | `anchors.jsonl` 스키마 | `build.py` ↔ `VaultReader` | 앵커 색인 유실 |
 | `ancestors` 스키마 (id/title 목록) | `sync.py` ↔ `VaultReader.readAncestors` | 서버 트리가 조용히 평평해짐 |
-| 빌드 멱등성 (2회 실행 = 바이트 동일) | `tests/test_wikilens.py` | 무효화 폭풍 |
+| 빌드 멱등성 (2회 실행 = 바이트 동일) | `tests/test_build.py` | 무효화 폭풍 |
 | 항 단위 포스팅 (키워드 **집합** 아님) | `TrajectoryStore` | 표현이 다르면 카운트 분산 |
 | 사전확률 클램프 `[0.05, 0.85]` | `Reliability.PRIOR_CEIL` | 1관측에 신뢰도 1.0 |
 | `LOCALIZATION`만 간선 생성 | `Gate.classify` | 경로 의존 질의에 틀린 답 |
