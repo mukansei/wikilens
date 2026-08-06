@@ -448,3 +448,41 @@ def test_tree_treats_out_of_sync_parent_as_root(tmp_path):
 
     tree = layout.tree_path(root).read_text(encoding="utf-8")
     assert "- 고아 자식" in tree
+
+
+def test_tree_survives_cyclic_ancestors(tmp_path):
+    """
+    순환 ancestors 에 갇힌 페이지가 TREE.md 에서 **사라지면 안 된다.**
+
+    순환이면 어느 쪽도 루트가 아니라, 루트에서 내려가는 렌더링이 영영 못 닿는다.
+    예외도 안 나고 개수도 안 맞춰보므로 조용히 유실된다 — 하필 TREE.md 가
+    고아 문서에 닿는 유일한 경로다. 실측: A↔B 순환에서 3건 중 1건만 실렸다.
+
+    서버판 `TreeRenderer` 는 같은 방어를 이미 갖고 있었다. 한쪽만 있으면
+    같은 `.sync-state.json` 으로 두 판이 다른 트리를 낸다.
+    """
+    pages = {
+        "1": {"title": "A", "ancestors": [{"id": "2", "title": "B"}]},
+        "2": {"title": "B", "ancestors": [{"id": "1", "title": "A"}]},
+        "3": {"title": "정상", "ancestors": []},
+    }
+    root = tmp_path / "vault"
+    state = {"cursor": None, "pages": {}}
+    for pid, m in pages.items():
+        layout.ensure_parent(layout.raw_path(root, pid)).write_text(
+            "<p>내용 없음.</p>", encoding="utf-8"
+        )
+        state["pages"][pid] = {
+            "title": m["title"], "space": "DOCS", "version": 1, "updated": "",
+            "ancestors": m["ancestors"],
+        }
+    layout.ensure_parent(layout.sync_state_path(root)).write_text(
+        json.dumps(state, ensure_ascii=False), encoding="utf-8"
+    )
+    build(root)
+
+    tree = layout.tree_path(root).read_text(encoding="utf-8")
+    listed = [l for l in tree.splitlines() if l.strip().startswith("- ")]
+    assert len(listed) == 3, f"순환에 갇힌 페이지가 유실됐다: {listed}"
+    for title in ("A", "B", "정상"):
+        assert any(f"- {title} [" in l for l in listed), f"{title} 가 없다"

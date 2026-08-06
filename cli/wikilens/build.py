@@ -23,6 +23,11 @@ from .models import AnchorEntry, StructureSignature, canonical_json, jsonl_line
 class BuildReport:
     parsed: int = 0
     skipped: int = 0
+    #: **실제로 디스크에 쓴** 개수. 내용이 같으면 안 쓰므로 `parsed` 보다 작다.
+    #: 예전엔 `_write_if_changed` 의 반환값을 버리고 무조건 증가시켜서, 세 숫자가
+    #: 항상 같았다 — 아무것도 안 바뀐 재빌드도 "페이지 2383" 이라고 찍었다.
+    #: 이 저장소의 핵심 계약이 빌드 멱등성인데, 그걸 보여줄 수 있는 유일한 수를
+    #: 버리고 있었던 셈이다.
     pages_written: int = 0
     structures_written: int = 0
     total_links: int = 0
@@ -83,10 +88,10 @@ def build(root: Path) -> BuildReport:
         signatures[pid] = sig
         report.parsed += 1
 
-        _write_if_changed(layout.page_path(root, pid), render_page_file(sig, md))
-        report.pages_written += 1
-        _write_if_changed(layout.structure_path(root, pid), canonical_json(sig.to_dict()))
-        report.structures_written += 1
+        if _write_if_changed(layout.page_path(root, pid), render_page_file(sig, md)):
+            report.pages_written += 1
+        if _write_if_changed(layout.structure_path(root, pid), canonical_json(sig.to_dict())):
+            report.structures_written += 1
 
     # ---- 3패스: 전치 ----
     entries = transpose(signatures, report)
@@ -248,7 +253,14 @@ def _write_tree(
         "",
     ]
 
+    # 순환 방어. 서버판 `TreeRenderer` 가 같은 이유로 같은 방어를 한다 —
+    # 한쪽만 있으면 손상된 `.sync-state.json` 하나에 두 판이 **다른 트리**를 낸다.
+    seen: set[str] = set()
+
     def render(pid: str, depth: int) -> None:
+        if pid in seen:
+            return
+        seen.add(pid)
         m = valid[pid]
         lines.append(
             f"{'  ' * depth}- {m.get('title', '')} [{m.get('space', '')}]"
@@ -258,6 +270,12 @@ def _write_tree(
             render(child, depth + 1)
 
     for pid in sorted(roots, key=lambda p: valid[p].get("title", "")):
+        render(pid, 0)
+
+    # 순환에 갇혀 어느 루트에서도 안 닿는 페이지들. 그냥 두면 **TREE.md 에서 통째로
+    # 사라진다** — 고아 문서를 찾는 유일한 경로가 TREE.md 이므로 조용한 유실이다.
+    # (실측: A↔B 순환이면 3건 중 1건만 실렸다.) 루트로 승격해 이어 그린다.
+    for pid in sorted(valid.keys() - seen, key=lambda p: valid[p].get("title", "")):
         render(pid, 0)
 
     lines.append("")
