@@ -126,7 +126,7 @@ derived/anchors.jsonl             별칭 원자료
 ## 테스트
 
 ```bash
-python -m pytest tests/ -q
+python -m pytest -q        # 이 디렉터리에서는 CLI 테스트만
 ```
 
 멱등성 테스트가 중요합니다 — 두 번 빌드해서 바이트가 달라지면 서버판에서
