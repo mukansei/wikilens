@@ -4,9 +4,9 @@ Confluence 위키를 미러링하고 **앵커 텍스트**(다른 문서들이 �
 색인해 어휘 격차를 메운다. 그 위에 에이전트 탐색 궤적을 축적하는 학습 레이어를 얹는다.
 
 ```
-cli/       Python  싱크·파싱·앵커 전치·로컬판        pytest (로컬판 테스트도 여기)
+cli/       Python  싱크·파싱·앵커 전치·로컬판        pytest
 server/    Kotlin  Lucene/Nori 색인 + 학습 레이어    JUnit · 배선 검증됨(Coway 실데이터)
-plugin/    local=스킬+커맨드 · client=MCP 도구 4개   프록시 테스트는 별도 실행 · 안내 포함
+plugin/    local=스킬+커맨드 · client=MCP 도구 4개   tests/ 는 배포 밖 · 안내 포함
 contract/  교차 언어 계약 + 공유 픽스처
 docs/      아키텍처 · 임베딩 설계 제안
 ```
@@ -18,9 +18,9 @@ docs/      아키텍처 · 임베딩 설계 제안
 
 ```bash
 ./contract/shared_contract.sh                     # 교차 언어 계약
-cd cli    && python -m pytest tests/ -q           # 로컬판 플러그인 테스트 포함
+python -m pytest -q                               # cli/tests + plugin/tests
 cd server && ./gradlew test                       # JUnit
-python3 cli/tests/test_mcp_proxy.py               # pytest 가 안 걷는 독립 스크립트
+python3 plugin/tests/test_mcp_proxy.py            # pytest 가 안 걷는 독립 스크립트
 ```
 
 `shared_contract.sh`가 특히 중요하다. Python과 Kotlin이 파일로만 연결되어 있어

@@ -23,7 +23,7 @@ OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 붙이기 | 2
 |---|---|---|---|
 | **`cli/`** | Confluence 싱크 · 앵커 전치 · 로컬판 | Python | **pytest 120 통과** (로컬판 46 포함) |
 | **`server/`** | Lucene/Nori 색인 · 학습 레이어 | Kotlin | **51 테스트 통과** / 배선 검증됨(Coway 실데이터) |
-| **`plugin/local/`** | 스킬 + 커맨드 2개 + [사용 안내](plugin/local/README.md) | Python | 테스트는 `cli/tests/test_local_plugin.py` (46) |
+| **`plugin/local/`** | 스킬 + 커맨드 2개 + [사용 안내](plugin/local/README.md) | Python | 테스트는 `plugin/tests/` (배포 밖) |
 | **`plugin/client/`** | MCP 도구 4개 + 스킬 + [사용 안내](plugin/client/README.md) | Python | **프록시 33 통과** (별도 실행) |
 | `.claude-plugin/` | 마켓플레이스 매니페스트 (조직 배포용) | — | — |
 | `docs/` | 아키텍처 · 임베딩 설계 제안 | — | — |
