@@ -196,6 +196,22 @@ class ContentServiceTest {
     }
 
     @Test
+    fun `regex 토글이 대소문자 민감도를 바꾸지 않는다`() {
+        // 도구 설명은 이 플래그가 **문법만** 바꾼다고 말한다. 리터럴 경로는
+        // ignoreCase 인데 RE2 기본은 대소문자 구분이라, 맞춰주지 않으면 같은 문자열이
+        // 플래그 하나로 다른 답을 낸다 — 실측: 본문 `Coway` 에 `coway` 가 1건 대 0건.
+        write("7", "영문", "Coway 스마트 카탈로그\n", listOf("@public"))
+
+        for (p in listOf("COWAY", "coway", "Coway")) {
+            assertEquals(
+                svc.grep(p, user, 5, regex = false).matches.size,
+                svc.grep(p, user, 5, regex = true).matches.size,
+                "'$p' 이 regex 토글로 답이 갈렸다",
+            )
+        }
+    }
+
+    @Test
     fun `정상 검색에는 error 가 없다`() {
         assertNull(svc.grep("APPLE", user, limit = 5, regex = false).error)
     }
