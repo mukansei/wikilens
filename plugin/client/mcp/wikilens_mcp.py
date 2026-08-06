@@ -137,8 +137,21 @@ def status() -> int:
     try:
         s = get("/api/stats")
         docs, users = s.get("indexedDocs", 0), s.get("aclUsers", 0)
+        pages = s.get("aclPages", 0)
         print(f"INDEXED_DOCS={docs}")
+        print(f"ACL_PAGES={pages}")
         print(f"ACL_USERS={users}")
+
+        # 서버에 기동 훅이 없다. Lucene 색인은 디스크에 남아 재기동 후에도 검색되는데
+        # ACL 페이지 맵은 메모리라 비어서 뜬다 — **검색은 되고 read 는 전부 404** 인
+        # 상태다. 겉으로는 전부 초록이라 이 조합을 짚어주지 않으면 못 찾는다
+        # (2026-08-06 실측: 재색인 전 read 404 → 재색인 후 200).
+        if docs and not pages:
+            print("\n색인은 있는데 ACL 페이지 맵이 비어 있습니다 — 검색은 되지만"
+                  " **읽기가 전부 실패**합니다.")
+            print("  운영자가 POST /api/admin/reindex 를 한 번 돌리면 해결됩니다.")
+            print("  (서버를 재기동할 때마다 필요합니다.)")
+            ok = False
         if not docs:
             print("\n색인이 비어 있습니다. 운영자에게 재색인을 요청하세요.")
             ok = False

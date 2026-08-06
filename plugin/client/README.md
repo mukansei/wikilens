@@ -136,6 +136,9 @@ curl -XPOST localhost:8787/api/admin/reindex
 
 - **정기 갱신은 cron 으로.** `wikilens sync ... && curl -XPOST .../admin/reindex` —
   `&&` 가 중요합니다. 싱크가 실패했는데 재색인이 돌면 절반만 반영됩니다.
+- **재기동 후 사용자를 다시 등록해야 합니다.** 색인과 ACL 페이지 맵은 기동 시 자동으로
+  적재되지만, 사용자 등록은 메모리에만 있어 재기동하면 사라집니다. `--status` 의
+  `ACL_USERS=0` 이 그 신호입니다.
 - **사용자 등록을 잊지 마세요.** `POST /api/admin/acl/user?userKey=alice@corp` 에 권한
   토큰 목록(`["@public"]` 등). 등록 전에는 색인이 멀쩡해도 **모든 검색이 빈손**입니다 —
   fail-closed 라 실수로 전체 공개되는 것보다 안전한 쪽입니다. 실측: 같은 질의가
