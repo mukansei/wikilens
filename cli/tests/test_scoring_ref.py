@@ -1,20 +1,26 @@
 """
-서버 스코어링 로직 테스트.
+스코어링 **대조 구현** 테스트.
 
-`wikilens.server.scoring`은 Kotlin `Scoring.kt`와 나란히 유지되는 정본이다 —
-`shared_contract.sh`가 둘의 임계값·상수 일치를 검사한다. 여기 있는 것 대부분은
-실제로 겪은 버그를 잠그는 테스트다("동작한다"가 아니라 "이 방식으로 깨졌었다").
+`wikilens.scoring_ref` 는 런타임에 안 쓰인다. Kotlin `Scoring.kt` 의 짝으로만 존재한다 —
+서버에는 scipy 가 없어 Beta 분위수를 손으로 구현했고(`_betacf`·`_beta_ppf` 뉴턴법),
+그게 맞는지 판정할 기준이 필요하다.
 
-공유 Python 서버(`app.py`/`store.py`, 클라이언트 로컬 색인/검색 `index.py`/`search.py`)는
-`DECISIONS.md`가 명시적으로 뒤집은 설계(훅이 서버로 관측을 푸시)의 잔재라
-제거되었다 — 실제 서버판은 Kotlin + MCP다. `scoring.py`만 그 설계와 무관하게
-계속 쓰인다.
+**`LearnLayerTest.kt` 의 하드코딩된 기대값 6개가 전부 여기서 나온 값이다.**
+이 파일을 지우면 그 숫자들이 출처 없는 상수가 된다. `shared_contract.sh` 도
+사전확률 클램프·Gate 임계값·`배경` 마커를 양쪽에서 확인한다.
+
+한때 `wikilens/server/` 에 있었는데, 그건 제거된 Python 서버(`DECISIONS.md` D5/D6 가
+뒤집은 훅 기반 설계)의 잔재였다. 서버도 아니고 `server/`(Kotlin)와도 무관하고 통신도
+안 하므로 2026-08-06 에 이름을 바꿨다.
+
+여기 있는 것 대부분은 실제로 겪은 버그를 잠그는 테스트다
+("동작한다"가 아니라 "이 방식으로 깨졌었다").
 """
 from __future__ import annotations
 
 import pytest
 
-from wikilens.server.scoring import (
+from wikilens.scoring_ref import (
     PRIOR_CEIL, QueryKind, classify, eb_lower, wilson_lower,
 )
 from wikilens.tokenizer import tokenize
