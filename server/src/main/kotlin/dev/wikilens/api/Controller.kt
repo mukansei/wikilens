@@ -41,7 +41,12 @@ class Controller(
             store.onQuery(sid, req.query, res.terms)
             // 학습 레이어가 서빙한 힌트를 함께 넘긴다. 세션이 끝까지 안 읽으면 그
             // 힌트가 틀린 것이므로 미스로 되돌아간다 — `pWrong` 이 재려던 값이다.
-            store.onServed(sid, res.hits.filter { it.source != "lexical" }.map { it.pageId })
+            store.onServed(
+                sid,
+                hinted = res.hits.filter { it.source != "lexical" }.map { it.pageId },
+                // 전체를 순위 순으로 넘긴다 — 사용자가 몇 번째를 골랐는지가 신호다.
+                ranked = res.hits.map { it.pageId },
+            )
         }
         return res
     }

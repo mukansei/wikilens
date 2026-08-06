@@ -1,6 +1,8 @@
 package dev.wikilens.learn
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -57,6 +59,72 @@ class UsefulnessSignalTest {
         s.onEnd("s1")
         assertEquals(1, s.stats()["rejected"], "포기(abandonment)가 기록되지 않았다")
         assertEquals(1, s.stats()["misses"], "읽기가 없으면 세션도 실패다")
+    }
+
+    /**
+     * 그 페이지가 힌트로 **서빙되는지**. 포스팅 내부를 들여다보는 대신 동작으로 본다 —
+     * `hints()` 는 임계값 아래를 걸러내므로, 미스가 쌓인 페이지는 여기서 사라진다.
+     */
+    private fun served(s: TrajectoryStore, term: String, pid: String) =
+        s.hints(listOf(term), priors = mapOf(pid to 1.0), limit = 50).find { it.pageId == pid }
+
+    // ---------------------------------------------------------- 읽기 개수
+
+    @Test
+    fun `열어보고 지나친 페이지는 미스가 된다`() {
+        // `dest = reads.last()` 라는 전제를 따르면 앞서 읽은 것들은 지나친 것이다.
+        // 1건만 읽으면 확신, 여러 건을 헤매면 그만큼 약한 증거가 된다.
+        val s = store()
+        s.onQuery("s1", "점유인증 정책 어디", listOf("점유인증"))
+        s.onRead("s1", "111"); s.onRead("s1", "222"); s.onRead("s1", "333")
+        s.onEnd("s1")
+
+        // 셋 다 포스팅에는 들어갔지만(지나친 것도 기록된다)
+        assertEquals(3, s.stats()["termPagePairs"], "지나친 페이지가 기록되지 않았다")
+        // 지나친 것은 벌점 때문에 힌트로 안 나가고, 마지막 읽기만 나간다
+        assertNull(served(s, "점유인증", "111"), "지나친 페이지가 힌트로 서빙된다")
+        assertNull(served(s, "점유인증", "222"))
+        assertNotNull(served(s, "점유인증", "333"), "마지막 읽기가 답이다")
+    }
+
+    @Test
+    fun `한 건만 읽으면 미스가 없다`() {
+        val s = store()
+        s.onQuery("s1", "점유인증 정책 어디", listOf("점유인증"))
+        s.onRead("s1", "111")
+        s.onEnd("s1")
+        assertEquals(0, served(s, "점유인증", "111")!!.misses)
+    }
+
+    // ---------------------------------------------------------- 순위
+
+    @Test
+    fun `깊은 순위에서 건진 것이 더 강한 증거다`() {
+        // 1위를 읽는 건 기본 행동이고, 7위를 읽으려면 앞의 여섯을 지나쳐야 한다.
+        val top = store()
+        top.onQuery("s1", "점유인증 정책 어디", listOf("점유인증"))
+        top.onServed("s1", emptyList(), ranked = listOf("111", "222", "333", "444"))
+        top.onRead("s1", "111")          // 1위
+        top.onEnd("s1")
+
+        val deep = store()
+        deep.onQuery("s1", "점유인증 정책 어디", listOf("점유인증"))
+        deep.onServed("s1", emptyList(), ranked = listOf("111", "222", "333", "444"))
+        deep.onRead("s1", "444")         // 4위
+        deep.onEnd("s1")
+
+        val h1 = served(top, "점유인증", "111")!!.hits
+        val h4 = served(deep, "점유인증", "444")!!.hits
+        assertTrue(h4 > h1, "깊은 순위(가중치 $h4)가 1위(가중치 $h1)보다 커야 한다")
+    }
+
+    @Test
+    fun `순위를 모르면 기본 가중치를 쓴다`() {
+        val s = store()
+        s.onQuery("s1", "점유인증 정책 어디", listOf("점유인증"))
+        s.onRead("s1", "999")            // 검색 결과에 없던 페이지를 직접 read
+        s.onEnd("s1")
+        assertEquals(1, served(s, "점유인증", "999")!!.hits)
     }
 
     @Test

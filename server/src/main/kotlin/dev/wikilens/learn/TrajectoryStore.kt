@@ -35,6 +35,15 @@ data class Trajectory(
      * 옛 로그에는 이 필드가 없다. 기본값이 빈 목록이라 재생이 그대로 통과한다.
      */
     val served: List<String> = emptyList(),
+    /**
+     * `dest` 가 검색 결과에서 몇 번째였나 (0-based). 결과에 없었으면 -1.
+     *
+     * 위에서 고른 것보다 **아래에서 건져 올린 것이 강한 신호**다 — 1위를 읽는 건
+     * 기본 행동이지만, 7위를 읽으려면 앞의 여섯을 지나쳐야 한다. 웹 검색 클릭
+     * 모델의 position bias 와 같은 논리다. 학습 레이어의 존재 이유도 이쪽이다:
+     * 어휘 랭킹이 이미 1위로 준 것을 배워봐야 새로 얻는 게 없다.
+     */
+    val rank: Int = -1,
 )
 
 /** 한 질의와 그 뒤에 이어진 읽기들. */
@@ -42,6 +51,8 @@ class QuerySpan(val keywords: List<String>, val kind: QueryKind) {
     val reads = ArrayList<String>()
     /** 이 질의에 학습 레이어가 서빙한 힌트 페이지들 (`onServed` 가 채운다). */
     var served: List<String> = emptyList()
+    /** 서빙한 **전체** 결과를 순위 순으로. `dest` 의 순위를 알아내는 데 쓴다. */
+    var ranked: List<String> = emptyList()
     /** on_query와 on_end가 같은 스팬을 두 번 확정하는 것을 막는다. */
     var finalized = false
 
@@ -118,9 +129,14 @@ class TrajectoryStore(
      * "무언가 읽고 나서 비슷한 말로 다시 검색" 하나뿐이라, 힌트가 아무리 엉뚱해도
      * 세션이 그냥 끝나면 아무 벌점이 없었다 — 실측 `pWrong` 이 계속 0.0 이던 이유다.
      */
-    fun onServed(sessionId: String, pageIds: List<String>) {
+    fun onServed(sessionId: String, hinted: List<String>, ranked: List<String> = emptyList()) {
         val s = sessions[sessionId] ?: return
-        synchronized(s) { s.current?.served = pageIds.toList() }
+        synchronized(s) {
+            s.current?.let {
+                it.served = hinted.toList()
+                it.ranked = ranked.toList()
+            }
+        }
     }
 
     fun onRead(sessionId: String, pageId: String) {
@@ -171,6 +187,7 @@ class TrajectoryStore(
             dest = span.reads.lastOrNull().orEmpty(),
             success = success && span.reads.isNotEmpty(),
             served = span.served,
+            rank = span.reads.lastOrNull()?.let { span.ranked.indexOf(it) } ?: -1,
         )
         sink.append(t)
         apply(t)
@@ -189,17 +206,45 @@ class TrajectoryStore(
         servedCount.addAndGet(t.served.size)
         rejectedCount.addAndGet(rejected.size)
 
+        // 읽었지만 답이 아니었던 것들. `dest = reads.last()` 라는 이 모델의 전제
+        // ("탐색은 성공에서 멈춘다")를 그대로 따르면, 앞서 읽은 것들은 **열어보고
+        // 지나친** 페이지다. 읽기 개수가 곧 확신도가 된다 — 1건이면 미스 0,
+        // 6건이면 미스 5. 카운터 구조를 안 바꾸고 비율로 드러난다.
+        val passedOver = if (t.success) t.reads.dropLast(1).toSet() - setOf(t.dest) else emptySet()
+
+        val weight = hitWeight(t.rank)
         for (term in normalize(t.keywords)) {
             val byPage = postings.computeIfAbsent(term) { ConcurrentHashMap() }
             if (t.dest.isNotEmpty()) {
                 val slot = byPage.computeIfAbsent(t.dest) { IntArray(2) }
-                synchronized(slot) { slot[if (t.success) 0 else 1]++ }
+                synchronized(slot) {
+                    if (t.success) slot[0] += weight else slot[1]++
+                }
             }
-            for (pid in rejected) {
+            for (pid in rejected + passedOver) {
                 val slot = byPage.computeIfAbsent(pid) { IntArray(2) }
                 synchronized(slot) { slot[1]++ }
             }
         }
+    }
+
+    /**
+     * 순위가 깊을수록 강한 증거로 센다.
+     *
+     * 1위를 읽는 건 기본 행동이라 정보가 적다 — 어휘 랭킹이 이미 맞혔으므로 간선을
+     * 만들어도 새로 얻는 게 없다. 반대로 7위를 읽었다면 앞의 여섯을 지나쳤다는 뜻이고,
+     * **어휘 랭킹이 틀렸는데 그 페이지가 답**이라는 강한 신호다. 학습 레이어가 고치라고
+     * 있는 경우가 정확히 이것이다.
+     *
+     * **경계값은 손으로 정했다** — position bias 의 방향(깊을수록 강함)은 웹 검색
+     * 클릭 모델에서 확립됐지만, 3·6 이라는 문턱과 3배 상한은 이 코퍼스에서 측정한
+     * 값이 아니다. `pWrong` 과 함께 모니터링할 것.
+     */
+    private fun hitWeight(rank: Int): Int = when {
+        rank < 0 -> 1     // 검색 결과에 없던 페이지를 직접 읽음 — 순위 정보 없음
+        rank == 0 -> 1    // 어휘가 이미 1위로 줬다
+        rank < 3 -> 2
+        else -> 3         // 깊은 곳에서 건져 올림
     }
 
     // ---------------------------------------------------------- 조회
