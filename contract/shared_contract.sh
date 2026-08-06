@@ -244,6 +244,15 @@ check "두 판이 대소문자를 똑같이 무시함 (로컬 Grep -i · 서버 
    && grep -q "ignoreCase = true" server/src/main/kotlin/dev/wikilens/api/ContentService.kt \
    && ! grep -n "Grep(" plugin/local/skills/search/SKILL.md | grep -qv -- "-i=true"'
 
+# 모델에게 지시하는 파일 다섯(스킬 2 · 커맨드 2 · 레퍼런스 1)은 독자가 같으므로 문체도
+# 같아야 한다. 한때 스킬만 존댓말이고 커맨드·레퍼런스는 반말이었다 — 나눌 근거가 없었다.
+# 더 중요한 건 **지시가 평서형으로 새는 것**이다: "말합니다 / 답합니다" 는 일어나는 일에
+# 대한 서술이지 지시가 아니라서, 하필 환각 방지 규칙이 가장 약한 문형으로 적혀 있었다.
+check "모델용 지시 문서가 명령형 존댓말로 통일됨 (평서형은 지시로 안 읽힌다)" \
+  '! grep -qnE "^[0-9]+\. .*(말합니다|답합니다|제안합니다)$" plugin/local/skills/search/SKILL.md plugin/client/skills/search/SKILL.md \
+   && ! grep -qnE "(말 것\.|한다\.$|않는다\.)" plugin/local/commands/setup.md plugin/local/commands/sync.md plugin/local/references/setup.md'
+
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."
