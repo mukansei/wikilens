@@ -47,24 +47,63 @@ Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** "�
 
 ## 어떻게 동작하나
 
-```
-Confluence ──sync──▶  볼트(파일)  ──┬──▶ 로컬판: 스킬이 직접 grep
-            (Python)                └──▶ 서버판: Lucene 색인 + 학습
+```mermaid
+flowchart LR
+    CONF[("Confluence<br/>읽기 전용")]
+    CLI["<b>cli</b> · Python<br/>sync + build"]
+    VAULT[("볼트 · 파일<br/>ALIASES.md · TREE.md<br/>mirror/")]
+    LOCAL["<b>로컬판</b><br/>스킬이 직접 grep"]
+    SRV["<b>서버판</b><br/>Lucene 색인 + 학습"]
+
+    CONF -->|CQL| CLI --> VAULT
+    VAULT --> LOCAL
+    VAULT -->|VaultReader| SRV
+
+    classDef ext fill:#e5e7eb,stroke:#6b7280,color:#111827
+    classDef py fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef kt fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef st fill:#fef3c7,stroke:#d97706,color:#78350f
+    class CONF ext
+    class CLI,LOCAL py
+    class SRV kt
+    class VAULT st
 ```
 
 **볼트를 만드는 것은 언제나 `cli` 하나**입니다. 서버는 Confluence 를 크롤하지 않고
 그 결과를 읽기만 합니다.
 
-```
-① sync    Confluence ──CQL──▶ mirror/raw/{id뒤2}/{id}.xhtml   원본 XHTML (무손실)
-                              mirror/.sync-state.json          cursor · version · ancestors
+```mermaid
+flowchart TB
+    subgraph S1["① sync — 네트워크"]
+        RAW["mirror/raw/{id뒤2}/{id}.xhtml<br/>원본 XHTML · 무손실"]
+        STATE["mirror/.sync-state.json<br/>cursor · version · ancestors"]
+    end
 
-② build   raw 를 파싱 ──▶ mirror/pages/   마크다운
-          링크를 전치  ──▶ ALIASES.md     "이 페이지를 뭐라고 부르나"  ← 핵심 산출물
-                          TREE.md        부모-자식 계층 (고아 문서용)
+    subgraph S2["② build — 로컬 · 멱등"]
+        PAGES["mirror/pages/<br/>마크다운"]
+        ALIAS["<b>ALIASES.md</b><br/>이 페이지를 뭐라고 부르나"]
+        TREE["TREE.md<br/>부모-자식 계층 · 고아 문서용"]
+    end
 
-③ 검색    로컬판: ALIASES.md → TREE.md → 본문 순으로 grep
-          서버판: Nori 형태소 분석 → BM25(앵커4 : 제목3 : 본문1) + 학습 힌트 융합
+    subgraph S3["③ 검색"]
+        LQ["로컬판<br/>ALIASES → TREE → 본문 순 grep"]
+        SQ["서버판<br/>Nori → BM25(앵커4 : 제목3 : 본문1)<br/>+ 학습 힌트 융합"]
+    end
+
+    RAW -->|파싱| PAGES
+    RAW -->|링크 전치| ALIAS
+    STATE -->|ancestors| TREE
+    ALIAS --> LQ
+    TREE --> LQ
+    ALIAS --> SQ
+    PAGES --> SQ
+
+    classDef st fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef key fill:#fde68a,stroke:#b45309,color:#78350f
+    classDef q fill:#e0e7ff,stroke:#4f46e5,color:#312e81
+    class RAW,STATE,PAGES,TREE st
+    class ALIAS key
+    class LQ,SQ q
 ```
 
 `sync` 와 `build` 를 나눈 이유는 **제목→ID 해석 완전성**입니다. Confluence 링크는 대개
