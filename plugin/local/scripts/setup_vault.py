@@ -229,7 +229,7 @@ def main(argv: list[str]) -> int:
     cfg = write_config(vault, source, cli)
     print(f"CONFIG={CONFIG_PATH}")
     print(f"VAULT={cfg.get('vault')}")
-    print(f"CLI_SOURCE={cfg.get('cli_source') or '(미정 — 사내 git URL 이 필요합니다)'}")
+    print(f"CLI_SOURCE={cfg.get('cli_source') or '(미정 — 비공개 git URL 이 필요합니다)'}")
 
     resolved = cli_argv(cfg)
     print(f"CLI={' '.join(resolved) if resolved else '(미설치)'}")
@@ -239,7 +239,7 @@ def main(argv: list[str]) -> int:
             print("  설치하려면 (사용자 승낙 후):")
             print(f"    {install_command(source)}")
         else:
-            print("  CLI_SOURCE 가 없어 설치 명령을 만들 수 없습니다 — 사내 git URL 이 필요합니다.")
+            print("  CLI_SOURCE 가 없어 설치 명령을 만들 수 없습니다 — 비공개 git URL 이 필요합니다.")
 
     if args.register_permissions:
         print(register_permissions(vault))

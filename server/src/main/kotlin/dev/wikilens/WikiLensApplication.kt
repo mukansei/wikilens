@@ -6,6 +6,7 @@ import dev.wikilens.index.AnalyzerKind
 import dev.wikilens.index.LuceneIndex
 import dev.wikilens.service.IndexingService
 import dev.wikilens.learn.FileTrajectorySink
+import dev.wikilens.learn.StateDirLock
 import dev.wikilens.learn.TrajectoryStore
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.SpringBootApplication
@@ -23,7 +24,7 @@ import java.nio.file.Path
  *   - 권한이 좁은 사용자는 IDF 추정이 망가진다
  *   - **사용자마다 랭킹 척도가 달라 학습 레이어에 이질적 관측이 섞인다**
  *
- * 대가는 질의 시점 ACL 시행이다. 이색적인 요구가 아니라 사내 검색의 표준이며,
+ * 대가는 질의 시점 ACL 시행이다. 이색적인 요구가 아니라 엔터프라이즈 검색의 표준이며,
  * 공유 배포를 하는 이상 어차피 풀어야 하는 문제다.
  *
  * 읽기는 여전히 클라이언트 로컬이다. 서버는 좌표만 반환한다.
@@ -41,9 +42,19 @@ class WikiLensApplication {
     fun luceneIndex(props: WikiLensProperties): LuceneIndex =
         LuceneIndex(abs(props.indexDir), AnalyzerKind.of(props.analyzer)).also { it.openIfExists() }
 
+    /**
+     * 상태 디렉터리 단일 쓰기 보증. **싱크보다 먼저 만들어져야** 하므로 싱크가 이걸
+     * 인자로 받는다 — 빈 이름만 다르면 Spring 이 순서를 보장하지 않는다.
+     */
     @Bean
-    fun trajectorySink(props: WikiLensProperties, mapper: ObjectMapper): FileTrajectorySink =
-        FileTrajectorySink(abs(props.stateDir), mapper)
+    fun stateDirLock(props: WikiLensProperties): StateDirLock = StateDirLock(abs(props.stateDir))
+
+    @Bean
+    fun trajectorySink(
+        props: WikiLensProperties,
+        mapper: ObjectMapper,
+        @Suppress("UNUSED_PARAMETER") lock: StateDirLock,
+    ): FileTrajectorySink = FileTrajectorySink(abs(props.stateDir), mapper)
 
     @Bean
     fun trajectoryStore(props: WikiLensProperties, sink: FileTrajectorySink): TrajectoryStore =

@@ -69,7 +69,7 @@ class FakeConfluence(BaseHTTPRequestHandler):
         path, q = u.path, parse_qs(u.query)
 
         if type(self).partial_wiki_gateway:
-            # 실제로 겪은 상황 재현: 사내 게이트웨이가 /wiki/rest/api/space만
+            # 실제로 겪은 상황 재현: 게이트웨이가 /wiki/rest/api/space만
             # 허용하고, 그 아래 다른 엔드포인트는 로그인 페이지로 리다이렉트한다.
             # requests가 리다이렉트를 자동으로 따라가면 최종 상태코드는 200인데
             # 본문은 JSON이 아닌 HTML이 된다 — 그 상태를 그대로 흉내낸다.
@@ -178,7 +178,7 @@ def test_unreachable_api_gives_actionable_error(server):
 
 def test_prefix_detection_rejects_partial_gateway_allowlist(server):
     """
-    실제로 겪은 사고: 사내 게이트웨이가 /wiki/rest/api/space만 허용하고
+    실제로 겪은 사고: 게이트웨이가 /wiki/rest/api/space만 허용하고
     나머지 /wiki/rest/api/* 는 로그인 페이지로 리다이렉트한다. 리다이렉트가
     자동으로 따라가져서 최종 상태코드가 200이 되므로, /space 하나만 보면
     "/wiki가 맞다"고 착각한다. 다른 엔드포인트로 한 번 더 검증해야

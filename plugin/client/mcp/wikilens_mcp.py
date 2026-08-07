@@ -184,6 +184,22 @@ def status() -> int:
             print("\n등록된 사용자가 없습니다 — 아무도 아무것도 못 봅니다.")
             print("  운영자가 POST /api/admin/acl/user 로 계정을 등록해야 합니다.")
             ok = False
+
+        # 궤적 로그 쓰기가 실패해도 메모리 학습은 계속된다. 그래서 이 값이 0 이 아니면
+        # **메모리와 로그가 갈라지는 중**이고, 재기동하면 그만큼이 사라진다.
+        # 궤적은 유일한 복구 불가 자산이라 서버 로그의 WARN 만으로는 부족하다.
+        if s.get("logWriteFailures"):
+            print(f"LOG_WRITE_FAILURES={s['logWriteFailures']}")
+            print("\n궤적 로그 쓰기가 실패하고 있습니다 — 검색은 정상이지만 **재기동하면"
+                  " 그만큼의 학습이 사라집니다.**")
+            print("  운영자가 상태 디렉터리의 여유 공간과 권한을 확인해야 합니다.")
+            ok = False
+
+        # 권한 폭이 다른 사람들의 관측이 한 포스팅에 섞이면 rank 가중과 목적지 분포가
+        # 사람마다 다른 의미를 갖는다. 지금은 전 페이지가 @public 이라 0 또는 1 이다.
+        scopes = s.get("permissionScopes")
+        if isinstance(scopes, int) and scopes > 1:
+            print(f"PERMISSION_SCOPES={scopes}")
     except Exception as e:  # noqa: BLE001
         print(f"STATS=실패 ({e})")
         ok = False
@@ -293,7 +309,7 @@ TOOLS = [
     {
         "name": "search",
         "description": (
-            "사내 Confluence 위키를 검색합니다. 사내 문서·정책·런북·온보딩 자료·"
+            "팀의 Confluence 위키를 검색합니다. 팀·조직의 문서·정책·런북·온보딩 자료·"
             "아키텍처 문서를 찾을 때 반드시 먼저 사용하세요. 문서 제목과 사람들이 쓰는 말이 "
             "다르므로(제목이 'OAuth 2.0 인가 코드 흐름'인데 다들 '로그인 붙이는 법'이라고 부름) "
             "일반 검색으로는 찾지 못합니다. 이 도구는 다른 문서들이 각 페이지를 실제로 부르는 "
@@ -303,7 +319,7 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "자연어 질의. 사내 은어를 그대로 써도 됩니다."},
+                "query": {"type": "string", "description": "자연어 질의. 팀에서만 쓰는 말을 그대로 써도 됩니다."},
                 "limit": {"type": "integer", "default": 8},
             },
             "required": ["query"],

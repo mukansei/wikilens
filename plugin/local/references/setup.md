@@ -51,7 +51,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/setup_vault.py" --capture-env
 |---|---|
 | Server/DC PAT (대개 이것) | `CONFLUENCE_URL`, `CONFLUENCE_TOKEN` |
 | Cloud API 토큰 | `CONFLUENCE_URL`, `CONFLUENCE_EMAIL`, `CONFLUENCE_TOKEN` |
-| 사내 IAM OAuth2 | `IAM_TOKEN_URL`, `IAM_CLIENT_ID`, `IAM_CLIENT_SECRET` |
+| 자체 IAM OAuth2 | `IAM_TOKEN_URL`, `IAM_CLIENT_ID`, `IAM_CLIENT_SECRET` |
 | 리버스 프록시 | `CONFLUENCE_HEADERS='X-Forwarded-User: me@corp'` |
 
 SSO 환경이어도 대개 PAT가 동작합니다. **PAT를 먼저 시도하세요.**
@@ -85,7 +85,7 @@ CLI는 볼트를 **만드는 데만** 필요합니다(검색은 파일만 읽으
 CLI 는 `~/.wikilens/venv` 에 설치됩니다. **자리가 정해져 있어서 설치 뒤에 찾는 단계가
 없습니다** — 끝나면 `vault_status.py` 가 곧바로 `CLI=`에 그 경로를 냅니다.
 
-`CLI_SOURCE=` 가 비어 있으면 저장소 위치를 모르는 것입니다 — **사내 git URL을 사용자에게
+`CLI_SOURCE=` 가 비어 있으면 저장소 위치를 모르는 것입니다 — **비공개 git URL을 사용자에게
 요청**한 뒤 `--cli-source "git+<URL>#subdirectory=cli"` 로 기록하고 다시 실행하세요.
 
 ## 3. 스페이스 고르고 싱크
