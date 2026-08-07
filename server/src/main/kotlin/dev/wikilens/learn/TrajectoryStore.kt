@@ -69,18 +69,53 @@ class TrajectoryStore(
      */
     private val abandonedCount = AtomicInteger()
 
+    /**
+     * 지금까지 본 **권한 범위**들(`AclRegistry.scopeOf`). 신원이 아니다.
+     *
+     * 이 수가 1 이면 전원이 같은 권한이라 학습이 균질하다. 2 이상이면 **권한 폭이 다른
+     * 사람들의 관측이 한 포스팅에 섞이고 있다**는 뜻이고, 그때부터 `rank` 가중과
+     * 목적지 분포가 사람마다 다른 의미를 갖는다. 그 상태인지 아닌지를 아는 것이
+     * 먼저라 세기부터 한다 — 지금은 전 페이지가 `@public` 이라 늘 1 이다.
+     */
+    private val scopesSeen = ConcurrentHashMap.newKeySet<String>()
+
     // ---------------------------------------------------------- 관측
 
-    fun onQuery(sessionId: String, query: String, keywords: List<String>) {
+    /**
+     * `computeIfAbsent` 와 `synchronized` 사이에 `SessionSweeper`(다른 스레드)가
+     * 이 세션을 거둘 수 있다. 그러면 맵에서 빠진 객체에 스팬이 쌓이고 그 궤적은
+     * 확정되지 않는다 — **그런데 재봤더니 잡을 값어치가 없었다.**
+     *
+     * 락 안에서 "맵의 주인이 아직 나인가"를 확인하고 아니면 다시 잡는 형태를 만들어
+     * 대조했다(2026-08-08, 2,000 라운드 × 5회, 스위퍼가 `idleMillis=0` 으로 계속 도는
+     * 최악 조건): **재확인 있음 평균 1967 · 없음 평균 1977** — 줄이기는커녕 노이즈
+     * 안에서 조금 나빴다. 이유는 창이 좁아서가 아니라 **손실의 주범이 다른 것**이라서다:
+     *
+     *   - 스위퍼가 락을 먼저 잡으면 기존 스팬을 확정하고, 그 뒤 `onQuery` 가 고아에
+     *     스팬을 하나 더한다 → 그 하나가 사라진다. 다음 질의는 `computeIfAbsent` 가
+     *     새로 만들므로 **세션이 영구히 죽지는 않는다.**
+     *   - `onQuery` 가 먼저 잡으면 스위퍼의 `onEnd` 가 **모든 스팬**을 도므로 새 스팬도
+     *     함께 확정된다 — 애초에 잃지 않는다.
+     *   - 실제 손실 대부분은 스위퍼가 `onQuery` 와 `onRead` **사이**에 세션을 끝내는
+     *     경우인데, 그때 빈 스팬을 버리는 것은 **정당한 동작**이다("배울 것이 없다").
+     *     어떤 재확인으로도 줄지 않는다.
+     *
+     * 그래서 원래 형태로 둔다. 되살리려면 위 대조부터 다시 할 것 —
+     * `SessionRaceTest` 가 그 측정 장치다.
+     */
+    fun onQuery(sessionId: String, query: String, keywords: List<String>, scope: String = "") {
         val s = sessions.computeIfAbsent(sessionId) { sessionCount.incrementAndGet(); Session(it) }
         queryCount.incrementAndGet()
         synchronized(s) {
+            // 세션 단위로 고정이다. 권한이 세션 도중에 바뀌면 첫 값을 유지한다 —
+            // 한 세션의 궤적이 두 범위로 갈리는 것보다 낫다.
+            if (s.scope.isEmpty()) s.scope = scope
             val prev = s.current
             if (prev != null) {
                 // 이 세션이 두 번째 질의를 받는 순간. 세 번째부터는 다시 안 센다.
                 if (s.spans.size == 1) multiQuerySessions.incrementAndGet()
                 val reformulated = overlap(prev.keywords, keywords) >= reformulationOverlap
-                finalize(sessionId, prev, success = !reformulated)
+                finalize(sessionId, prev, success = !reformulated, scope = s.scope)
             }
             s.spans.add(QuerySpan(normalize(keywords), Gate.classify(query)))
             s.lastTouch = System.currentTimeMillis()
@@ -121,7 +156,7 @@ class TrajectoryStore(
                 // 읽기가 없어도 서빙한 힌트가 있으면 확정한다 — 거부된 힌트가 곧
                 // 실패 신호다. 판정은 `finalize` 가 한다(읽기 없음 → success=false).
                 if ((span.reads.isNotEmpty() || span.served.isNotEmpty()) && !span.finalized) {
-                    finalize(sessionId, span, success = true)
+                    finalize(sessionId, span, success = true, scope = s.scope)
                     n++
                 }
             }
@@ -138,7 +173,7 @@ class TrajectoryStore(
      * 웹 검색의 abandonment 신호와 같은 구조이고 마찬가지로 노이즈가 있다.
      * pWrong 이 그 노이즈의 크기다.
      */
-    private fun finalize(sessionId: String, span: QuerySpan, success: Boolean) {
+    private fun finalize(sessionId: String, span: QuerySpan, success: Boolean, scope: String = "") {
         // 읽기가 없어도 **서빙한 힌트가 있으면** 기록한다 — 그 힌트가 거부됐다는 뜻이라
         // 가장 강한 실패 신호다. 둘 다 없으면 배울 것이 없다.
         if ((span.reads.isEmpty() && span.served.isEmpty()) || span.finalized) return
@@ -154,6 +189,7 @@ class TrajectoryStore(
             success = success && span.reads.isNotEmpty(),
             served = span.served,
             rank = span.reads.lastOrNull()?.let { span.ranked.indexOf(it) } ?: -1,
+            scope = scope,
         )
         sink.append(t)
         apply(t)
@@ -164,6 +200,7 @@ class TrajectoryStore(
 
     private fun apply(t: Trajectory) {
         trajCount.incrementAndGet()
+        if (t.scope.isNotEmpty()) scopesSeen.add(t.scope)
         // 셋으로 나눈다. 읽은 게 없는데 힌트만 서빙된 것은 **실패가 아니라 미판정**이다
         // (good abandonment). 실패로 세면 `sessionFailureRate` 가 부풀고, 그러면
         // 학습이 잘 되고 있는지를 그 수로 판단할 수 없게 된다.
@@ -239,9 +276,19 @@ class TrajectoryStore(
      * 대표값(순이득 최대)을 쓰고, 대신 몇 개 항이 이 페이지를 가리켰는지를 커버리지로 반영한다.
      *
      * [priors]는 Lucene 랭킹 점수를 정규화한 값이다. EB 사전분포로 쓴다.
+     *
+     * [visible]로 **자르기 전에** 거른다. 이 순서가 핵심이다 — 호출부에서 `take` 뒤에
+     * 거르면, 권한이 좁은 사용자는 상위 [limit]개가 전부 안 보이는 문서일 때 **힌트가
+     * 통째로 0개**가 된다. 볼 수 있는 후보가 더 아래에 있어도 슬롯을 이미 뺏겼기
+     * 때문이다. 지금은 전 페이지가 `@public` 이라 안 보이고 **ACL 수집이 들어오는
+     * 순간 나타난다.** 같은 실패를 `SearchService` 가 어휘 결과에서 이미 한 번 겪었다
+     * (`CLAUDE.md` 조용히 실패 8번 — "take 를 필터 뒤로").
+     *
+     * 술어는 순수 함수라 `learn/` 의 프레임워크 무의존 계약을 건드리지 않는다 —
+     * 이 패키지는 ACL 이 무엇인지 몰라도 된다.
      */
     fun hints(keywords: List<String>, priors: Map<String, Double> = emptyMap(),
-              limit: Int = 5): List<Hint> {
+              limit: Int = 5, visible: (String) -> Boolean = { true }): List<Hint> {
         val terms = normalize(keywords)
         if (terms.isEmpty()) return emptyList()
 
@@ -258,6 +305,7 @@ class TrajectoryStore(
         }
 
         return best.mapNotNull { (pid, hm) ->
+            if (!visible(pid)) return@mapNotNull null      // **take 보다 먼저** — 위 주석 참고
             val c = (cover[pid] ?: 0).toDouble() / terms.size
             val rel = Reliability.ebLower(hm[0], hm[1], priors[pid] ?: 0.3) * c
             if (rel >= serveThreshold) Hint(pid, hm[0], hm[1], rel) else null
@@ -285,6 +333,11 @@ class TrajectoryStore(
             "sessionFailureRate" to if (n > 0) m.toDouble() / n else null,
             "abandonedWithHints" to abandonedCount.get(),
             "trajectories" to trajCount.get(),
+            // 1 이면 학습이 균질하다. 2 이상이면 권한 폭이 다른 관측이 섞이는 중이다.
+            "permissionScopes" to scopesSeen.size,
+            // 궤적 로그 쓰기 실패. **0 이 아니면 메모리 학습만 앞서가고 있다** —
+            // 재기동하면 그만큼이 사라진다. 유일한 복구 불가 자산이라 따로 낸다.
+            "logWriteFailures" to sink.failures,
             // **이 아래는 이번 기동에서만 센 값이다.** 위의 것들은 로그에서 재생되므로
             // 누적이고, 아래 것들은 로그에 없어서 재생이 불가능하다 — 소득 없는 검색은
             // 애초에 기록되지 않는다는 것이 이 값들을 만든 이유이기 때문이다.

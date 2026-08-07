@@ -37,7 +37,10 @@ class Controller(
         val res = searchService.search(req)
         // 질의 관측. 별도 훅 없이 도구 호출 자체가 궤적이 된다.
         req.sessionId?.let { sid ->
-            store.onQuery(sid, req.query, res.terms)
+            // 권한 **범위** 를 함께 남긴다 — 신원이 아니다(`AclRegistry.scopeOf`).
+            // 학습이 권한 폭에 오염되는 문제를 나중에 다루려면 로그에 있어야 하고,
+            // 나중에 넣으면 그전 궤적에는 영영 없다.
+            store.onQuery(sid, req.query, res.terms, acl.scopeOf(req.userKey))
             // 학습 레이어가 서빙한 힌트를 함께 넘긴다. 세션이 끝까지 안 읽으면 그
             // 힌트가 틀린 것이므로 미스로 되돌아간다 — `pWrong` 이 재려던 값이다.
             store.onServed(

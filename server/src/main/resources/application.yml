@@ -3,7 +3,27 @@ spring:
     name: wikilens-server
   threads:
     virtual:
-      enabled: true
+      # **끈다.** 켜져 있었지만 근거가 적힌 적이 없고, 이 워크로드는 가상 스레드가
+      # 이기는 조건에 하나도 안 맞는다:
+      #
+      #   - 아웃바운드 호출이 0이다. 서버가 말단이라 기다릴 원격 대상이 없다
+      #     (가상 스레드의 이득은 "느린 원격 호출에 블록된 스레드가 수천 개"에서 나온다).
+      #   - 일이 CPU(Lucene)와 파일 I/O(grep·read)다. 파일 I/O 는 가상 스레드의 알려진
+      #     한계로 언마운트되지 않고 캐리어를 블록한다 — grep 은 요청당 수천 파일을 읽는다.
+      #   - 동시성이 수십 규모다. Claude Code 세션당 MCP 프록시 하나이고 소규모 팀
+      #     대상이라 Tomcat 기본 스레드로 남는다.
+      #   - Lucene `Analyzer` 는 `CloseableThreadLocal` 로 TokenStream 을 재사용하는데
+      #     가상 스레드는 일회용이라 그 재사용이 매번 무효가 된다.
+      #
+      # **안전성이 JDK 버전에 걸려 있던 것도 이유다.** `TrajectoryStore` 는 락을 쥔 채
+      # 파일 I/O 를 한다(`finalize` → `sink.append`). JDK 21 이었다면 캐리어가 핀 됐고,
+      # JEP 491(JDK 24)로 `synchronized` 핀닝이 사라져서야 무해해졌다 — 툴체인을
+      # 내리면 조용히 나빠지는 설정이었다.
+      #
+      # **되돌릴 조건:** 서버가 외부를 호출하기 시작하거나(임베딩 API 등) 동시 접속이
+      # 수천 규모가 되면. 그때는 켜기 전에 동시 grep 처리량을 켬/끔으로 재 볼 것 —
+      # 지금 끄는 결정도 워크로드 분석이지 측정이 아니다.
+      enabled: false
   jackson:
     default-property-inclusion: non_null
 

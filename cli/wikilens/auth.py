@@ -86,7 +86,7 @@ class OAuth2ClientCredentials(AuthProvider):
     """
     별도 IAM 서버에서 client_credentials 로 토큰을 받아 Bearer 로 쓴다.
 
-    사내 SSO 환경의 서비스 계정에 흔한 형태다. 토큰이 만료되므로 401 을 받으면
+    SSO 환경의 서비스 계정에 흔한 형태다. 토큰이 만료되므로 401 을 받으면
     갱신 후 한 번 재시도한다. 만료 60초 전에 선제 갱신한다.
     """
 
@@ -218,7 +218,7 @@ def auth_from_env() -> AuthProvider:
         "    CONFLUENCE_EMAIL=me@corp  CONFLUENCE_TOKEN=<API 토큰>\n\n"
         "  Server/DC PAT  (SSO 를 써도 대개 이것이 동작합니다 — 먼저 시도하세요):\n"
         "    CONFLUENCE_TOKEN=<PAT>\n\n"
-        "  사내 IAM (OAuth2 client_credentials):\n"
+        "  자체 IAM (OAuth2 client_credentials):\n"
         "    IAM_TOKEN_URL=https://iam.corp/oauth2/token\n"
         "    IAM_CLIENT_ID=...  IAM_CLIENT_SECRET=...  [IAM_SCOPE=...]\n\n"
         "  리버스 프록시 헤더 주입:\n"

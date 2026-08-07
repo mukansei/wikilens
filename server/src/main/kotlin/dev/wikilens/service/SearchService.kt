@@ -55,7 +55,10 @@ class SearchService(
         val top = lexical.firstOrNull()?.score?.toDouble()?.takeIf { it > 0.0 } ?: 1.0
         val priors = lexical.associate { it.id to (it.score / top).coerceIn(0.0, 1.0) }
 
-        val hints = store.hints(terms, priors, req.limit)
+        // **권한 필터를 학습 레이어 안으로 넣어 넘긴다.** 여기서 `take` 뒤에 거르면
+        // 권한이 좁은 사용자는 상위 후보가 전부 안 보일 때 힌트가 통째로 0이 된다.
+        // 토큰은 위에서 이미 구했다 — 페이지마다 다시 조회하지 않는다.
+        val hints = store.hints(terms, priors, req.limit) { pid -> acl.canSee(tokens, pid) }
 
         data class Acc(var score: Double, var source: String, var rel: Double?)
         val acc = LinkedHashMap<String, Acc>()

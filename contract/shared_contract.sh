@@ -335,10 +335,47 @@ check "서버판에 설정 경로 있음 (--configure 가 config.json 을 병합
 # AttributeError 로 터진다. 로컬판은 진단 스크립트가 죽어 스킬이 traceback 을 받고(검색
 # 불가), 서버판은 모듈 최상단이라 **프록시가 기동 중 죽어 도구 4개가 사라진다.**
 # 손으로 고치는 파일이라 실제로 들어온다. 두 판이 같은 파일을 읽으므로 함께 검사한다.
+# 이 도구는 Confluence Cloud·Server/DC 를 가리지 않고, 회사가 아닌 조직(오픈소스 팀·
+# 비영리·개인)도 쓴다. "사내" 는 고용 관계와 회사 경계를 전제하는 말이라 **제품이 자기를
+# 그렇게 규정하면** 그 범위 밖 사용자에게 "내 것이 아니다" 로 읽힌다. 회사 고유값 계약과
+# 같은 이유이고, 그쪽은 값을, 이쪽은 서술을 본다.
+check "제품 서술이 조직 형태를 전제하지 않음 ('사내' 없음)" \
+  '! grep -rq "사내" plugin/ cli/wikilens/ cli/README.md server/src/main/ server/README.md README.md'
+
 check "두 판 모두 dict 아닌 설정을 견딤 (유효한 JSON 이 곧 쓸 수 있는 설정은 아니다)" \
   'grep -q "isinstance(cfg, dict)" plugin/local/scripts/vault_status.py \
    && grep -q "isinstance(cfg, dict)" plugin/client/mcp/wikilens_mcp.py'
 
+
+# 권한이 좁은 사용자는 상위 후보가 전부 안 보일 때 **힌트가 통째로 0** 이 된다 —
+# 볼 수 있는 후보가 더 아래에 있어도 슬롯을 이미 뺏겼기 때문이다. `SearchService` 가
+# 어휘 결과에서 이미 겪은 실패다(조용히 실패 8번: "take 를 필터 뒤로"). 지금은 전 페이지가
+# @public 이라 안 보이고 **ACL 수집이 들어오는 순간** 나타난다.
+check "학습 힌트를 자르기 전에 권한으로 거름 (안 그러면 좁은 권한은 힌트가 0)" \
+  'grep -q "visible: (String) -> Boolean" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
+   && grep -q "if (!visible(pid))" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
+   && grep -q "store.hints(terms, priors, req.limit) { pid -> acl.canSee(tokens, pid) }" server/src/main/kotlin/dev/wikilens/service/SearchService.kt'
+
+# 궤적에 남기는 것은 권한 **범위**(토큰 해시)이지 신원이 아니다. userKey 가 들어가면
+# "누가 무엇을 검색했나" 가 영구 기록으로 남는데 그건 이 도구가 지금 안 하는 일이고,
+# 해결하려는 문제(권한 폭에 따른 학습 오염)는 범위만 알면 풀린다.
+check "궤적이 신원이 아니라 권한 범위를 남김 (userKey 필드 없음)" \
+  'grep -q "val scope: String" server/src/main/kotlin/dev/wikilens/learn/Trajectory.kt \
+   && ! grep -q "userKey" server/src/main/kotlin/dev/wikilens/learn/Trajectory.kt \
+   && grep -q "MessageDigest" server/src/main/kotlin/dev/wikilens/acl/AclRegistry.kt'
+
+# Lucene write.lock 은 재색인 동안만 잡힌다. 그 밖의 시간에 둘째 프로세스가 붙으면
+# 각자 다른 포스팅을 들고 같은 궤적 로그에 쓴다 — 갈림이 재기동 전까지 안 드러난다.
+check "상태 디렉터리 단일 쓰기 보증 (락 + 읽을 수 있는 기동 실패)" \
+  '[ -f server/src/main/kotlin/dev/wikilens/learn/StateDirLock.kt ] \
+   && grep -q "stateDirLock" server/src/main/kotlin/dev/wikilens/WikiLensApplication.kt \
+   && grep -q "FailureAnalyzer" server/src/main/resources/META-INF/spring.factories'
+
+# 로그 쓰기가 실패해도 메모리 학습은 계속되므로, 갈라지고 있다는 사실 자체를 밖으로
+# 내야 한다. 예전에는 WARN 한 줄이 전부라 재기동 때까지 아무도 몰랐다.
+check "궤적 로그 쓰기 실패가 stats 와 --status 에 드러남" \
+  'grep -q "logWriteFailures" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
+   && grep -q "logWriteFailures" plugin/client/mcp/wikilens_mcp.py'
 
 echo
 if [ "$fail" -eq 0 ]; then

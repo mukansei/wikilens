@@ -66,7 +66,7 @@ def _auth_hint(status: int, mode: str) -> str:
         return ("인증 실패 (401). 현재 방식: " + mode + "\n"
                 "  · SSO 환경이라면 계정 비밀번호가 아니라 토큰이 필요합니다\n"
                 "  · Server/DC 는 PAT 가 SSO 와 무관하게 동작합니다 — 먼저 시도해 보세요\n"
-                "  · 사내 IAM 을 쓴다면 IAM_TOKEN_URL 등으로 OAuth 방식을 지정하세요")
+                "  · 자체 IAM 을 쓴다면 IAM_TOKEN_URL 등으로 OAuth 방식을 지정하세요")
     return ("권한 없음 (403). 인증은 됐지만 접근이 거부됐습니다. 현재 방식: " + mode + "\n"
             "  · 해당 스페이스 열람 권한을 확인하세요\n"
             "  · 서비스 계정이라면 스페이스 권한이 별도로 부여되어야 합니다")
@@ -81,7 +81,7 @@ class ConfluenceClient:
         self.timeout = timeout
         # "/wiki" 또는 "" 로 확정되면 캐시된다. None이면 detect_prefix()가
         # 자동 판별한다. 여기서 미리 넘기면(빈 문자열 포함) 그 값을 그대로
-        # 쓰고 자동 판별을 건너뛴다 — 사내 게이트웨이가 자동 판별을 속이는
+        # 쓰고 자동 판별을 건너뛴다 — 게이트웨이가 자동 판별을 속이는
         # 구성(예: /space만 허용하고 나머지는 로그인으로 새는 경우)을
         # 코드가 전부 예측할 순 없어서 마련한 탈출구다.
         self.prefix = prefix
@@ -110,7 +110,7 @@ class ConfluenceClient:
         고정하면 한쪽에서 무조건 404 가 난다. 실제로 찔러보고 정한다.
 
         `/space`(목록 조회) 하나만으로 판정하지 않는다 — 실제로 겪은 사고:
-        사내 리버스 프록시가 `/wiki/rest/api/space`만 허용 목록에 넣어두고
+        리버스 프록시가 `/wiki/rest/api/space`만 허용 목록에 넣어두고
         그 아래 다른 엔드포인트(`/user/current`, `/content/...`)는 로그인
         페이지로 리다이렉트하는 구성이 있었다. 리다이렉트를 자동으로
         따라가면 최종 상태코드가 200으로 떨어져 "접두사가 맞다"는 착시를
@@ -144,7 +144,7 @@ class ConfluenceClient:
             "Confluence REST API 를 찾을 수 없습니다 (" + self.base + "). "
             "마지막 응답: " + str(last) + "\n"
             "  · URL 이 맞습니까? Cloud 는 https://<회사>.atlassian.net 형식입니다\n"
-            "  · 사내 인스턴스면 컨텍스트 경로가 다를 수 있습니다"
+            "  · 자체 호스팅이면 컨텍스트 경로가 다를 수 있습니다"
         )
 
     def _prefix_actually_works(self, prefix: str) -> bool:

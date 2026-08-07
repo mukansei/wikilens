@@ -86,7 +86,7 @@ $ wikilens --root ~/wiki stats
 ## Claude Code 플러그인
 
 ```bash
-/plugin marketplace add <저장소 경로 또는 사내 git URL>
+/plugin marketplace add <저장소 경로 또는 비공개 git URL>
 /plugin install wikilens-local@wikilens
 /reload-plugins
 ```

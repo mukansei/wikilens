@@ -1,6 +1,6 @@
 # WikiLens
 
-**사내 위키를 "사람들이 실제로 부르는 이름"으로 찾습니다.**
+**팀 위키를 "사람들이 실제로 부르는 이름"으로 찾습니다.**
 
 문서 제목은 `OAuth 2.0 인가 코드 흐름`인데 다들 "로그인 붙이는 법"이라고 부릅니다.
 그 표현은 제목에도 본문에도 없어서, 보통의 검색으로는 못 찾습니다.
@@ -229,11 +229,11 @@ Claude Code 를 앱으로 띄우면 없는 것과 같고, 실제로 **검색은 
 
 **SSO 환경이어도 대개 PAT 가 따로 동작합니다.** Server/DC 의 PAT 를 먼저 시도하세요.
 그것이 막혀 있을 때만 IAM OAuth2 가 필요합니다. 인증은 넷을 지원하고
-(`CONFLUENCE_TOKEN` PAT · Cloud API 토큰 + `CONFLUENCE_EMAIL` · 사내 IAM OAuth2 ·
+(`CONFLUENCE_TOKEN` PAT · Cloud API 토큰 + `CONFLUENCE_EMAIL` · 자체 IAM OAuth2 ·
 리버스 프록시 헤더 주입) 전부 `cli/wikilens/auth.py` 한 곳에 격리돼 있습니다.
 
 **배포 형태를 잘못 판별하면** — `detect_prefix()` 가 Cloud(`/wiki`)와 Server/DC(빈 접두사)를
-자동 판별합니다. 사내 리버스 프록시가 일부 엔드포인트만 허용하는 구성에 속은 적이 있어
+자동 판별합니다. 리버스 프록시가 일부 엔드포인트만 허용하는 구성에 속은 적이 있어
 이중 검증을 넣었지만, 게이트웨이 구성은 회사마다 달라 또 속을 수 있습니다:
 
 ```bash

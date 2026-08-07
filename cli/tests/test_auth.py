@@ -1,7 +1,7 @@
 """
 인증 계층 검증.
 
-사내 SSO/IAM 환경을 흉내낸다. 가짜 IAM 이 만료되는 토큰을 발급하고,
+SSO/IAM 환경을 흉내낸다. 가짜 IAM 이 만료되는 토큰을 발급하고,
 가짜 Confluence 가 그 토큰을 검증한다. 토큰 만료·갱신·401 재시도까지 확인한다.
 """
 from __future__ import annotations
