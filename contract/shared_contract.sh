@@ -343,9 +343,9 @@ check "서버판에 설정 경로 있음 (--configure 가 config.json 을 병합
 # 이 낱말이 당연히 들어 있고, `grep -R` 은 `server/mirror-root` 심링크를 따라가 그것을
 # 잡는다(실측: 붙여놓고 재니 코퍼스 파일이 걸렸다). 범위를 저장소 전체로 넓히려면
 # 코퍼스를 배제할 방법이 먼저 필요했고, 그게 `git grep` 이다.
-# 같은 이유이고, 그쪽은 값을, 이쪽은 서술을 본다.
-check "제품 서술이 조직 형태를 전제하지 않음 ('사내' 없음)" \
-  '! grep -rq "사내" plugin/ cli/wikilens/ cli/README.md server/src/main/ server/README.md README.md'
+# 계약 스크립트 자신은 이 주석에서 낱말을 쓰므로 뺀다.
+check "제품 서술이 조직 형태를 전제하지 않음 ('사내' 없음, 저장소 전체)" \
+  '! git grep -q "사내" -- ":!contract/shared_contract.sh"'
 
 check "두 판 모두 dict 아닌 설정을 견딤 (유효한 JSON 이 곧 쓸 수 있는 설정은 아니다)" \
   'grep -q "isinstance(cfg, dict)" plugin/local/scripts/vault_status.py \
