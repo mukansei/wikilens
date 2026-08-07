@@ -242,9 +242,28 @@ RE2 기본은 구분이라, 맞춰주지 않으면 이 플래그가 문법뿐 �
 기본은 `korean`(Nori). 영어가 주된 코퍼스면 `english`, 다국어가 섞여 주 언어를
 못 고르겠으면 `standard` 다.
 
+설정하는 방법은 넷이고 **전부 실측으로 확인했습니다**(아래로 갈수록 우선순위가 높습니다):
+
 ```bash
+# ① application.yml — 기본값이 여기 적혀 있습니다
+wikilens:
+  analyzer: english
+
+# ② 환경변수 — systemd·Docker 에서 가장 흔합니다
+WIKILENS_ANALYZER=english java -jar wikilens-server.jar
+
+# ③ 시스템 속성
+java -Dwikilens.analyzer=english -jar wikilens-server.jar
+
+# ④ 앱 인자 — 일회성으로 바꿔볼 때
 java --enable-native-access=ALL-UNNAMED -jar wikilens-server.jar --wikilens.analyzer=english
 ```
+
+jar 안의 `application.yml` 을 고치려면 다시 빌드해야 하므로, 배포에서는 **②나 ④**를
+쓰거나 jar 옆에 `application.yml` 을 두세요(그쪽이 jar 안의 것을 덮습니다).
+
+이름을 틀리면 조용히 기본값으로 떨어지지 않고 **기동이 실패합니다** —
+`알 수 없는 분석기 'korea'. 가능한 값: korean·english·standard`.
 
 **설정은 "무엇으로 지을까"이지 "무엇으로 질의할까"가 아닙니다.** 질의는 항상 디스크
 색인이 실제로 지어진 분석기를 씁니다 — 선택이 Lucene 커밋 데이터에 기록되고(색인과
@@ -261,8 +280,6 @@ java --enable-native-access=ALL-UNNAMED -jar wikilens-server.jar --wikilens.anal
 바꿨습니다. 실측: 볼트 경로를 틀리게 주고 `--wikilens.analyzer=english` 로 띄워도
 색인 2,383건이 그대로 살아 검색 8건이 나옵니다.
 
-이름 오타는 조용히 기본값으로 떨어지지 않고 **기동을 실패시킵니다** —
-`알 수 없는 분석기 'korea'. 가능한 값: korean·english·standard`.
 
 > **학습 궤적도 영향을 받습니다.** `trajectories.jsonl` 에는 분석된 항이 저장돼 있어
 > 분석기를 바꾸면 옛 항과 새 질의가 안 맞습니다. 궤적은 복구 불가 자산이라 지우지
