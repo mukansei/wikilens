@@ -44,9 +44,20 @@ wikilens --root ~/wiki sync --space PLATFORM --space ENG
 wikilens --root ~/wiki stats
 ```
 
-**`export` 는 그 셸에서만 삽니다.** 매번 다시 하지 않으려면 플러그인이 쓰는 것과 같은
-파일에 넣어두고 불러 쓰세요 — `~/.wikilens/env.sh` (권한 600, `source` 로 불러옵니다).
-`plugin/local/scripts/setup_vault.py --capture-env` 가 지금 셸의 값을 그대로 옮겨줍니다.
+**`export` 는 그 셸에서만 삽니다.** 그래서 CLI 는 환경변수가 없으면
+`~/.wikilens/env.sh`(권한 600)를 읽습니다 — cron 이나 Claude Code 처럼 `export` 가
+없는 환경에서도 그냥 동작합니다. 환경변수가 있으면 그쪽이 이깁니다(일회성 재정의).
+
+```bash
+mkdir -p ~/.wikilens && chmod 700 ~/.wikilens
+printf 'export CONFLUENCE_URL=%s\nexport CONFLUENCE_TOKEN=%s\n' "$CONFLUENCE_URL" "$CONFLUENCE_TOKEN" \
+  > ~/.wikilens/env.sh && chmod 600 ~/.wikilens/env.sh
+```
+
+플러그인을 쓴다면 `/wikilens-local:setup` 이 만들어 줍니다
+(`setup_vault.py --capture-env` 가 지금 셸의 값을 화면에 안 찍고 옮깁니다).
+셸 스크립트로 두는 이유는 자기 터미널에서 `source ~/.wikilens/env.sh` 로 그대로
+재사용하기 위해서입니다.
 
 `sync`는 원본만 받고 자동으로 `build`를 이어서 실행합니다.
 `build`는 순수 로컬이라 네트워크 없이 몇 번이든 다시 돌릴 수 있습니다.

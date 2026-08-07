@@ -281,6 +281,15 @@ sys.exit(1 if missing else 0)
 " server/src/main/kotlin/dev/wikilens/config/WikiLensProperties.kt server/src/main/resources/application.yml'
 
 
+# 자격증명 파일 경로가 두 곳에 하드코딩돼 있다 — CLI(`credentials.py`)와 진단
+# (`vault_status.py`). 갈리면 CLI 는 읽는데 진단은 "없다"고 하거나 그 반대가 된다.
+# 래퍼(`wikilens_cli.sh`)도 같은 파일을 source 하므로 셋이 같아야 한다.
+check "자격증명 파일 경로가 세 곳에서 같음 (~/.wikilens/env.sh)" \
+  'grep -q "Path.home() / \".wikilens\" / \"env.sh\"" cli/wikilens/credentials.py \
+   && grep -q "^ENV_PATH = CONFIG_DIR / \"env.sh\"" plugin/local/scripts/vault_status.py \
+   && grep -q "HOME/.wikilens/env.sh" plugin/local/scripts/wikilens_cli.sh'
+
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."

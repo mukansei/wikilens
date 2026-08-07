@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -164,6 +166,39 @@ def cli_source(cfg: dict) -> str:
     return ""
 
 
+#: `export KEY=VALUE` 또는 `KEY=VALUE`. CLI 의 `credentials._LINE` 과 같은 규칙이다.
+_ENV_LINE = re.compile(r"^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)=(.*)$")
+
+#: setup 이 출력하는 템플릿의 자리표시자(`<발급받은 PAT를 여기에>`). 그대로면 안 채운 것이다.
+#: 값에 공백이 있어 shlex 가 쪼개므로 **첫 조각의 시작 문자**로 판정한다.
+_PLACEHOLDER_START = "<"
+
+
+def _file_creds() -> dict[str, str]:
+    """`env.sh` 에서 **실제로 값이 채워진** 자격증명만."""
+    out: dict[str, str] = {}
+    try:
+        text = ENV_PATH.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return out
+    for line in text.splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        m = _ENV_LINE.match(line)
+        if not m or not m.group(1).startswith(("CONFLUENCE_", "IAM_")):
+            continue
+        try:
+            parts = shlex.split(m.group(2), comments=True)
+        except ValueError:
+            continue
+        val = parts[0] if parts else ""
+        # `<발급받은 PAT를 여기에>` 는 값이 아니다 — 채워진 것으로 세면 안 된다.
+        if val.startswith(_PLACEHOLDER_START):
+            continue
+        out[m.group(1)] = val
+    return out
+
+
 def creds_state() -> str:
     """
     싱크에 쓸 Confluence 자격증명이 어디서 오는지.
@@ -171,11 +206,23 @@ def creds_state() -> str:
     `file` 이어야 다음 세션에도 `/wikilens-local:sync` 가 동작한다. `shell` 은 지금
     이 셸에만 있다는 뜻이라, Claude Code 를 재시작하면 사라진다 — 검색은 되는데
     갱신만 조용히 안 되는 상태가 되므로 구분해서 알린다.
+
+    **`partial` 이 있는 이유:** 예전에는 파일 **존재만** 보고 `file` 이라 했다. 그런데
+    setup 절차가 정확히 그 구멍을 만든다 — 템플릿을 출력해 사용자가 실행하면 파일은
+    생기지만 토큰 자리는 `<발급받은 PAT를 여기에>` 다. 편집을 잊고 다시 물어보면
+    스킬이 "설정 끝났다"로 판단해 싱크를 제안하고, 그것이 인증 실패로 죽는다.
     """
-    if ENV_PATH.is_file():
+    f = _file_creds()
+    has_url = "CONFLUENCE_URL" in f or "IAM_TOKEN_URL" in f
+    has_secret = any(k in f for k in ("CONFLUENCE_TOKEN", "CONFLUENCE_HEADERS", "IAM_CLIENT_SECRET"))
+    if has_url and has_secret:
         return "file"
+    if ENV_PATH.is_file() and (has_url or has_secret):
+        return "partial"        # 파일은 있는데 절반만 채워짐
     if os.environ.get("CONFLUENCE_URL"):
         return "shell"
+    if ENV_PATH.is_file():
+        return "partial"        # 파일은 있는데 아무것도 안 채워짐
     return "none"
 
 

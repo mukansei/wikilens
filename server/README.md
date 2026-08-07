@@ -159,6 +159,32 @@ CONFLUENCE_TOKEN=<서비스계정> wikilens --root ./mirror-root sync --space PL
 
 **`&&` 를 빼지 마세요.** 싱크가 실패했는데 재색인이 돌면 절반만 반영됩니다.
 
+### cron 으로 자동화할 때
+
+CLI 는 자격증명을 **환경변수 → `~/.wikilens/env.sh`** 순으로 읽습니다. cron 은 환경이
+최소라 `export` 가 없으므로, 서비스 계정 자격증명을 그 파일에 두면 crontab 이 깨끗해집니다:
+
+```bash
+mkdir -p ~/.wikilens && chmod 700 ~/.wikilens
+cat > ~/.wikilens/env.sh <<'EOF'
+export CONFLUENCE_URL=https://wiki.mycompany.com
+export CONFLUENCE_TOKEN=<서비스 계정 PAT>
+EOF
+chmod 600 ~/.wikilens/env.sh
+```
+```cron
+0 4 * * *  wikilens --root /srv/wikilens/mirror sync --space PLATFORM \
+             && curl -sf -XPOST localhost:8787/api/admin/reindex
+```
+
+**예전에는 이게 조용히 실패했습니다** — CLI 가 환경변수만 읽어서 cron 에서는
+`CONFLUENCE_URL 환경변수가 필요합니다` 로 죽었습니다(실측: `env -i` 로 재현).
+`&&` 덕에 절반 반영은 막혔지만 **볼트가 낡아가는 것을 알 방법이 없었습니다.**
+로컬판은 래퍼 스크립트로 막아뒀는데 서버판만 빠져 있었습니다.
+
+crontab 에 직접 `CONFLUENCE_TOKEN=...` 을 쓰는 것도 됩니다(환경변수가 파일보다
+우선합니다). 다만 `crontab -l` 에 토큰이 그대로 보입니다.
+
 그리고 **사용자를 등록해야 아무거나 보입니다.** ACL 이 fail-closed 라, 등록 전에는
 색인이 멀쩡해도 모든 검색이 빈손입니다 — 실측: 같은 질의가 등록 전 0건, `@public`
 등록 후 3건(색인 2,377건 상태에서).
