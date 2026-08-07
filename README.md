@@ -48,26 +48,47 @@ Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** "�
 ## 어떻게 동작하나
 
 ```mermaid
-flowchart LR
-    CONF[("Confluence<br/>읽기 전용")]
-    CLI["<b>cli</b> · Python<br/>sync + build"]
-    VAULT[("볼트 · 파일<br/>ALIASES.md · TREE.md<br/>mirror/")]
-    LOCAL["<b>로컬판</b><br/>스킬이 직접 grep"]
-    SRV["<b>서버판</b><br/>Lucene 색인 + 학습"]
+flowchart TB
+    subgraph CONF["Confluence — 배포 형태를 가리지 않습니다"]
+        direction LR
+        CLOUD[("<b>Cloud</b><br/>경로 접두사 /wiki")]
+        DC[("<b>Server / Data Center</b><br/>접두사 없음")]
+    end
 
-    CONF -->|CQL| CLI --> VAULT
-    VAULT --> LOCAL
-    VAULT -->|VaultReader| SRV
+    NET["<b>네트워크 · 인증</b> — cli/wikilens/auth.py<br/>doctor 가 배포 형태를 판별<br/>PAT · Cloud API 토큰 · IAM OAuth2 · 리버스 프록시"]
+
+    CLI["<b>cli</b> · Python<br/>sync → build"]
+    VAULT[("<b>볼트</b> · 파일<br/>두 판이 같은 포맷을 씁니다")]
+
+    subgraph L["로컬판 — 각자 자기 볼트"]
+        LSKILL["스킬 + 커맨드<br/>ALIASES → TREE → 본문 grep"]
+    end
+
+    subgraph S["서버판 — 팀 공용 · 상주"]
+        IDX["Lucene/Nori 색인 + 학습 레이어"]
+        MCP["MCP 도구 4개<br/>search · read · grep · tree"]
+    end
+
+    CLOUD --> NET
+    DC --> NET
+    NET -->|CQL · 읽기 전용| CLI --> VAULT
+    VAULT -->|"파일을 직접 grep"| LSKILL
+    VAULT -->|VaultReader| IDX --> MCP
 
     classDef ext fill:#e5e7eb,stroke:#6b7280,color:#111827
+    classDef net fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
     classDef py fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
     classDef kt fill:#d1fae5,stroke:#059669,color:#064e3b
     classDef st fill:#fef3c7,stroke:#d97706,color:#78350f
-    class CONF ext
-    class CLI,LOCAL py
-    class SRV kt
+    class CLOUD,DC ext
+    class NET net
+    class CLI,LSKILL py
+    class IDX,MCP kt
     class VAULT st
 ```
+
+**색이 곧 구현 언어입니다** — 파랑은 Python(`cli` · 로컬판), 초록은 Kotlin(서버판),
+노랑은 저장된 파일. 두 판은 **볼트에서 갈라지고 그 뒤로 만나지 않습니다.**
 
 **볼트를 만드는 것은 언제나 `cli` 하나**입니다. 서버는 Confluence 를 크롤하지 않고
 그 결과를 읽기만 합니다.
@@ -86,34 +107,43 @@ flowchart TB
         ANCH["derived/anchors.jsonl<br/>앵커 원자료 · 프로그램용"]
     end
 
-    subgraph S3["③ 검색"]
-        LQ["<b>로컬판</b><br/>ALIASES → TREE → 본문 순 grep"]
-        SQ["<b>서버판</b> /api/search<br/>Nori → BM25(앵커4 : 제목3 : 본문1)<br/>+ 학습 힌트 융합"]
-        ST["<b>서버판</b> /api/tree<br/>TreeIndex"]
+    subgraph S3L["③ 로컬판 — 파일만 읽습니다"]
+        LQ["스킬<br/>ALIASES → TREE → 본문 순 grep"]
+    end
+
+    subgraph S3S["③ 서버판 — 색인해서 서빙합니다"]
+        SQ["/api/search<br/>Nori → BM25(앵커4 : 제목3 : 본문1)<br/>+ 학습 힌트 융합"]
+        ST["/api/tree<br/>TreeIndex"]
     end
 
     RAW -->|파싱| PAGES
     RAW -->|링크 전치| ALIAS
     RAW -->|링크 전치| ANCH
     STATE -->|ancestors| TREE
+
     ALIAS --> LQ
     TREE --> LQ
+    PAGES --> LQ
+
     ANCH --> SQ
     PAGES --> SQ
-    STATE -->|ancestors| ST
+    STATE --> ST
 
     classDef st fill:#fef3c7,stroke:#d97706,color:#78350f
     classDef key fill:#fde68a,stroke:#b45309,color:#78350f
-    classDef q fill:#e0e7ff,stroke:#4f46e5,color:#312e81
+    classDef py fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef kt fill:#d1fae5,stroke:#059669,color:#064e3b
     class RAW,STATE,PAGES,TREE st
     class ALIAS,ANCH key
-    class LQ,SQ,ST q
+    class LQ py
+    class SQ,ST kt
 ```
 
-**`build` 는 같은 원자료로 두 벌을 냅니다** — 마크다운(`ALIASES.md`·`TREE.md`)은 **grep 하는
-사람**용이고, `anchors.jsonl` 과 `.sync-state.json` 의 `ancestors` 는 **색인하는 프로그램**용입니다.
-그래서 서버판은 두 마크다운 파일을 **읽지 않습니다.** 앵커도 계층도 양쪽 다 갖고 있고,
-같은 원본에서 나온 다른 산출물을 볼 뿐입니다.
+**`build` 는 같은 원자료로 두 벌을 냅니다.** 왼쪽으로 가는 마크다운(`ALIASES.md`·`TREE.md`)은
+**grep 하는 사람**용이고, 오른쪽으로 가는 `anchors.jsonl` 과 `.sync-state.json` 의 `ancestors` 는
+**색인하는 프로그램**용입니다. 그래서 **서버판은 두 마크다운 파일을 읽지 않습니다** —
+앵커도 계층도 양쪽 다 갖고 있고, 같은 원본에서 나온 다른 산출물을 볼 뿐입니다.
+`mirror/pages/` 의 본문만 두 판이 함께 씁니다.
 
 `sync` 와 `build` 를 나눈 이유는 **제목→ID 해석 완전성**입니다. Confluence 링크는 대개
 제목으로 대상을 가리키는데, 전부 받은 뒤 한 번에 파싱해야 해석이 완전해집니다(실측 94%).
