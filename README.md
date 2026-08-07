@@ -48,7 +48,7 @@ Confluence 고유 개념에만 의존하므로(`ac:link` storage format, `ancest
 **영어가 주된 코퍼스라면 색인할 때 분석기를 지정하세요:**
 
 ```bash
-java -jar wikilens-server.jar --wikilens.analyzer=english   # korean(기본) · english · standard
+java --enable-native-access=ALL-UNNAMED -jar wikilens-server.jar --wikilens.analyzer=english   # korean(기본) · english · standard
 ```
 
 **설정은 "무엇으로 지을까"이고, 질의는 색인이 실제로 지어진 분석기를 씁니다.** 선택이
