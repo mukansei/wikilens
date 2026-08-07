@@ -81,35 +81,39 @@ flowchart TB
 
     subgraph S2["② build — 로컬 · 멱등"]
         PAGES["mirror/pages/<br/>마크다운"]
-        ALIAS["<b>ALIASES.md</b><br/>이 페이지를 뭐라고 부르나"]
-        TREE["TREE.md<br/>부모-자식 계층 · 고아 문서용"]
+        ALIAS["<b>ALIASES.md</b><br/>별칭 색인 · 사람과 grep 용"]
+        TREE["TREE.md<br/>계층 목차 · 사람과 grep 용"]
+        ANCH["derived/anchors.jsonl<br/>앵커 원자료 · 프로그램용"]
     end
 
     subgraph S3["③ 검색"]
-        LQ["로컬판<br/>ALIASES → TREE → 본문 순 grep"]
-        SQ["서버판<br/>Nori → BM25(앵커4 : 제목3 : 본문1)<br/>+ 학습 힌트 융합"]
-        ST["서버판 /api/tree<br/>TreeIndex"]
+        LQ["<b>로컬판</b><br/>ALIASES → TREE → 본문 순 grep"]
+        SQ["<b>서버판</b> /api/search<br/>Nori → BM25(앵커4 : 제목3 : 본문1)<br/>+ 학습 힌트 융합"]
+        ST["<b>서버판</b> /api/tree<br/>TreeIndex"]
     end
 
     RAW -->|파싱| PAGES
     RAW -->|링크 전치| ALIAS
+    RAW -->|링크 전치| ANCH
     STATE -->|ancestors| TREE
     ALIAS --> LQ
     TREE --> LQ
-    ALIAS --> SQ
+    ANCH --> SQ
     PAGES --> SQ
-    STATE -.->|ancestors<br/>같은 원본| ST
+    STATE -->|ancestors| ST
 
     classDef st fill:#fef3c7,stroke:#d97706,color:#78350f
     classDef key fill:#fde68a,stroke:#b45309,color:#78350f
     classDef q fill:#e0e7ff,stroke:#4f46e5,color:#312e81
     class RAW,STATE,PAGES,TREE st
-    class ALIAS key
+    class ALIAS,ANCH key
     class LQ,SQ,ST q
 ```
 
-**서버판은 `TREE.md` 파일을 읽지 않습니다.** 같은 원본(`.sync-state.json` 의 `ancestors`)에서
-자기 트리를 따로 만들어 `/api/tree` 로 서빙합니다 — 계층은 **양쪽 다 있고 산출물만 다릅니다.**
+**`build` 는 같은 원자료로 두 벌을 냅니다** — 마크다운(`ALIASES.md`·`TREE.md`)은 **grep 하는
+사람**용이고, `anchors.jsonl` 과 `.sync-state.json` 의 `ancestors` 는 **색인하는 프로그램**용입니다.
+그래서 서버판은 두 마크다운 파일을 **읽지 않습니다.** 앵커도 계층도 양쪽 다 갖고 있고,
+같은 원본에서 나온 다른 산출물을 볼 뿐입니다.
 
 `sync` 와 `build` 를 나눈 이유는 **제목→ID 해석 완전성**입니다. Confluence 링크는 대개
 제목으로 대상을 가리키는데, 전부 받은 뒤 한 번에 파싱해야 해석이 완전해집니다(실측 94%).
