@@ -119,6 +119,32 @@ class AnalyzerChoiceTest {
     }
 
     @Test
+    fun `항과 검색 결과가 같은 분석기에서 나온다`() {
+        // `analyze()` 와 `search()` 를 따로 부르면 그 사이에 재색인이 끝날 수 있다.
+        // 결과는 새 색인에서 맞게 나오지만 항은 옛 분석기 것이고, **그 항이 학습
+        // 포스팅의 키**라 같은 질의가 그 순간에만 다른 키로 기록된다.
+        val dir = createTempDirectory("atomic")
+        val acl = listOf("@public")
+        val doc = listOf(page("1", "we run production servers"))
+
+        LuceneIndex(dir, AnalyzerKind.KOREAN).use { it.rebuild(doc) }
+
+        LuceneIndex(dir, AnalyzerKind.ENGLISH).use { idx ->
+            idx.openIfExists()
+            // 디스크는 korean 이므로 항도 korean 이어야 한다
+            val before = idx.analyzeAndSearch("production servers", acl, 5)
+            assertEquals(listOf("production", "servers"), before.terms, "Nori 는 어간을 안 줄인다")
+            assertEquals(1, before.hits.size)
+
+            idx.rebuild(doc)   // english 로 교체
+
+            val after = idx.analyzeAndSearch("production servers", acl, 5)
+            assertEquals(listOf("product", "server"), after.terms, "이제 English 어간이다")
+            assertEquals(1, after.hits.size, "항과 색인이 함께 바뀌었으므로 여전히 찾는다")
+        }
+    }
+
+    @Test
     fun `분석기 이름 오타는 기동 시 죽는다`() {
         // 조용히 기본값으로 떨어지면 그게 "검색이 0건" 의 원인이 되고,
         // 그때는 설정이 아니라 색인을 의심하게 된다.

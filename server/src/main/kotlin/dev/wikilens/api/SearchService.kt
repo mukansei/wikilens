@@ -27,14 +27,19 @@ class SearchService(
 
     fun search(req: SearchRequest): SearchResponse {
         val tokens = acl.tokensFor(req.userKey)
-        val terms = index.analyze(req.query)
+
+        // **항과 검색을 한 번에 받는다.** 따로 부르면 그 사이 재색인이 끝났을 때
+        // 항은 옛 분석기 것이고 결과는 새 색인 것이 된다 — 그 항이 학습 포스팅의
+        // 키라서, 같은 질의가 그 순간에만 다른 키로 기록된다.
+        val analyzed = index.analyzeAndSearch(req.query, tokens, req.limit * 3)
+        val terms = analyzed.terms
 
         // 권한 토큰이 없으면 어휘 결과도 힌트도 내지 않는다.
         if (tokens.isEmpty() || terms.isEmpty()) {
             return SearchResponse(req.query, terms, 0, 0, emptyList())
         }
 
-        val lexical = index.search(req.query, tokens, req.limit * 3)
+        val lexical = analyzed.hits
 
         // Lucene 점수를 [0,1]로 정규화해 EB 사전분포로 넘긴다.
         val top = lexical.firstOrNull()?.score?.toDouble()?.takeIf { it > 0.0 } ?: 1.0

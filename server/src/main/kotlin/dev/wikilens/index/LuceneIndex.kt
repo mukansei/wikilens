@@ -70,6 +70,14 @@ data class IndexedPage(
 
 data class Scored(val id: String, val title: String, val space: String, val score: Float)
 
+/**
+ * 한 스냅샷에서 나온 질의 항과 검색 결과.
+ *
+ * 둘이 같은 분석기에서 나왔음을 타입으로 보장한다 — 따로 부르면 재색인 사이에
+ * 끼어 항과 색인이 어긋날 수 있다.
+ */
+data class Analyzed(val terms: List<String>, val hits: List<Scored>)
+
 /** 색인된 문서의 메타데이터. 본문은 담지 않는다 — 콘텐츠는 미러에서 읽는다. */
 data class PageMeta(val id: String, val title: String, val space: String)
 
@@ -309,12 +317,26 @@ class LuceneIndex(
      * ACL 필터는 **선택이 아니라 필수 절**이다. 빈 목록이면 결과가 비어야 한다 —
      * 실수로 전체가 노출되는 것보다 아무것도 안 나오는 편이 낫다.
      */
-    fun search(queryText: String, aclTokens: Collection<String>, limit: Int): List<Scored> {
-        val snap = snapshotRef.get()
-        val searcher = snap.searcher ?: return emptyList()
-        if (aclTokens.isEmpty()) return emptyList()
+    fun search(queryText: String, aclTokens: Collection<String>, limit: Int): List<Scored> =
+        analyzeAndSearch(queryText, aclTokens, limit).hits
 
-        val text = buildTextQuery(queryText, snap.analyzer) ?: return emptyList()
+    /**
+     * 항 추출과 검색을 **한 스냅샷에서** 한다.
+     *
+     * 둘을 따로 부르면 그 사이에 재색인이 끝날 수 있다. 검색 결과는 새 색인에서
+     * 맞게 나오지만 [Analyzed.terms] 는 옛 분석기 것이고, **그 항이 학습 포스팅의 키**다 —
+     * 같은 질의가 재색인 순간에만 다른 키로 기록돼 카운트가 갈린다(조용히 실패하는
+     * 것들 2번과 같은 형태). 창이 좁아서(재색인 몇 초) 눈에 안 띄는 종류다.
+     *
+     * 스냅샷을 한 번만 읽으면 그 상태가 성립하지 않는다.
+     */
+    fun analyzeAndSearch(queryText: String, aclTokens: Collection<String>, limit: Int): Analyzed {
+        val snap = snapshotRef.get()
+        val terms = tokenize(snap.analyzer, queryText)
+        val searcher = snap.searcher ?: return Analyzed(terms, emptyList())
+        if (aclTokens.isEmpty()) return Analyzed(terms, emptyList())
+
+        val text = buildTextQuery(queryText, snap.analyzer) ?: return Analyzed(terms, emptyList())
         val acl = TermInSetQuery(Fields.ACL, aclTokens.map { BytesRef(it) })
 
         val q = BooleanQuery.Builder()
@@ -324,10 +346,10 @@ class LuceneIndex(
 
         val top = searcher.search(q, limit)
         val stored = searcher.storedFields()
-        return top.scoreDocs.map { sd ->
+        return Analyzed(terms, top.scoreDocs.map { sd ->
             val d = stored.document(sd.doc)
             Scored(d.get(Fields.ID), d.get(Fields.TITLE) ?: "", d.get(Fields.SPACE) ?: "", sd.score)
-        }
+        })
     }
 
     /**
@@ -371,9 +393,11 @@ class LuceneIndex(
      * 이렇게 하면 토크나이저 정본이 하나가 된다. 양쪽이 각자 토큰화하면
      * 규칙이 달라졌을 때 에러 없이 조용히 0건이 되는데, 실제로 겪은 버그다.
      */
-    fun analyze(text: String): List<String> {
+    fun analyze(text: String): List<String> = tokenize(snapshotRef.get().analyzer, text)
+
+    private fun tokenize(analyzer: Analyzer, text: String): List<String> {
         val out = ArrayList<String>()
-        snapshotRef.get().analyzer.tokenStream(Fields.BODY, text).use { ts ->
+        analyzer.tokenStream(Fields.BODY, text).use { ts ->
             val attr = ts.addAttribute(
                 org.apache.lucene.analysis.tokenattributes.CharTermAttribute::class.java
             )
