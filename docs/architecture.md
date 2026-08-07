@@ -43,7 +43,7 @@ flowchart TB
     end
 
     subgraph SRV["server/ · Kotlin · 상주"]
-        QRY["SearchService — RRF 융합"]
+        QRY["service/SearchService — RRF 융합"]
         IDX["LuceneIndex — Nori BM25<br/>앵커4 : 제목3 : 본문1 + ACL 필터"]
         TR["TreeIndex / TreeRenderer"]
         L2["TrajectoryStore — 항 단위 포스팅"]

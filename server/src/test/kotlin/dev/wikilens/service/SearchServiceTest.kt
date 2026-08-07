@@ -1,4 +1,6 @@
-package dev.wikilens.api
+package dev.wikilens.service
+
+import dev.wikilens.api.SearchRequest
 
 import dev.wikilens.acl.AclRegistry
 import dev.wikilens.index.IndexedPage

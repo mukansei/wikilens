@@ -240,8 +240,8 @@ check "두 스킬이 같은 우선순위를 말함 (서버판 우선 · 배타�
 # 실측: rg 로 `coway` 가 `Coway` 를 못 찾고, 서버는 찾는다. 합의가 파일로만 이어져 있어
 # 한쪽만 고쳐도 아무 에러가 안 난다.
 check "두 판이 대소문자를 똑같이 무시함 (로컬 Grep -i · 서버 RE2 CASE_INSENSITIVE)" \
-  'grep -q "Re2.compile(pattern, Re2.CASE_INSENSITIVE)" server/src/main/kotlin/dev/wikilens/api/ContentService.kt \
-   && grep -q "ignoreCase = true" server/src/main/kotlin/dev/wikilens/api/ContentService.kt \
+  'grep -q "Re2.compile(pattern, Re2.CASE_INSENSITIVE)" server/src/main/kotlin/dev/wikilens/service/ContentService.kt \
+   && grep -q "ignoreCase = true" server/src/main/kotlin/dev/wikilens/service/ContentService.kt \
    && ! grep -n "Grep(" plugin/local/skills/search/SKILL.md | grep -qv -- "-i=true"'
 
 # 모델에게 지시하는 파일 다섯(스킬 2 · 커맨드 2 · 레퍼런스 1)은 독자가 같으므로 문체도

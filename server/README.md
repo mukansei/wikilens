@@ -8,7 +8,7 @@ Confluence 미러를 **서버측에서 색인**하고, 탐색 궤적을 축적�
 | 레이어 | 검증 |
 |---|---|
 | `learn/` (게이트·EB·궤적·포스팅) | JUnit 통과. 기대값 6개가 `scoring_reference.py` 산출과 1e-6 일치 |
-| `index/` `api/` `vault/` `acl/` (Lucene·Spring 배선) | 빌드·`bootRun`·재색인 검증됨 (Coway 실데이터 2,378건, 2026-08) |
+| `index/` `service/` `api/` `vault/` `acl/` (Lucene·Spring 배선) | 빌드·`bootRun`·재색인 검증됨 (Coway 실데이터 2,378건, 2026-08) |
 | JUnit 전체 | 통과 (`./gradlew test`) |
 | 검색 랭킹 **품질** | **미검증.** 배선이 도는 것과 랭킹이 좋은 것은 다른 문제다 |
 
@@ -16,6 +16,31 @@ Confluence 미러를 **서버측에서 색인**하고, 탐색 궤적을 축적�
 ./gradlew test       # JUnit 전체
 ./gradlew bootRun    # 개발용 기동 (작업 디렉터리가 server/ 로 고정된다)
 ```
+
+## 처음 clone 했다면 볼트부터 연결하세요
+
+`bootRun` 은 기본값 `./mirror-root` 를 보는데, **그건 저장소에 없습니다**(gitignore).
+그대로 띄우면 이렇게 됩니다:
+
+```
+ERROR  볼트에서 문서를 하나도 못 읽었습니다: …/server/mirror-root
+```
+
+기동은 되지만 검색이 전부 빕니다. 이미 로컬판으로 만든 볼트가 있으면 심링크 하나면
+됩니다 — 사본을 만들지 마세요. 볼트가 둘이 되면 어느 쪽을 색인했는지 알 수 없습니다:
+
+```bash
+ln -s ~/wiki server/mirror-root      # 로컬판이 쓰는 볼트를 그대로
+```
+
+볼트가 아직 없으면 먼저 만듭니다(`cli/README.md` 참고):
+
+```bash
+wikilens --root ~/wiki sync --space <KEY>
+```
+
+`--wikilens.vault-root=/절대/경로` 로 매번 주는 것도 됩니다. 심링크를 권하는 이유는
+`bootRun` 인자를 IntelliJ 실행 구성과 CLI 양쪽에 중복해 적지 않아도 되기 때문입니다.
 
 ## 배포할 때는 경로를 절대경로로 주세요
 
@@ -81,7 +106,8 @@ learn/       게이트 · EB · 궤적 · 항 단위 포스팅   ← 프레임�
 index/       Lucene + Nori, 필드 가중, ACL 필터
 vault/       Python 싱크가 만든 미러 읽기
 acl/         페이지·사용자 권한 토큰
-api/         검색 융합 · 관측 · 배포 매니페스트
+service/     검색 융합(RRF) · 콘텐츠 서빙(read·grep)
+api/         HTTP 표면 — Controller · Dto(= 와이어 포맷)
 ```
 
 `learn/`이 Spring도 Lucene도 참조하지 않는 것은 의도입니다.
