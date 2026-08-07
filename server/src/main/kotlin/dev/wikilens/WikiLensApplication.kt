@@ -96,19 +96,24 @@ class WikiLensApplication {
 
         return runCatching {
             val pages = vault.read(root, acl)
-            index.rebuild(pages)
             if (pages.isEmpty()) {
                 // `VaultReader` 는 미러가 없어도 예외를 안 던지고 빈 목록을 준다. 그래서
                 // 예전엔 이 경우가 `기동 적재 완료: 문서 0` 으로 찍혀 정상처럼 보였다.
+                //
+                // **여기서 재색인하면 안 된다.** `rebuild(emptyList())` 는 디스크에 있던
+                // 멀쩡한 색인을 0건으로 덮어쓴다 — 경로 하나 잘못 준 재기동이 마지막으로
+                // 성공한 색인까지 지운다(실측: `색인 재구축 0건`). 볼트를 못 읽는 것은
+                // 고칠 수 있는 문제지만 지워진 색인은 다시 싱크해야 한다.
                 log.error(
-                    "볼트에서 문서를 하나도 못 읽었습니다: {} — 검색·읽기가 전부 빕니다. " +
-                        "경로가 맞는지 확인하세요(상대경로는 실행 디렉터리 기준입니다). " +
-                        "기동은 계속합니다 — 그래야 `--status` 로 진단할 수 있습니다.",
+                    "볼트에서 문서를 하나도 못 읽었습니다: {} — 경로가 맞는지 확인하세요" +
+                        "(상대경로는 실행 디렉터리 기준입니다). **기존 색인은 그대로 둡니다** — " +
+                        "검색은 옛 색인으로 계속 동작하고, ACL 페이지 맵만 비어 읽기가 404 가 됩니다.",
                     root,
                 )
-            } else {
-                log.info("기동 적재 완료: 문서 {} · ACL 페이지 {}", pages.size, acl.pageCount())
+                return@runCatching VaultBootstrap(index.docCount, acl.pageCount())
             }
+            index.rebuild(pages)
+            log.info("기동 적재 완료: 문서 {} · ACL 페이지 {}", pages.size, acl.pageCount())
             VaultBootstrap(pages.size, acl.pageCount())
         }.getOrElse { e ->
             log.error("기동 적재 실패 (볼트={}). 색인이 빈 채로 시작합니다 — " +

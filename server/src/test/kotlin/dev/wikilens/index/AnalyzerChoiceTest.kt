@@ -70,27 +70,51 @@ class AnalyzerChoiceTest {
         LuceneIndex(dir, AnalyzerKind.KOREAN).use { reopened ->
             reopened.openIfExists()
             assertEquals("english", reopened.builtWith(), "색인을 지은 분석기가 기록돼야 한다")
-            assertNotEquals(reopened.kind.key, reopened.builtWith(), "이 상태가 곧 불일치다")
+            assertEquals(AnalyzerKind.ENGLISH, reopened.activeKind, "질의도 그것을 따라야 한다")
+            assertNotEquals(reopened.buildKind, reopened.activeKind, "설정과는 다른 상태다")
         }
     }
 
     @Test
-    fun `불일치는 조용한 0건으로 나타난다 — 그래서 기록이 필요하다`() {
-        // 한국어 코퍼스를 실수로 english 로 색인한 경우 — 이 프로젝트에서 현실적인 사고다.
+    fun `설정이 색인과 달라도 검색은 정상 동작한다`() {
+        // 예전에는 이 상황이 **조용한 0건**이었다. 색인에는 `production servers` 가
+        // English 어간으로 들어가 있는데 질의를 설정대로 Nori 로 토큰화했기 때문이다.
+        // 기록을 그대로 쓰면 그 불일치가 애초에 성립하지 않는다.
         val dir = createTempDirectory("mismatch")
         val acl = listOf("@public")
         LuceneIndex(dir, AnalyzerKind.ENGLISH).use {
-            it.rebuild(listOf(page("1", "배포 파이프라인을 구성했습니다")))
+            it.rebuild(listOf(page("1", "we run production servers")))
         }
-        LuceneIndex(dir, AnalyzerKind.KOREAN).use { wrong ->
-            wrong.openIfExists()
-            // 색인에는 `파이프라인을` 이 통째로 들어가 있는데 질의는 `파이프라인` 으로 온다.
-            // 예외도 경고도 없이 그냥 안 나온다 — 사용자 눈에는 "문서가 없다" 로 보인다.
-            assertTrue(
-                wrong.search("파이프라인", acl, 5).isEmpty(),
-                "이것이 조용한 0건이다 — 잡아주는 것은 기록 대조뿐이다",
+        LuceneIndex(dir, AnalyzerKind.KOREAN).use { reopened ->
+            reopened.openIfExists()
+            assertEquals(AnalyzerKind.KOREAN, reopened.buildKind, "설정은 korean 이지만")
+            assertEquals(AnalyzerKind.ENGLISH, reopened.activeKind, "질의는 색인을 따른다")
+            assertEquals(
+                1, reopened.search("server", acl, 5).size,
+                "English 어간 추출이 그대로 살아 있어야 한다 — 0건이면 옛 결함이 돌아온 것",
             )
-            assertNotEquals(wrong.kind.key, wrong.builtWith(), "대조로만 잡을 수 있다")
+        }
+    }
+
+    @Test
+    fun `재색인이 설정을 적용하고 그때부터 질의도 따라간다`() {
+        val dir = createTempDirectory("switch")
+        val acl = listOf("@public")
+        val doc = listOf(page("1", "we run production servers"))
+
+        LuceneIndex(dir, AnalyzerKind.KOREAN).use { it.rebuild(doc) }
+
+        LuceneIndex(dir, AnalyzerKind.ENGLISH).use { idx ->
+            idx.openIfExists()
+            // 재색인 전: 디스크가 korean 이므로 굴절을 못 넘는다
+            assertEquals(AnalyzerKind.KOREAN, idx.activeKind)
+            assertTrue(idx.search("server", acl, 5).isEmpty(), "아직 옛 색인이다")
+
+            idx.rebuild(doc)   // 설정(english)으로 다시 짓는다
+
+            assertEquals(AnalyzerKind.ENGLISH, idx.activeKind, "재색인이 전환 지점이다")
+            assertEquals("english", idx.builtWith())
+            assertEquals(1, idx.search("server", acl, 5).size, "이제 어간 추출이 된다")
         }
     }
 
@@ -108,6 +132,7 @@ class AnalyzerChoiceTest {
         LuceneIndex(createTempDirectory("empty"), AnalyzerKind.KOREAN).use {
             it.openIfExists()
             assertNull(it.builtWith(), "색인이 없으면 대조할 것도 없다")
+            assertEquals(it.buildKind, it.activeKind, "기록이 없으면 설정을 쓴다")
         }
     }
 }

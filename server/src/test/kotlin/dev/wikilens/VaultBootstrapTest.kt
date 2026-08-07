@@ -56,6 +56,30 @@ class VaultBootstrapTest {
     }
 
     @Test
+    fun `빈 볼트가 멀쩡한 색인을 지우지 않는다`(@TempDir tmp: Path) {
+        // 경로 하나 잘못 준 재기동이 마지막으로 성공한 색인까지 지우면 안 된다.
+        // 예전에는 `rebuild(emptyList())` 를 무조건 불러서 **0건으로 덮어썼다**
+        // (실측: `--wikilens.vault-root=/없는볼트` 로 띄우니 `색인 재구축 0건`).
+        val indexDir = tmp.resolve("index")
+        val index = LuceneIndex(indexDir)
+        val acl = AclRegistry()
+
+        // 먼저 정상 적재로 색인을 만든다
+        WikiLensApplication().vaultBootstrap(
+            props(fixtureRoot.toString(), indexDir), VaultReader(ObjectMapper()), index, acl)
+        val before = index.docCount
+        assertTrue(before > 0, "선행 조건: 색인이 있어야 한다")
+
+        // 같은 색인에 대고 볼트 경로만 틀리게 준다
+        val got = WikiLensApplication().vaultBootstrap(
+            props(tmp.resolve("없는볼트").toString(), indexDir),
+            VaultReader(ObjectMapper()), index, acl)
+
+        assertEquals(before, index.docCount, "색인이 지워졌다 — 재싱크해야 복구된다")
+        assertEquals(before, got.indexed, "보고도 남아 있는 색인을 기준으로 해야 한다")
+    }
+
+    @Test
     fun `볼트를 못 읽어도 기동은 계속된다`(@TempDir tmp: Path) {
         // 설정이 틀렸다고 서버가 안 뜨면 --status 로 진단할 길까지 사라진다.
         val got = WikiLensApplication().vaultBootstrap(
