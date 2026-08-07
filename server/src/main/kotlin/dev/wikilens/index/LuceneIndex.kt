@@ -278,7 +278,11 @@ class LuceneIndex(
         // 있으므로, 설정이 아니라 그것을 따라간다. 기록이 없으면(이 기능 이전 색인)
         // 설정을 쓴다 — 그때는 대조할 근거가 없다.
         val recorded = reader.indexCommit.userData[ANALYZER_KEY]
-        val kind = recorded?.let { runCatching { AnalyzerKind.of(it) }.getOrNull() } ?: buildKind
+        // 기록이 없으면 **설정이 아니라 [LEGACY_KIND]** 다. 이 줄에 닿았다는 것은
+        // 색인이 **있는데** 기록만 없다는 뜻이고(없으면 위에서 예외가 난다), 그건 기록을
+        // 남기기 전 버전이 지은 것뿐이다 — 그때는 분석기가 korean 하나였다.
+        // 설정을 쓰면 english 로 띄운 순간 옛 korean 색인을 english 로 두드리게 된다.
+        val kind = recorded?.let { runCatching { AnalyzerKind.of(it) }.getOrNull() } ?: LEGACY_KIND
         val cur = snapshotRef.get()
         val old = snapshotRef.getAndSet(
             Snapshot(
@@ -309,7 +313,19 @@ class LuceneIndex(
      * 조용히 0건이었다. 지금은 그 상태가 성립하지 않는다.
      */
     private fun reportAnalyzer() {
-        val built = builtWith() ?: return   // 색인이 없거나 분석기 기록 이전 색인
+        val built = builtWith()
+        if (built == null) {
+            // 색인이 없으면 `activeKind` 가 설정과 같아 알릴 것이 없다. 다르다면
+            // **기록 이전 색인**이라는 뜻이고, 그건 재색인 전까지 조용히 어긋나는 자리다.
+            if (activeKind != buildKind) {
+                log.warn(
+                    "분석기 기록이 없는 색인입니다(이 기능 이전에 지어진 것). '{}' 로 지어졌다고 " +
+                        "보고 질의합니다 — 설정 '{}' 을 적용하려면 POST /api/admin/reindex 로 다시 지으세요.",
+                    activeKind.key, buildKind.key,
+                )
+            }
+            return
+        }
         if (built == buildKind.key) return
         log.warn(
             "색인은 '{}' 로 지어졌고 설정은 '{}' 입니다. 검색은 '{}' 로 정상 동작합니다 — " +
@@ -429,5 +445,14 @@ class LuceneIndex(
     companion object {
         /** 색인 커밋 데이터에 분석기 이름을 남기는 키. */
         const val ANALYZER_KEY = "wikilens.analyzer"
+
+        /**
+         * 기록이 없는 색인이 지어졌을 분석기.
+         *
+         * 이 기록을 남기기 전 버전은 `KoreanAnalyzer` 를 하드코딩했으므로, 기록 없는
+         * 색인은 전부 korean 이다. 재색인 한 번이면 기록이 생겨 이 값은 안 쓰인다 —
+         * 마이그레이션 전용이다.
+         */
+        val LEGACY_KIND = AnalyzerKind.KOREAN
     }
 }

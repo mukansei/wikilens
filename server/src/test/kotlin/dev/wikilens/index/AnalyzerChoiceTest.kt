@@ -145,6 +145,37 @@ class AnalyzerChoiceTest {
     }
 
     @Test
+    fun `기록 없는 옛 색인은 설정이 아니라 korean 으로 읽는다`() {
+        // 이 기능 이전 버전은 `KoreanAnalyzer` 를 하드코딩했으므로, 기록 없는 색인은
+        // 전부 korean 이다. 설정을 따르면 english 로 띄운 순간 옛 색인을 english 로
+        // 두드리게 된다 — 재색인 전까지 조용히 어긋난다.
+        val dir = createTempDirectory("legacy")
+        org.apache.lucene.store.MMapDirectory(dir).use { d ->
+            org.apache.lucene.index.IndexWriter(
+                d,
+                org.apache.lucene.index.IndexWriterConfig(
+                    org.apache.lucene.analysis.ko.KoreanAnalyzer()
+                ),
+            ).use { w ->
+                w.addDocument(org.apache.lucene.document.Document().apply {
+                    add(org.apache.lucene.document.StringField(Fields.ID, "1", org.apache.lucene.document.Field.Store.YES))
+                    add(org.apache.lucene.document.TextField(Fields.BODY, "배포 파이프라인을", org.apache.lucene.document.Field.Store.NO))
+                })
+                w.commit()   // setLiveCommitData 없음 = 기록 없는 옛 색인
+            }
+        }
+
+        LuceneIndex(dir, AnalyzerKind.ENGLISH).use { idx ->
+            idx.openIfExists()
+            assertNull(idx.builtWith(), "선행 조건: 기록이 없다")
+            assertEquals(
+                AnalyzerKind.KOREAN, idx.activeKind,
+                "설정(english)이 아니라 옛 색인이 지어진 korean 으로 읽어야 한다",
+            )
+        }
+    }
+
+    @Test
     fun `분석기 이름 오타는 기동 시 죽는다`() {
         // 조용히 기본값으로 떨어지면 그게 "검색이 0건" 의 원인이 되고,
         // 그때는 설정이 아니라 색인을 의심하게 된다.
