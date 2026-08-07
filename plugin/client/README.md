@@ -21,16 +21,20 @@ WikiLens는 **다른 문서들이 각 페이지를 링크할 때 쓴 표현**(�
 /reload-plugins
 ```
 
-설정은 파일 하나입니다. `~/.wikilens/config.json` 을 만드세요:
+설정값은 둘뿐입니다 — **운영자에게 받은 서버 주소**와 **본인 식별자**(권한 확인용):
 
-```json
-{
-  "server": "http://wikilens.corp:8787",
-  "user": "alice@corp"
-}
+```
+/wikilens-client:setup
 ```
 
-`server` 는 운영자에게 받은 주소, `user` 는 본인 식별자(권한 확인용)입니다.
+물어보고 기록까지 해 줍니다. 직접 하려면:
+
+```bash
+python3 ~/.claude/plugins/cache/wikilens/wikilens-client/*/mcp/wikilens_mcp.py \
+  --configure --server http://wikilens.corp:8787 --user alice@corp
+```
+
+`~/.wikilens/config.json` 에 **병합**해 씁니다(로컬판도 쓰는 파일이라 덮어쓰지 않습니다).
 **넣고 나면 Claude Code 를 재시작하세요** — 설정은 시작할 때 한 번 읽습니다.
 
 > 셸에 `export WIKILENS_SERVER` / `WIKILENS_USER` 로도 되지만 **그 셸에서만 유지됩니다.**
@@ -95,9 +99,9 @@ python3 ~/.claude/plugins/cache/wikilens/wikilens-client/*/mcp/wikilens_mcp.py -
 
 | 출력 | 뜻 |
 |---|---|
-| `SERVER=... (default)` | 주소를 넣은 적이 없어 로컬을 보고 있습니다. `config.json` 에 넣으세요 |
+| `SERVER=... (default)` | 주소를 넣은 적이 없어 로컬을 보고 있습니다. `/wikilens-client:setup` |
 | `REACHABLE=no` | 주소가 맞다면 서버가 떠 있는지 운영자에게 문의 |
-| `USER=(미설정)` | 결과가 항상 빕니다. `config.json` 의 `user` 를 넣으세요 |
+| `USER=(미설정)` | 결과가 항상 빕니다. `/wikilens-client:setup` |
 | `ACL_USERS=0` | **운영자가 아직 아무도 등록하지 않았습니다.** 사용자가 할 수 있는 일이 없습니다 |
 | `INDEXED_DOCS=0` | 색인이 비어 있습니다. 운영자에게 재색인 요청 |
 | `ANALYZER=x (설정은 y)` | 색인이 서버 설정과 다른 분석기로 지어졌습니다. 검색은 되지만 설정이 반영 안 된 상태 — 운영자에게 재색인 요청 |
@@ -132,18 +136,21 @@ python3 ~/.claude/plugins/cache/wikilens/wikilens-client/*/mcp/wikilens_mcp.py -
 
 ```bash
 # 서비스 계정으로 1회 싱크 (사용자별 싱크 없음 → Confluence 부하 1배)
-CONFLUENCE_TOKEN=<서비스계정> wikilens --root ./mirror-root sync --space PLATFORM
-cd server && ./gradlew bootRun
-curl -XPOST localhost:8787/api/admin/reindex
+CONFLUENCE_TOKEN=<서비스계정> wikilens --root ~/wiki sync --space PLATFORM
+cd server && ./gradlew bootRun      # 기동 시 볼트를 찾아 전량 색인합니다
 ```
+
+볼트 경로를 따로 알려주지 않아도 됩니다 — 서버가 `~/.wikilens/config.json` 의 `vault`
+를 폴백으로 읽습니다. 다른 자리에 두려면 `--wikilens.vault-root=/절대/경로` 로 명시하세요
+(명시가 항상 이깁니다).
 
 - **정기 갱신은 cron 으로.** `wikilens sync ... && curl -XPOST .../admin/reindex` —
   `&&` 가 중요합니다. 싱크가 실패했는데 재색인이 돌면 절반만 반영됩니다.
   자격증명은 `~/.wikilens/env.sh`(600)에 두면 됩니다 — cron 은 환경이 최소라
   `export` 가 없는데, CLI 가 그 파일을 폴백으로 읽습니다(`server/README.md`).
 - **재기동 후 사용자를 다시 등록해야 합니다.** 색인과 ACL 페이지 맵은 기동 시 자동으로
-  적재되지만, 사용자 등록은 메모리에만 있어 재기동하면 사라집니다. `--status` 의
-  `ACL_USERS=0` 이 그 신호입니다.
+  적재되므로 `/admin/reindex` 를 손으로 부를 필요가 없지만, 사용자 등록은 메모리에만
+  있어 재기동하면 사라집니다. `--status` 의 `ACL_USERS=0` 이 그 신호입니다.
 - **사용자 등록을 잊지 마세요.** `POST /api/admin/acl/user?userKey=alice@corp` 에 권한
   토큰 목록(`["@public"]` 등). 등록 전에는 색인이 멀쩡해도 **모든 검색이 빈손**입니다 —
   fail-closed 라 실수로 전체 공개되는 것보다 안전한 쪽입니다. 실측: 같은 질의가

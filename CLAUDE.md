@@ -59,6 +59,8 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 | `LOCALIZATION`만 간선 생성 | `learn/Gate.kt` | 경로 의존 질의에 틀린 답 |
 | 질의 분석기는 **색인 기록**을 따름 (설정 아님) | `LuceneIndex.swap` ↔ `ANALYZER_KEY` | **검색이 에러 없이 0건** |
 | 자격증명 파일 경로가 세 곳에서 같음 | `credentials.py` · `vault_status.py` · `wikilens_cli.sh` | CLI 는 읽는데 진단은 "없다" |
+| 볼트 설정 키 `vault` 가 세 곳에서 같음 | `vault_status.py` · `setup_vault.py` · `config/UserConfig.kt` | 서버 볼트 폴백이 조용히 멈춤 |
+| 볼트 경로 해석처가 **한 곳** | `vault/VaultLocator.kt` | 검색은 되고 읽기만 404 |
 | 권한 없음은 **404** (403 아님) | `Controller.read` | 문서 존재가 유출됨 |
 
 ---
@@ -151,7 +153,32 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 18. **빈 스냅샷이 분석기를 korean 에 고정했다** — 정적 상수라 `buildKind` 를 몰랐다.
    색인이 아직 없으면 `--wikilens.analyzer=english` 를 줘도 **질의만 korean 으로 분석**된다.
    검색은 어차피 0건이라 안 보이지만 그 항이 학습 포스팅의 키다.
-19. **`.mcp.json`이 미설정 env 를 리터럴로 주입** → 변수가 없으면 `"${WIKILENS_SERVER}"`
+19. **볼트 경로를 푸는 곳이 둘이었다** — `IndexingService`(색인·ACL)와 `ContentService`
+   (read·grep)가 각자 `props.vaultRoot` 를 풀었고, 후자는 `toAbsolutePath()` 조차 안 걸어
+   **실행 디렉터리에 매달려** 있었다. 설정 폴백을 넣자 갈림이 결정적이 됐다 — 실측:
+   폴백으로 기동한 서버가 문서 3건을 색인하고 **검색까지 정상인데 read 는 전부 404**.
+   12번과 같은 실패 모양인데 원인만 다르다. `VaultLocator` 하나로 합쳤다.
+   **합친 뒤에 딸려온 함정:** 해석이 공짜가 아니게 됐다(폴백이면 stat 두 번 +
+   `config.json` 파싱). `grep` 이 문서마다 부르고 있어서 스캔에 10%가 얹혔다
+   (실측: 2,383회 66ms, grep 전체 0.64초). 요청당 한 번만 풀고, 공짜처럼 보이던
+   `root` 프로퍼티는 아예 없앴다 — 주석보다 그쪽이 확실하다.
+20. **macOS JDK 가 `HOME` 을 무시한다** — `user.home` 은 `getpwuid` 결과다(실측:
+   `HOME=/tmp/x java …` → `user.home=/Users/hyunwpark`). 파이썬 `Path.home()` 은 `HOME`
+   을 먼저 보므로, 그대로 두면 **CLI 가 쓴 `~/.wikilens/config.json` 을 서버가 다른
+   자리에서 찾는다.** 서버는 systemd·cron 처럼 `HOME` 이 다르게 잡히는 환경에서 도는
+   물건이라 가정이 아니다. `UserConfig.defaultHome()` 이 `HOME` 을 우선한다.
+21. **깨진 `config.json` 위에 얹어 쓰면 원본이 통째로 사라졌다** — `_config()` 가 파싱
+   실패를 `{}` 로 돌려주는데 그 위에 새 값을 저장했다. 이 파일은 **사람이 손으로 고치는
+   파일**이라 깨져 있는 것이 예외가 아니고, **두 판이 공유**하므로 한쪽이 지우면 다른
+   판의 설정까지 날아간다. 실측: 쉼표 하나가 잘못된 파일에 `--configure` 한 번 →
+   `vault`·`cli` 소실, 그런데 출력은 "설정했습니다". 이제 `config.json.bak-<시각>` 으로
+   치워두고 알린다(`quarantine_unusable_config`).
+   **판정 기준이 "파싱된다" 여서는 안 된다** — `null`·`[]`·`"문자열"` 은 전부 유효한
+   JSON 이라 통과한 뒤 `.get()` 에서 AttributeError 로 터진다. 로컬판은 진단
+   스크립트가 죽어 스킬이 `VAULT=` 대신 traceback 을 받고(**스킬에 그 분기가 없어
+   검색 불가**), 서버판은 그 자리가 모듈 최상단이라 **프록시가 기동 중 죽어 도구
+   4개가 통째로 사라진다.** `isinstance(cfg, dict)` 까지 봐야 한다.
+22. **`.mcp.json`이 미설정 env 를 리터럴로 주입** → 변수가 없으면 `"${WIKILENS_SERVER}"`
    문자열이 그대로 들어가 프록시 기본값을 덮어쓰고 `unknown url type` 으로 죽는다.
    env 를 넘기지 않고 프록시가 `os.environ` 에서 직접 읽게 한다.
 
@@ -195,6 +222,17 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
   `posix_madvise` 를 FFM 으로 부르는데 Java 22+ 가 경고 넷을 찍는다. 빼도 동작한다
   (실측: 차단해도 색인 2,383건 정상, 시간 차 노이즈). 기동 로그를 진단에 쓰는 구조라
   무해한 경고가 정작 볼 줄(궤적 갈림 WARN 등)을 가리는 것이 이유다.
+- **CLI 를 `~/.wikilens/venv` 에 설치한다 — 어디에 깔렸는지 찾지 않는다.** 예전에는
+  `pip install` 뒤에 찾는 단계가 따로 있었고(`--cli-path auto`·`discover_cli()`),
+  그 불확실성 하나를 다루는 장치가 코드 넷·문서 셋이었다. **자리를 정하면 그 전부가
+  한 줄이 된다.** 볼트·설정과 같은 디렉터리인 것도 의도다 — 지우는 방법이
+  `rm -rf ~/.wikilens` 하나로 유지된다. 근거는 `DECISIONS.md` D15.
+- **래퍼가 `--root` 를 채우고, CLI 는 서브커맨드 뒤에서도 `--root` 를 받는다** —
+  전자는 볼트 경로 정본을 아는 자리가 이미 래퍼여서고, 후자는 함정을 경고하는 것보다
+  없애는 편이 싸서다(같은 경고가 문서 4곳에 복제돼 있었다). 사용자가 직접 준 값이 이긴다.
+- **서버가 `~/.wikilens/config.json` 을 읽는다** — 심링크를 손으로 만드는 단계를
+  없앤다. **명시 설정이 항상 이기고**, 폴백은 기본 경로가 비었을 때만 걸린다.
+  D10 이 CLI·플러그인까지만 통일했던 것을 서버까지 끌고 온 것이다(D15).
 - **`server/mirror-root` 는 심링크다** — gitignore 대상이라 clone 하면 없다.
   사본을 만들면 볼트가 둘이 되어 어느 쪽을 색인했는지 알 수 없다(`server/README.md`).
 - **`mirror/structure/`를 쓰는데 아무도 안 읽는다** — 지우지 말 것. 증분 build를

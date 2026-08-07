@@ -34,7 +34,10 @@ def _cmd_doctor(args) -> int:
     print()
     if d.ok:
         key = d.spaces[0][0] if d.spaces else "SPACEKEY"
-        print(f"준비 완료. 다음: wikilens --root ~/wiki sync --space {key}")
+        # 볼트 경로는 **지금 쓰고 있는 값**을 그대로 보여준다. 예전에는 `~/wiki` 가
+        # 박혀 있어서, 래퍼를 거쳐 들어온 사용자(볼트가 `~/.wikilens/vault` 인)에게
+        # 엉뚱한 경로를 안내했다.
+        print(f"준비 완료. 다음: wikilens --root {args.root} sync --space {key}")
         return 0
     print("위 문제를 해결한 뒤 다시 실행하세요.")
     return 1
@@ -156,12 +159,28 @@ def _cmd_stats(args) -> int:
     return 0
 
 
+def _add_root(parser) -> None:
+    """
+    `--root` 를 서브커맨드 **뒤에도** 허용한다.
+
+    최상위 파서에만 두면 `wikilens sync --root ~/wiki` 가 파싱 에러다. 자연스러운 순서가
+    거부되는 것이라 문서 세 곳이 "반드시 서브커맨드 앞에" 를 경고하고 있었는데,
+    경고를 복제하는 것보다 양쪽을 받는 편이 싸다.
+
+    `SUPPRESS` 가 필수다 — 기본값을 두면 서브파서가 최상위에서 이미 받은 값을
+    **덮어써서** 앞에 준 `--root` 가 조용히 무시된다.
+    """
+    parser.add_argument("--root", default=argparse.SUPPRESS,
+                        help="볼트 루트 (최상위에도 줄 수 있습니다)")
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="wikilens",
         description="Confluence 위키를 로컬 마크다운으로 미러링하고 별칭 색인을 만듭니다.",
     )
-    p.add_argument("--root", default=".", help="볼트 루트 (기본: 현재 디렉터리)")
+    p.add_argument("--root", default=".", help="볼트 루트 (기본: 현재 디렉터리). "
+                                               "서브커맨드 앞뒤 어디에 와도 됩니다")
     p.add_argument("-v", "--verbose", action="store_true")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -184,6 +203,9 @@ def main(argv: list[str] | None = None) -> int:
 
     st = sub.add_parser("stats", help="볼트 통계 — 어휘 격차와 고아 문서")
     st.set_defaults(func=_cmd_stats)
+
+    for parser in (s, dr, b, st):
+        _add_root(parser)
 
     args = p.parse_args(argv)
     return args.func(args)

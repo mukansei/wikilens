@@ -5,6 +5,7 @@ import dev.wikilens.acl.AclRegistry
 import dev.wikilens.config.WikiLensProperties
 import dev.wikilens.index.IndexedPage
 import dev.wikilens.index.LuceneIndex
+import dev.wikilens.vault.VaultLocator
 import dev.wikilens.vault.VaultLayout
 import java.nio.file.Files
 import java.nio.file.Path
@@ -41,7 +42,7 @@ class ContentServiceTest {
         vault = createTempDirectory("content-svc-vault")
         index = LuceneIndex(createTempDirectory("content-svc-idx"))
         acl = AclRegistry()
-        svc = ContentService(acl, index, WikiLensProperties(vaultRoot = vault.toString()))
+        svc = ContentService(acl, index, VaultLocator(WikiLensProperties(vaultRoot = vault.toString())))
 
         write("1", "공개 문서", "첫 줄 APPLE\n둘째 줄\n셋째 줄 APPLE\n", listOf("@public"))
         write("2", "기밀 문서", "APPLE 이 여기도 있다\n", listOf("@secret"))

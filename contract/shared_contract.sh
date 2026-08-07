@@ -291,6 +291,54 @@ check "자격증명 파일 경로가 세 곳에서 같음 (~/.wikilens/env.sh)" 
    && grep -q "^ENV_PATH = CONFIG_DIR / \"env.sh\"" plugin/local/scripts/vault_status.py \
    && grep -q "HOME/.wikilens/env.sh" plugin/local/scripts/wikilens_cli.sh'
 
+# `~/.wikilens/config.json` 의 볼트 키를 이제 **세 언어가** 읽는다 — Python 진단·설정
+# (`vault_status.py`), Python setup(`setup_vault.py`), Kotlin 서버(`UserConfig.kt`).
+# 서버가 읽는 이유는 심링크를 손으로 만드는 단계를 없애기 위해서다. 문자열로만
+# 이어져 있어 키가 갈리면 **예외 없이 폴백만 조용히 멈추고**, 증상은 "볼트가 비었다"로
+# 나타나 원인이 설정 키에 있다는 걸 알 방법이 없다.
+check "볼트 설정 키가 세 곳에서 같음 (config.json 의 \"vault\")" \
+  'grep -q "cfg.get(\"vault\")" plugin/local/scripts/vault_status.py \
+   && grep -q "cfg\[\"vault\"\] = str(vault)" plugin/local/scripts/setup_vault.py \
+   && grep -q "VAULT_KEY = \"vault\"" server/src/main/kotlin/dev/wikilens/config/UserConfig.kt'
+
+# 폴백이 걸리는지 판단하려면 "사용자가 값을 줬는가"를 알아야 하는데 Spring 은 기본값과
+# 명시값을 구분해주지 않는다. 상수와 yml 이 갈리면 **명시로 준 기본 경로가 폴백을 타서**
+# 오타를 조용히 덮는다 — 명시가 이긴다는 규칙이 뒤집힌다.
+# 색인(`IndexingService`)과 읽기(`ContentService`)가 각자 볼트를 풀던 시절, 후자는
+# `toAbsolutePath()` 조차 안 걸어 실행 디렉터리에 매달려 있었다. 폴백이 들어오자 갈림이
+# 결정적이 됐다 — 실측: 문서 3건 색인·검색 정상인데 **read 는 전부 404**.
+check "볼트 경로 해석처가 한 곳 (VaultLocator — 갈리면 검색은 되고 읽기만 404)" \
+  '[ "$(grep -rl "props\.vaultRoot" server/src/main/kotlin | wc -l | tr -d " ")" = "1" ] \
+   && grep -q "props.vaultRoot" server/src/main/kotlin/dev/wikilens/vault/VaultLocator.kt \
+   && grep -q "locator.root" server/src/main/kotlin/dev/wikilens/service/ContentService.kt \
+   && grep -q "locator.root" server/src/main/kotlin/dev/wikilens/service/IndexingService.kt'
+
+check "서버 볼트 기본값이 상수와 application.yml 에서 같음 (폴백 판정 근거)" \
+  'grep -q "DEFAULT_VAULT_ROOT = \"./mirror-root\"" server/src/main/kotlin/dev/wikilens/config/WikiLensProperties.kt \
+   && grep -q "^  vault-root: ./mirror-root$" server/src/main/resources/application.yml'
+
+# CLI 위치를 정해진 자리 하나로 고정한 뒤로 "설치했는데 어디 있는지 찾는" 단계가 없어졌다.
+# 되돌아오면 그 자리를 아는 곳이 둘이 되어(`vault_status` 와 문서) 조용히 갈린다.
+check "CLI 설치 자리가 코드와 문서에서 같음 (~/.wikilens/venv)" \
+  'grep -q "^VENV_CLI = CONFIG_DIR / \"venv\" / \"bin\" / \"wikilens\"" plugin/local/scripts/vault_status.py \
+   && grep -q "wikilens/venv" plugin/local/references/setup.md \
+   && ! grep -q "cli-path auto" plugin/local/references/setup.md'
+
+# 서버판의 설정 경로가 "JSON 을 손으로 쓰기" 하나뿐이면 오타가 조용히 기본값(localhost)이
+# 되고, 사용자 눈에는 "문서가 없다"로 보인다. --status 는 진단만 하고 고치지는 못했다.
+check "서버판에 설정 경로 있음 (--configure 가 config.json 을 병합해 씀)" \
+  'grep -q -- "--configure" plugin/client/mcp/wikilens_mcp.py \
+   && grep -q "cfg.update" plugin/client/mcp/wikilens_mcp.py \
+   && [ -f plugin/client/commands/setup.md ]'
+
+# `null`·`[]`·`"문자열"` 은 **유효한 JSON** 이라 파싱만 확인하면 통과한 뒤 `.get()` 에서
+# AttributeError 로 터진다. 로컬판은 진단 스크립트가 죽어 스킬이 traceback 을 받고(검색
+# 불가), 서버판은 모듈 최상단이라 **프록시가 기동 중 죽어 도구 4개가 사라진다.**
+# 손으로 고치는 파일이라 실제로 들어온다. 두 판이 같은 파일을 읽으므로 함께 검사한다.
+check "두 판 모두 dict 아닌 설정을 견딤 (유효한 JSON 이 곧 쓸 수 있는 설정은 아니다)" \
+  'grep -q "isinstance(cfg, dict)" plugin/local/scripts/vault_status.py \
+   && grep -q "isinstance(cfg, dict)" plugin/client/mcp/wikilens_mcp.py'
+
 
 echo
 if [ "$fail" -eq 0 ]; then

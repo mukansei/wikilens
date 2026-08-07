@@ -26,10 +26,20 @@ DEFAULT_SERVER = "http://127.0.0.1:8787"
 
 
 def _config() -> dict:
+    """
+    설정. **어떤 내용이 들어 있어도 dict 를 돌려준다.**
+
+    파싱만 확인하면 부족하다 — `null`·`[]`·`"문자열"` 은 유효한 JSON 이라 통과한 뒤
+    `_CFG.get(...)` 에서 `AttributeError` 가 난다. 이건 **모듈 최상단**에서 일어나므로
+    프록시가 기동 중 죽고 **도구 4개가 통째로 사라진다** — 사용자에게는 위키 검색이
+    없어진 것으로 보인다. 설정 오타가 플러그인 전체를 내리는 것은 과한 처벌이다
+    (`_timeout()` 이 같은 이유로 방어한다).
+    """
     try:
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
+    return cfg if isinstance(cfg, dict) else {}
 
 
 _CFG = _config()
@@ -130,7 +140,8 @@ def status() -> int:
         print(f"REACHABLE=no ({e})")
         if SERVER_ORIGIN == "default":
             print("\n서버 주소를 설정한 적이 없어 기본값(로컬)을 보고 있습니다.")
-            print(f"  운영자에게 받은 주소를 {CONFIG_PATH} 의 \"server\" 에 넣으세요.")
+            print("  운영자에게 받은 주소를 넣으세요:")
+            print(f"    python3 {pathlib.Path(__file__).name} --configure --server <주소> --user <본인 식별자>")
         return 2
 
     ok = True
@@ -178,9 +189,87 @@ def status() -> int:
         ok = False
 
     if not USER:
-        print(f"\nUSER 가 없어 모든 검색이 빈 결과가 됩니다. {CONFIG_PATH} 의 \"user\" 에 넣으세요.")
+        print("\nUSER 가 없어 모든 검색이 빈 결과가 됩니다:")
+        print(f"  python3 {pathlib.Path(__file__).name} --configure --user <본인 식별자>")
         return 2
     return 0 if ok else 2
+
+
+def configure(argv: list[str]) -> int:
+    """
+    설정을 **병합**해 기록한다. 서버판의 유일한 설정 경로가 "JSON 을 손으로 쓰기"였다.
+
+    그게 왜 문제냐면 실패가 조용하기 때문이다 — 키를 틀리거나 쉼표를 빠뜨리면
+    `_config()` 가 `{}` 로 떨어지고 서버 주소가 기본값(localhost)이 되어, 사용자 눈에는
+    **"문서가 없다"** 로 보인다. `--status` 는 그 상태를 진단만 할 뿐 고치지는 못했다.
+
+    **덮어쓰지 않고 병합한다.** 이 파일은 로컬판의 볼트 경로(`vault`)와 CLI 경로(`cli`)도
+    담는 공용 정본이라, 통째로 다시 쓰면 두 판을 같이 쓰는 사용자의 로컬판 설정이
+    사라진다(`setup_vault.py --capture-env` 가 env.sh 를 병합하는 것과 같은 이유).
+    """
+    keys = ("--server", "--user", "--timeout")
+    args = {}
+    it = iter(argv)
+    for a in it:
+        key, eq, inline = a.partition("=")          # `--server=URL` 도 받는다
+        if key not in keys:
+            continue
+        # `=` 가 있으면 그것이 값이다 — 비어 있어도 다음 토큰을 삼키면 안 된다.
+        val = inline if eq else next(it, "")
+        # **값을 빠뜨린 것을 값으로 삼으면 안 된다.** `--server --user me@corp` 는
+        # `server="--user"` 를 쓰고 user 를 통째로 잃는다 — 손으로 쓴 JSON 이 조용히
+        # 깨지는 것을 막으려는 도구가 스스로 그러면 안 된다.
+        if val.startswith("-"):
+            print(f"{key} 뒤에 값이 없습니다.", file=sys.stderr)
+            return 2
+        args[key.lstrip("-")] = val
+    if not args:
+        print("설정할 값이 없습니다. 예: --configure --server http://wikilens.corp:8787 "
+              "--user me@corp", file=sys.stderr)
+        return 2
+
+    # 스킴이 없으면 `urlopen` 이 `unknown url type` 으로 죽는다. 여기가 **유일한 쓰기
+    # 경로**라 여기서 막으면 그 오류가 아예 도달하지 않는다.
+    server = args.get("server", "")
+    if server and not server.startswith(("http://", "https://")):
+        print(f"서버 주소에 스킴이 없습니다: {server}\n"
+              f"  http:// 또는 https:// 를 붙이세요 (예: http://{server})", file=sys.stderr)
+        return 2
+
+    # **깨진 파일 위에 얹어 쓰면 원본이 통째로 사라진다.** `_config()` 는 파싱 실패를
+    # `{}` 로 돌려주므로, 그대로 저장하면 로컬판의 `vault`·`cli` 가 경고 없이 없어진다
+    # (실측: 쉼표 하나가 잘못된 파일에 `--configure` 한 번 → 둘 다 소실, 그런데 출력은
+    # "설정했습니다"). 이 파일은 사람이 손으로 고치는 파일이라 깨져 있는 것이 흔하다.
+    quarantined = ""
+    if CONFIG_PATH.exists():
+        try:
+            # dict 가 아니면 깨진 것과 같다 — 얹어 쓰면 원본이 사라진다.
+            if not isinstance(json.loads(CONFIG_PATH.read_text(encoding="utf-8")), dict):
+                raise ValueError
+        except (OSError, json.JSONDecodeError, ValueError):
+            import datetime
+            quarantined = f"{CONFIG_PATH}.bak-{datetime.datetime.now():%Y%m%d-%H%M%S}"
+            try:
+                CONFIG_PATH.replace(quarantined)
+            except OSError:
+                print(f"{CONFIG_PATH} 를 읽지도 옮기지도 못했습니다. 직접 고치세요.",
+                      file=sys.stderr)
+                return 2
+
+    cfg = _config()
+    cfg.update({k: v for k, v in args.items() if v})
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(
+        json.dumps(cfg, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    print(f"CONFIG={CONFIG_PATH}")
+    if quarantined:
+        print(f"경고: 기존 파일을 읽지 못해 {quarantined} 로 옮겼습니다.")
+        print("  그 안의 설정(로컬판 볼트 경로 등)은 새 파일에 없습니다 — 필요하면 손으로 옮기세요.")
+    for k in ("server", "user"):
+        print(f"{k.upper()}={cfg.get(k) or '(미설정)'}")
+    print("\n설정은 시작할 때 한 번 읽습니다 — **Claude Code 를 재시작**해야 반영됩니다.")
+    return 0
 
 
 def end_session() -> None:
@@ -396,11 +485,13 @@ def handle(msg: dict) -> None:
 
 
 def main() -> int:
+    if "--configure" in sys.argv:
+        return configure(sys.argv[sys.argv.index("--configure") + 1:])
     if "--status" in sys.argv:
         return status()
     if not USER:
-        print(f"본인 식별자가 필요합니다 (ACL). {CONFIG_PATH} 의 \"user\" 또는 "
-              "WIKILENS_USER 환경변수.", file=sys.stderr)
+        print("본인 식별자가 필요합니다 (ACL). --configure --user <식별자> 로 넣으세요.",
+              file=sys.stderr)
     # `for line in sys.stdin` 을 쓰면 안 된다. TextIOWrapper 의 read-ahead 버퍼가
     # 청크를 채울 때까지 블로킹해서 stdio 서버가 응답하지 못한다.
     # readline() 은 한 줄 단위로 즉시 반환한다.
