@@ -39,4 +39,31 @@ dependencies {
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
 }
 
-tasks.withType<Test> { useJUnitPlatform() }
+/**
+ * Lucene `MMapDirectory` 가 `posix_madvise` 를 FFM API 로 부른다
+ * (`org.apache.lucene.store.PosixNativeAccess`). Java 22 부터 네이티브 호출은
+ * "restricted" 라, 승인하지 않으면 기동할 때마다 경고 네 줄이 찍힌다.
+ *
+ * **성능 때문이 아니라 로그 때문에 켠다.** 차단돼도 Lucene 은 폴백한다 —
+ * `NativeAccess.getImplementation()` 이 `Optional` 이고, 실측으로
+ * `--illegal-native-access=deny` 에서도 색인 2,383건이 정상이었다
+ * (2,279ms 대 허용 시 2,171ms — 노이즈 수준). madvise 는 커널 readahead
+ * 힌트일 뿐이고 이 규모(색인 3MB)는 어차피 페이지 캐시에 들어간다.
+ *
+ * 그런데 이 프로젝트는 **기동 로그를 진단에 쓴다** — 볼트·색인·상태 경로,
+ * `궤적 N건 재생`, `기동 적재 완료` 를 눈으로 확인하는 구조다. 무해한 경고가
+ * 그 사이에 끼면 정작 봐야 할 줄을 가린다.
+ *
+ * `ALL-UNNAMED` 는 클래스패스 전체를 승인하는 넓은 범위다. 모듈로 나뉘어 있지
+ * 않아 더 좁힐 수단이 없다 — Lucene 만 지정하려면 모듈 경로로 옮겨야 한다.
+ */
+val nativeAccess = "--enable-native-access=ALL-UNNAMED"
+
+tasks.withType<Test> {
+    useJUnitPlatform()
+    jvmArgs(nativeAccess)
+}
+
+tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
+    jvmArgs(nativeAccess)
+}

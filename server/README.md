@@ -75,11 +75,22 @@ WARN  기존 궤적 로그가 없어 새로 시작합니다: … — 처음이�
 궤적은 유일한 복구 불가 자산입니다.
 
 ```bash
-java -jar wikilens-server.jar \
+java --enable-native-access=ALL-UNNAMED -jar wikilens-server.jar \
   --wikilens.vault-root=/srv/wikilens/mirror \
   --wikilens.index-dir=/srv/wikilens/index \
   --wikilens.state-dir=/srv/wikilens/state
 ```
+
+`--enable-native-access` 는 **로그를 위한 것이지 성능을 위한 것이 아닙니다.** Lucene
+`MMapDirectory` 가 `posix_madvise` 를 FFM API 로 부르는데(커널 readahead 힌트), Java 22
+부터 네이티브 호출이 "restricted" 라 승인하지 않으면 기동마다 경고 네 줄이 찍힙니다.
+빼도 동작합니다 — 실측으로 `--illegal-native-access=deny`(미래 JDK 동작) 에서도
+색인 2,383건이 정상이고 시간도 같습니다(2,279ms 대 2,171ms, 노이즈 수준). Lucene 이
+madvise 를 못 쓰면 그냥 안 씁니다.
+
+그런데 **이 로그가 진단 도구입니다** — 볼트·색인·상태 경로, `궤적 N건 재생`,
+`기동 적재 완료` 를 눈으로 확인하는 구조라, 무해한 경고가 그 사이를 가리면 곤란합니다.
+`bootRun` 과 `test` 는 `build.gradle.kts` 에서 이미 켜져 있습니다.
 
 기동 로그 첫 줄이 **실제로 쓰는 절대경로**를 찍습니다. systemd·cron 처럼 작업
 디렉터리를 못 믿는 환경에서는 이 줄부터 확인하세요:
@@ -232,7 +243,7 @@ RE2 기본은 구분이라, 맞춰주지 않으면 이 플래그가 문법뿐 �
 못 고르겠으면 `standard` 다.
 
 ```bash
-java -jar wikilens-server.jar --wikilens.analyzer=english
+java --enable-native-access=ALL-UNNAMED -jar wikilens-server.jar --wikilens.analyzer=english
 ```
 
 **설정은 "무엇으로 지을까"이지 "무엇으로 질의할까"가 아닙니다.** 질의는 항상 디스크
