@@ -47,6 +47,8 @@ class ReplayCompatTest {
         val store = TrajectoryStore(sink = sink, serveThreshold = 0.0)
         assertEquals(1, sink.replayInto(store), "성공한 줄만 세야 한다")
         assertEquals(1, store.stats()["trajectories"], "실패한 줄이 반영되면 안 된다")
+        // 재기동을 지켜보지 않은 운영자도 알아야 한다 — 로그만으로는 안 닿는다.
+        assertEquals(2, sink.status()["replaySkipped"], "버려진 줄이 밖으로 안 나간다")
     }
 
     /**
@@ -68,7 +70,7 @@ class ReplayCompatTest {
         store.onEnd("s1")
 
         assertEquals(1, sink.failures, "실패를 세지 않았다")
-        assertEquals(1, store.stats()["logWriteFailures"])
+        assertEquals(1, sink.status()["writeFailures"], "밖으로 나가지 않으면 아무도 모른다")
         assertEquals(1, store.stats()["trajectories"], "쓰기 실패로 학습까지 멈추면 안 된다")
     }
 }

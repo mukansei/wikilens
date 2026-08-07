@@ -20,7 +20,13 @@ class FileTrajectorySink(stateDir: Path, private val mapper: ObjectMapper) : Tra
     private val file: Path = stateDir.resolve("trajectories.jsonl")
 
     private val failed = java.util.concurrent.atomic.AtomicInteger()
-    override val failures: Int get() = failed.get()
+
+    /** 쓰기 실패 수. 0 이 아니면 메모리 학습만 앞서가는 중이다. */
+    val failures: Int get() = failed.get()
+
+    @Volatile private var replayed = 0
+    @Volatile private var skipped = 0
+    @Volatile private var replayMillis = 0L
 
     init {
         Files.createDirectories(stateDir)
@@ -59,6 +65,7 @@ class FileTrajectorySink(stateDir: Path, private val mapper: ObjectMapper) : Tra
             )
             return 0
         }
+        val started = System.nanoTime()
         var n = 0
         var bad = 0
         var firstError: String? = null
@@ -78,6 +85,9 @@ class FileTrajectorySink(stateDir: Path, private val mapper: ObjectMapper) : Tra
                     }
             }
         }
+        replayed = n
+        skipped = bad
+        replayMillis = (System.nanoTime() - started) / 1_000_000
         if (bad > 0) {
             log.error(
                 "궤적 {}건을 읽지 못해 건너뜁니다 (성공 {}건): {} — 스키마를 바꿨다면 " +
@@ -85,7 +95,44 @@ class FileTrajectorySink(stateDir: Path, private val mapper: ObjectMapper) : Tra
                 bad, n, firstError,
             )
         }
-        log.info("궤적 {}건 재생", n)
+        log.info("궤적 {}건 재생 ({}ms)", n, replayMillis)
+        // 로그는 append-only 라 **줄지 않는다.** 지금은 문제가 아니지만(측정: 100만 건이
+        // 210MB · 재생 5.3초 · 힙 80MB, 20명 팀이면 7년치) 아무도 안 보면 기동이 조용히
+        // 느려진다. 압축을 넣지 않은 대신 **보이게** 한다 — 근거는 `DECISIONS.md` D17.
+        if (replayMillis > SLOW_REPLAY_MILLIS) {
+            log.warn(
+                "궤적 재생이 {}ms 걸립니다({}건, {}MB) — 기동이 그만큼 늦어집니다. " +
+                    "체크포인트(포스팅 스냅샷 + 로그 절단)를 설계할 시점입니다. " +
+                    "**로그를 그냥 지우면 안 됩니다** — 학습 전체가 사라집니다.",
+                replayMillis, n, bytes() / 1024 / 1024,
+            )
+        }
         return n
+    }
+
+    /** 로그 파일 크기(바이트). 읽지 못하면 -1. */
+    fun bytes(): Long = runCatching { Files.size(file) }.getOrDefault(-1L)
+
+    /**
+     * `/api/stats` 로 나가는 로그 진단. **한 자리에 모은다** — 예전에는 쓰기 실패만
+     * `TrajectorySink` 인터페이스에 얹어 `TrajectoryStore` 가 중계했는데, 재생 쪽
+     * 진단이 늘자 쓰기 경계가 읽기 일까지 알게 됐다. 이건 파일 싱크 고유의 일이다.
+     */
+    fun status(): Map<String, Any?> = linkedMapOf(
+        "bytes" to bytes(),
+        "replayed" to replayed,
+        // 0 이 아니면 **옛 궤적이 버려지는 중**이다 (대개 스키마 변경).
+        "replaySkipped" to skipped,
+        "replayMillis" to replayMillis,
+        // 0 이 아니면 메모리 학습만 앞서가는 중이다 — 재기동하면 그만큼 사라진다.
+        "writeFailures" to failures,
+    )
+
+    companion object {
+        /**
+         * 이 시간을 넘으면 경고한다. 실측(2026-08-08)에서 100만 건이 5.3초였으므로
+         * 대략 200만 건에 해당한다 — 기동이 10초 넘게 멈추면 사람이 알아차린다.
+         */
+        const val SLOW_REPLAY_MILLIS = 10_000L
     }
 }
