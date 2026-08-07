@@ -55,8 +55,8 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 | `ancestors` 스키마 (id/title 목록) | `sync.py` ↔ `VaultReader.readAncestors` | 서버 트리가 조용히 평평해짐 |
 | 빌드 멱등성 (2회 실행 = 바이트 동일) | `tests/test_build.py` | 무효화 폭풍 |
 | 항 단위 포스팅 (키워드 **집합** 아님) | `TrajectoryStore` | 표현이 다르면 카운트 분산 |
-| 사전확률 클램프 `[0.05, 0.85]` | `Reliability.PRIOR_CEIL` | 1관측에 신뢰도 1.0 |
-| `LOCALIZATION`만 간선 생성 | `Gate.classify` | 경로 의존 질의에 틀린 답 |
+| 사전확률 클램프 `[0.05, 0.85]` | `learn/Reliability.kt` | 1관측에 신뢰도 1.0 |
+| `LOCALIZATION`만 간선 생성 | `learn/Gate.kt` | 경로 의존 질의에 틀린 답 |
 | 질의 분석기는 **색인 기록**을 따름 (설정 아님) | `LuceneIndex.swap` ↔ `ANALYZER_KEY` | **검색이 에러 없이 0건** |
 | 자격증명 파일 경로가 세 곳에서 같음 | `credentials.py` · `vault_status.py` · `wikilens_cli.sh` | CLI 는 읽는데 진단은 "없다" |
 | 권한 없음은 **404** (403 아님) | `Controller.read` | 문서 존재가 유출됨 |
@@ -181,6 +181,11 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
   서버는 `Re2.CASE_INSENSITIVE`). 한국어 문서에 영문 고유명사가 섞여 있어 사용자가 어떤
   표기로 칠지 알 수 없다 — 실측: `coway` 가 구분 17건 · 무시 48건. 한쪽만 되돌리면
   **판을 옮긴 사용자가 같은 질의에 다른 답을 받는다.** 계약이 둘을 함께 검사한다.
+- **한 파일에 한 선언이다** — Kotlin 공식 스타일은 "밀접하면 한 파일에 둬도 좋다"지만,
+  이 저장소는 **파일명으로 찾는 쪽**을 택했다. 대가는 파일 수(15 → 46)이고,
+  얻는 것은 `Gate` 를 고치려는 사람이 `Scoring.kt` 를 열지 않아도 되는 것이다.
+  **계약이 파일 경로를 grep 하므로 파일을 나눌 때 계약도 함께 고쳐야 한다** —
+  실제로 이 분할에서 셋이 깨졌다(`Scoring.kt` 소멸).
 - **`api/` 와 `service/` 가 나뉘어 있다** — `api/` 는 HTTP 표면(Controller·Dto)이고
   서비스는 `service/` 다. 다만 **Dto 는 `api/` 에 남아 서비스가 그대로 반환한다** —
   타입이 넷뿐이라 매핑 층은 얻는 것 없이 코드만 두 배가 되고, 이 서비스들은 HTTP 말고
