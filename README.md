@@ -1,8 +1,12 @@
 # WikiLens
 
-Confluence 위키를 로컬 마크다운으로 미러링하고, **다른 문서들이 각 페이지를 실제로
-부르는 이름**(앵커 텍스트)을 색인해 어휘 격차를 메웁니다.
-그 위에 에이전트 탐색 궤적을 축적하는 학습 레이어를 선택적으로 얹습니다.
+**사내 위키를 "사람들이 실제로 부르는 이름"으로 찾습니다.**
+
+문서 제목은 `OAuth 2.0 인가 코드 흐름`인데 다들 "로그인 붙이는 법"이라고 부릅니다.
+그 표현은 제목에도 본문에도 없어서, 보통의 검색으로는 못 찾습니다.
+
+WikiLens 는 **다른 문서들이 그 페이지를 링크할 때 쓴 표현**(앵커 텍스트)을 모아
+대상 기준으로 뒤집어 색인합니다:
 
 ```console
 $ grep "로그인" ALIASES.md
@@ -12,171 +16,94 @@ PLATFORM | OAuth 2.0 인가 코드 흐름 | 로그인 붙이는 법 · 인증 �
 본문만 뒤졌다면 **엉뚱한 문서**가 나옵니다 — 그 표현으로 *링크한* 온보딩 페이지지,
 찾으려는 문서가 아닙니다. 이 차이가 이 프로젝트의 출발점입니다.
 
-> **이 문서는 만드는 사람을 위한 것입니다.** 설치해서 쓰기만 한다면
-> [로컬판 안내](plugin/local/README.md) 또는 [서버판 안내](plugin/client/README.md)를 보세요.
-
-## 적용 범위
-
-**특정 회사에 묶여 있지 않습니다.** Confluence **Cloud** 와 **Server/Data Center**
-양쪽에 붙습니다 — `doctor` 가 `/rest/api` 응답으로 배포 형태를 판별하고
-(Cloud 는 `/wiki` 접두사, Server/DC 는 없음), 자동 판별이 게이트웨이 구성에 속으면
-`CONFLUENCE_PREFIX` 로 강제할 수 있습니다. 인증은 넷을 지원합니다: Server/DC PAT,
-Cloud API 토큰(이메일 + 토큰), 사내 IAM OAuth2, 리버스 프록시 헤더 주입.
-Confluence 고유 개념에만 의존하므로(`ac:link` storage format, `ancestors`, CQL)
-어느 조직의 인스턴스든 같은 코드가 돕니다.
-
-**언어는 하나만 특정합니다 — 한국어.** 서버판이 Lucene **Nori** 형태소 분석기를
-고정해 씁니다(`LuceneIndex`). 교착어라 조사가 붙어서 형태소 분석 없이는 BM25 가
-무너지는데, 그것이 서버를 JVM 으로 고른 유일한 이유입니다. 로컬판은 grep 이라
-언어와 무관합니다.
-
-**Nori 는 영문을 깨뜨리지 않습니다 — 어간만 못 줄입니다.** 실측:
-
-```
-"OAuth 2.0 authorization code flow"  →  [oauth, 2, 0, authorization, code, flow]
-"배포 파이프라인을 Jenkins 로 구성했습니다"  →  [배포, 파이프라인, jenkins, 구성]
-```
-
-영문도 공백·구두점으로 잘리고 소문자화되며, 섞여 있어도 한국어 쪽 조사 제거가
-정상 동작합니다. 그래서 **한국어 문서에 영문 고유명사·식별자가 섞인 코퍼스**
-(이 도구가 만들어진 환경)에서는 문제가 안 됩니다 — `Jenkins`·`DEPLOY_TOKEN` 처럼
-굴절하지 않는 말이기 때문입니다.
-
-빠지는 것은 **굴절 처리**입니다. 문서가 `production servers` 인데 질의가
-`production server` 면 Nori 는 못 찾습니다 — 굴절 쌍 5개 중 **Nori 0 · EnglishAnalyzer 5**
-였습니다. 불용어도 안 걸러집니다(`the deploy to a server` → Nori 5토큰 · English 2토큰).
-**영어가 주된 코퍼스라면 색인할 때 분석기를 지정하세요:**
-
-```bash
-java --enable-native-access=ALL-UNNAMED -jar wikilens-server.jar --wikilens.analyzer=english   # korean(기본) · english · standard
-```
-
-**설정은 "무엇으로 지을까"이고, 질의는 색인이 실제로 지어진 분석기를 씁니다.** 선택이
-Lucene 커밋 데이터에 기록되고 서버가 그것을 읽어 쓰므로, 설정을 바꿔도 재색인 전까지는
-**옛 분석기로 정상 동작**합니다. 둘은 재색인에서 만납니다:
-
-```
-색인은 'korean' 로 지어졌고 설정은 'english' 입니다. 검색은 'korean' 로 정상 동작합니다 —
-설정을 적용하려면 POST /api/admin/reindex 로 다시 지으세요.
-```
-
-기록을 안 쓰고 설정을 따라가면 그 사이가 **에러 없이 0건**이 됩니다. 이 프로젝트가
-겪은 대표적 실패라, 경고로 재는 대신 **불일치가 성립하지 않게** 만들었습니다.
-
-이름을 잘못 적으면 조용히 기본값으로 떨어지지 않고 **기동이 실패합니다** —
-오타가 "검색이 0건" 의 원인이 되면 그때는 설정이 아니라 색인을 의심하게 되기 때문입니다.
-
-학습 궤적도 함께 봐야 합니다. `trajectories.jsonl` 에는 **분석된 항**이 저장돼 있어서,
-분석기를 바꾸면 옛 항과 새 질의가 안 맞아 그만큼 학습이 무효가 됩니다. 궤적은 유일한
-복구 불가 자산이라 지우지는 않습니다.
-
-빠지는 것이 한국어에서 조사를 못 떼는 것과 **같은 종류의 실패**라는 점이 중요합니다.
-Nori 를 쓰는 이유가 정확히 그것이므로, 영어 코퍼스에 Nori 를 쓰는 것은
-한국어 코퍼스에 표준 분석기를 쓰는 것과 대칭입니다.
-
-> 저장소 곳곳의 `Acme 2,383건` 같은 표기는 **측정 출처 라벨**입니다. 이 도구가
-> 그 회사 전용이라는 뜻이 아니라, 그 수치가 어느 코퍼스에서 나왔는지 밝히는 것입니다
-> ([측정된 것 vs 가정한 것](#측정-지표-우선순위-순) 참고). 배포되는 플러그인·CLI 에는
-> 회사 고유값이 없습니다.
+Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** "우리 회사 배포 절차 문서
+어디 있어?" 라고 물어볼 수 있습니다.
 
 ---
 
-## 구성
+## 어느 것을 쓰나요
 
-| 경로 | 내용 | 언어 | 상태 |
-|---|---|---|---|
-| **`cli/`** | Confluence 싱크 · 앵커 전치 · 로컬판 | Python | pytest |
-| **`server/`** | Lucene/Nori 색인 · 학습 레이어 | Kotlin | JUnit · 배선 검증됨(Acme 실데이터) |
-| **`plugin/local/`** | 스킬 + 커맨드 2개 + [사용 안내](plugin/local/README.md) | Python | 테스트는 `plugin/tests/` (배포 밖) |
-| **`plugin/client/`** | MCP 도구 4개 + 스킬 + [사용 안내](plugin/client/README.md) | Python | 프록시 테스트 (별도 실행) |
-| `.claude-plugin/` | 마켓플레이스 매니페스트 (조직 배포용) | — | — |
-| `docs/` | 아키텍처 · 임베딩 설계 제안 | — | — |
-| `DECISIONS.md` | 뒤집힌 결정과 지우면 안 되는 것들 — 되돌리기 전에 읽으세요 | — | — |
+두 가지 배포 형태가 있습니다. **업그레이드 경로가 아니라 서로 다른 물건입니다.**
 
----
-
-## 두 판은 증분이 아니라 전환입니다
-
-| | 로컬판 | 서버판 |
+| | **로컬판** | **서버판** |
 |---|---|---|
-| 코퍼스 | 클라이언트 (~1GB) | **서버** |
-| 클라이언트 저장소 | 볼트 전체 | **0** |
-| 검색 | grep + 별칭 색인 | BM25 + Nori + 앵커 + 학습 |
-| 인터페이스 | 스킬 | **MCP 도구 4개** |
-| ACL | 개인 토큰 (자동) | 질의 시점 (**취소 가능**) |
-| 궤적 관측 | 없음 | 서버가 직접 |
+| 누구에게 | 혼자 · 소규모 팀 | 팀 배포 |
+| 준비 | 각자 5분 싱크 | 관리자가 서버 운영 |
+| 코퍼스 | 내 노트북 (수십 MB) | 서버 |
+| 검색 | grep + 별칭 색인 | BM25 + 형태소 분석 + 학습 |
+| 권한 | 내 토큰 = 내 범위 (**자동**) | 서버가 요청마다 확인 |
 | 오프라인 | 가능 | 불가 |
+| 학습 | 없음 | 팀의 탐색 이력이 쌓임 |
 
-서버판이 볼트를 배포하지 않는 이유는 **배포된 사본을 회수할 수 없기** 때문입니다.
-사용자가 팀에서 나가도 노트북의 볼트에는 전체 사본이 남습니다.
-서버가 서빙하면 권한 취소가 즉시 반영되고, 부수적으로 훅도 불필요해집니다 —
-읽기가 서버를 거치므로 서버가 궤적을 직접 관측합니다.
+**지금 팀에 배포한다면 로컬판입니다.** 서버판은 ACL 수집 전까지 제3자를 붙이면 안 됩니다
+(→ [미해결](#미해결)). 대가는 Confluence 부하가 사용자 수에 비례하는 것이라
+소규모 팀에 한합니다.
 
-1인 사용은 로컬판, 팀 배포는 서버판. **업그레이드 경로가 아니라 다른 배포 형태입니다.**
+설치해서 쓰기만 한다면 여기서 멈추고 사용 안내로 가세요 —
+[**로컬판**](plugin/local/README.md) · [**서버판**](plugin/client/README.md).
+아래부터는 만드는 사람을 위한 것입니다.
 
-## 단계별 경로
+---
 
-의도적으로 **실패해도 산출물이 남는** 순서입니다.
+## 어떻게 동작하나
 
-### 1단계 — 로컬판 (며칠)
+```
+Confluence ──sync──▶  볼트(파일)  ──┬──▶ 로컬판: 스킬이 직접 grep
+            (Python)                └──▶ 서버판: Lucene 색인 + 학습
+```
 
-서버 없음. 파일과 grep만 씁니다.
+**볼트를 만드는 것은 언제나 `cli` 하나**입니다. 서버는 Confluence 를 크롤하지 않고
+그 결과를 읽기만 합니다.
+
+```
+① sync    Confluence ──CQL──▶ mirror/raw/{id뒤2}/{id}.xhtml   원본 XHTML (무손실)
+                              mirror/.sync-state.json          cursor · version · ancestors
+
+② build   raw 를 파싱 ──▶ mirror/pages/   마크다운
+          링크를 전치  ──▶ ALIASES.md     "이 페이지를 뭐라고 부르나"  ← 핵심 산출물
+                          TREE.md        부모-자식 계층 (고아 문서용)
+
+③ 검색    로컬판: ALIASES.md → TREE.md → 본문 순으로 grep
+          서버판: Nori 형태소 분석 → BM25(앵커4 : 제목3 : 본문1) + 학습 힌트 융합
+```
+
+`sync` 와 `build` 를 나눈 이유는 **제목→ID 해석 완전성**입니다. Confluence 링크는 대개
+제목으로 대상을 가리키는데, 전부 받은 뒤 한 번에 파싱해야 해석이 완전해집니다(실측 94%).
+
+서버판은 여기에 **학습 레이어**를 얹습니다 — 검색하고 읽은 궤적이 쌓여, 남들이 같은
+질문으로 찾아간 문서가 위로 올라옵니다. 훅은 없습니다. 읽기가 서버를 거치므로
+서버가 궤적을 직접 관측합니다.
+
+---
+
+## 시작하기
+
+### 로컬판 — 5분
 
 ```bash
 cd cli && pip install -e .
-```
 
-**자격증명은 `~/.wikilens/env.sh`(권한 600)에 둡니다** — `export` 가 아니라. `export` 는
-그 셸에서만 살아서, Claude Code 를 앱으로 띄우면 없는 것과 같습니다. 실제로 그것 때문에
-**검색은 되는데 `sync` 만 조용히 죽는** 상태를 오래 겪었습니다(D10).
-
-```bash
-mkdir -p ~/.wikilens
+mkdir -p ~/.wikilens && chmod 700 ~/.wikilens
 cat > ~/.wikilens/env.sh <<'EOF'
 export CONFLUENCE_URL=https://confluence.mycompany.com
-export CONFLUENCE_TOKEN=<PAT>                  # Server/DC — SSO 써도 대개 이게 동작
-# export CONFLUENCE_EMAIL=me@corp              #   + Cloud API 토큰이면 이메일 추가
-# export IAM_TOKEN_URL=... IAM_CLIENT_ID=...   #   사내 IAM OAuth2
-# export CONFLUENCE_HEADERS='X-Forwarded-User: me@corp'   # 리버스 프록시
+export CONFLUENCE_TOKEN=<개인 액세스 토큰>
 EOF
 chmod 600 ~/.wikilens/env.sh
-source ~/.wikilens/env.sh
 
-wikilens doctor                            # 먼저 이것부터
-wikilens --root ~/wiki sync --space PLATFORM
+wikilens doctor                                # 연결·인증·스페이스 확인
+wikilens --root ~/wiki sync --space PLATFORM   # 수 분 걸립니다
 wikilens --root ~/wiki stats
 ```
 
-플러그인을 설치했다면 이 파일을 손으로 만들 필요가 없습니다 — `/wikilens-local:setup` 이
-만들어 줍니다. 이미 셸에 `export` 해뒀다면
-`plugin/local/scripts/setup_vault.py --capture-env` 가 값을 화면에 찍지 않고 그대로 옮깁니다.
+**자격증명은 `export` 가 아니라 파일에 둡니다.** `export` 는 그 셸에서만 살아서
+Claude Code 를 앱으로 띄우면 없는 것과 같고, 실제로 **검색은 되는데 `sync` 만 조용히
+죽는** 상태를 오래 겪었습니다(→ `DECISIONS.md` D10). CLI 는 환경변수가 없으면
+이 파일을 읽습니다 — cron 에서도 그냥 동작합니다.
 
-`doctor`가 배포 형태(Cloud/Server·경로 접두사), 인증 방식, 접근 가능한 스페이스,
-본문 확장 가능 여부를 실행 전에 확인합니다. 여기서 막히면 `sync`는 어차피 실패합니다.
+**여기서 판단하세요.** `stats` 가 "제목과 어휘가 안 겹치는 별칭을 가진 페이지" 비율을
+냅니다. **낮으면 어휘 격차가 없다는 뜻이고, 이 도구 전체가 값어치가 없습니다.**
 
-**SSO 환경이면** — 대부분의 Confluence는 SSO(브라우저 로그인)와 별개로 토큰 인증을
-허용합니다. Server/DC의 PAT를 **먼저 시도해 보세요.** 그것이 막혀 있을 때만
-IAM OAuth2가 필요합니다. 인증 계층은 `cli/wikilens/auth.py` 한 곳에 격리돼 있어
-새 방식이 필요하면 거기만 고치면 됩니다 — `build`와 서버는 Confluence를 모릅니다.
-
-**`doctor`가 배포 형태를 잘못 판별하면** — `detect_prefix()`는 `/rest/api/space`가
-열려있는지로 Cloud(`/wiki`)와 Server/DC(빈 접두사)를 자동 판별합니다. 실제로
-사내 리버스 프록시가 `/space`만 허용하고 그 아래 다른 엔드포인트는 로그인
-페이지로 리다이렉트하는 구성을 겪은 적이 있어, 한 엔드포인트만 더 검증하도록
-고쳤습니다. 그래도 회사마다 게이트웨이 구성이 다 달라서 자동판별이 또 속을
-수 있습니다 — 그럴 땐 직접 지정하세요(`env.sh` 에 넣거나 일회성으로):
-```bash
-export CONFLUENCE_PREFIX=""      # Server/DC 강제 (자동판별 건너뜀)
-# export CONFLUENCE_PREFIX="/wiki"   # Cloud 강제
-```
-**첫 번째로 의심할 자리는 아닙니다.** 이중 검증을 넣은 뒤로는 강제 지정 없이 동작하는
-것을 실측했습니다(2026-08-06, Acme DC).
-
-**여기서 판단하세요.** `stats`가 "제목과 다른 별칭을 가진 페이지" 비율을 냅니다.
-낮으면 어휘 격차가 없다는 뜻이고 **이 프로젝트 전체가 값어치가 없습니다.**
-
-플러그인을 설치하면 **어느 프로젝트에서든** 볼트를 검색할 수 있습니다
-(MCP도 훅도 불필요 — 파일 읽기와 grep만 씁니다):
+플러그인을 설치하면 어느 프로젝트에서든 볼트를 검색할 수 있습니다:
 
 ```
 /plugin marketplace add ./
@@ -184,37 +111,38 @@ export CONFLUENCE_PREFIX=""      # Server/DC 강제 (자동판별 건너뜀)
 /wikilens-local:setup
 ```
 
-`setup` 이 볼트 위치를 `~/.wikilens/config.json` 에 기록합니다. **이미 볼트가 있으면
-옮길 필요 없이 그 경로를 등록**하면 됩니다. 갱신은 `/wikilens-local:sync`.
+`setup` 이 위 과정을 대신해 줍니다 — 자격증명 파일, 볼트 위치(`~/.wikilens/config.json`),
+CLI 경로, 첫 싱크까지. **이미 볼트가 있으면 옮기지 말고 그 경로를 등록**하면 됩니다.
 
-볼트는 프로젝트 밖에 있으므로, 등록하지 않으면 프로젝트마다 읽기 승인을 다시 받습니다.
-`setup` 이 마지막에 `~/.claude/settings.json` 등록 여부를 묻습니다(전역 설정 변경이라
-승낙해야만 씁니다).
+<details>
+<summary><b>인증이 안 되면</b> — SSO · 게이트웨이 · 접두사 자동판별</summary>
 
-### 2단계 — 궤적 관측만 (몇 주)
+**SSO 환경이어도 대개 PAT 가 따로 동작합니다.** Server/DC 의 PAT 를 먼저 시도하세요.
+그것이 막혀 있을 때만 IAM OAuth2 가 필요합니다. 인증은 넷을 지원하고
+(`CONFLUENCE_TOKEN` PAT · Cloud API 토큰 + `CONFLUENCE_EMAIL` · 사내 IAM OAuth2 ·
+리버스 프록시 헤더 주입) 전부 `cli/wikilens/auth.py` 한 곳에 격리돼 있습니다.
 
-랭킹 결과에 반영하기 전에, 실제 서버를 로컬에서 혼자 띄워 궤적이 실제로
-쌓이는지만 먼저 봅니다. 3단계와 같은 서버지만 팀 배포(플러그인 설치) 없이
-혼자 써보는 단계입니다:
+**배포 형태를 잘못 판별하면** — `detect_prefix()` 가 Cloud(`/wiki`)와 Server/DC(빈 접두사)를
+자동 판별합니다. 사내 리버스 프록시가 일부 엔드포인트만 허용하는 구성에 속은 적이 있어
+이중 검증을 넣었지만, 게이트웨이 구성은 회사마다 달라 또 속을 수 있습니다:
 
 ```bash
-cd server && ./gradlew bootRun
-curl -XPOST localhost:8787/api/admin/reindex
+export CONFLUENCE_PREFIX=""        # Server/DC 강제
+# export CONFLUENCE_PREFIX="/wiki" # Cloud 강제
 ```
 
-`curl -X POST localhost:8787/api/search -d '{"query":"...", "userKey":"me", "sessionId":"t1"}'`
-로 직접 질의해보면서 `/api/stats`의 `trajectories`·`termPagePairs`가 느는지 확인하세요.
+**첫 번째로 의심할 자리는 아닙니다** — 이중 검증 이후로는 강제 지정 없이 동작하는 것을
+실측했습니다(2026-08-06). 자격증명이 파일에 제대로 있는지를 먼저 보세요.
 
-측정할 것: **비링크 도달 비율**과 질의 중복률. 낮으면 3단계로 가지 마세요.
+</details>
 
-### 3단계 — 프로덕션 서버 (몇 주)
+### 서버판 — 운영자
 
 ```bash
 # 서비스 계정으로 1회 싱크 (사용자별 싱크 없음 → Confluence 부하 1배)
 CONFLUENCE_TOKEN=<서비스계정> wikilens --root ./mirror-root sync --space PLATFORM
 
-cd server && ./gradlew bootRun
-curl -XPOST localhost:8787/api/admin/reindex
+cd server && ./gradlew bootRun          # 기동 시 자동으로 전량 색인
 ```
 
 사용자는 볼트를 받지 않습니다. MCP 플러그인만 설치하고 `~/.wikilens/config.json` 에
@@ -224,118 +152,158 @@ curl -XPOST localhost:8787/api/admin/reindex
 { "server": "http://wikilens.corp:8787", "user": "alice@corp" }
 ```
 ```
-/plugin marketplace add ./          # 또는 팀 배포 시 저장소의 git URL
 /plugin install wikilens-client@wikilens
-/reload-plugins
 ```
 
-`WIKILENS_SERVER`·`WIKILENS_USER` 환경변수로도 되고 파일보다 우선하지만, **그 셸에서만
-유지됩니다** — 앱으로 띄우면 비어서 전 결과가 빕니다. `user` 가 없으면 서버가 요청자를
-식별하지 못해 **결과가 항상 빈손**인데, 그게 "문서가 없다"처럼 보입니다(D10).
+**`user` 를 빼면 서버가 요청자를 식별하지 못해 결과가 항상 빕니다** — 그게 "문서가 없다"
+처럼 보입니다. 배포·운영 절차는 [`server/README.md`](server/README.md) 에 있습니다
+(cron 자동화, ACL 등록, 분석기 선택, 백업 대상).
 
-**매니페스트는 반드시 저장소 루트의 `.claude-plugin/marketplace.json` 이어야 합니다.**
-하위 디렉터리(`marketplace/.claude-plugin/…`)에 두고 그 경로를 `add` 하면 등록은 되지만
-설치가 `"source type your Claude Code version does not support"` 로 실패합니다 —
-플러그인 `source` 의 상대 경로가 기대와 다르게 해석되기 때문입니다(2026-08-04 실측,
-Claude Code 2.1.220). 루트에 두면 `source` 가 `./plugin/client` 처럼 하위 경로여도
-정상 동작합니다.
+### 사이에 한 단계를 두세요
 
-`source` 가 `plugin/client`·`plugin/local` 을 직접 가리키므로 **저장소 안에는** 사본이
-없습니다. 다만 **설치는 버전별 캐시로 복사**되므로, 플러그인을 고쳐도 이미 설치된 것에는
-자동 반영되지 않습니다(실측). 고친 뒤에는 재설치하거나 version 을 올려야 합니다.
+로컬판에서 서버판으로 바로 가지 마세요. 팀에 배포하기 전에 **서버를 혼자 띄워
+궤적이 실제로 쌓이는지만** 먼저 봅니다 — 3단계와 같은 서버지만 플러그인 배포가 없습니다:
+
+```bash
+cd server && ./gradlew bootRun
+curl -XPOST localhost:8787/api/search -H 'Content-Type: application/json' \
+  -d '{"query":"...","userKey":"me","sessionId":"t1"}'
+curl localhost:8787/api/stats     # trajectories · termPagePairs 가 느는지
+```
+
+**측정할 것: 비링크 도달 비율과 질의 중복률.** 낮으면 학습 레이어가 링크 그래프의
+복사본으로 퇴화하는 중이라 배포해봐야 얻는 게 없습니다.
+
+이 순서는 의도적으로 **실패해도 산출물이 남게** 짜여 있습니다 — 1단계에서 멈춰도
+볼트와 별칭 색인은 그대로 쓸 수 있습니다.
+
+---
+
+## 저장소 구조
+
+| 경로 | 내용 | 언어 |
+|---|---|---|
+| **`cli/`** | Confluence 싱크 · 파싱 · 앵커 전치 — **볼트를 만드는 유일한 곳** | Python |
+| **`server/`** | Lucene/Nori 색인 · 학습 레이어 · HTTP API | Kotlin |
+| **`plugin/local/`** | 스킬 + 커맨드 2개 ([사용 안내](plugin/local/README.md)) | Python |
+| **`plugin/client/`** | MCP 도구 4개 + 스킬 ([사용 안내](plugin/client/README.md)) | Python |
+| `contract/` | 교차 언어 계약 검사 + 공유 골든 픽스처 | — |
+| `docs/` | [아키텍처](docs/architecture.md) · 임베딩 설계 제안 | — |
+| `.claude-plugin/` | 마켓플레이스 매니페스트 (**반드시 저장소 루트**) | — |
+
+Python 과 Kotlin 은 **파일로만** 연결됩니다 — 볼트 포맷이 곧 인터페이스입니다.
+그래서 한쪽만 바꾸면 에러 없이 조용히 틀어지고, `contract/shared_contract.sh` 가
+그것을 막습니다.
+
+[`DECISIONS.md`](DECISIONS.md) — 뒤집힌 결정과 지우면 안 되는 것들. **되돌리기 전에 읽으세요.**
+
+---
+
+## 적용 범위
+
+**특정 회사에 묶여 있지 않습니다.** Confluence **Cloud** 와 **Server/Data Center** 양쪽,
+인증 4방식을 지원합니다. Confluence 고유 개념(`ac:link` storage format · `ancestors` · CQL)
+에만 의존하므로 어느 조직의 인스턴스든 같은 코드가 돕니다.
+
+> 저장소 곳곳의 `Acme 2,383건` 같은 표기는 **측정 출처 라벨**입니다 — 그 수치가 어느
+> 코퍼스에서 나왔는지 밝히는 것이지 종속이 아닙니다. 배포되는 플러그인·CLI 에는
+> 회사 고유값이 없습니다.
+
+**언어는 한국어를 기본으로 합니다.** 서버판이 Lucene **Nori** 형태소 분석기를 쓰는데,
+교착어라 조사가 붙어서('로그인을/로그인은/로그인이') 형태소 분석 없이는 BM25 가
+무너지기 때문입니다 — 그것이 서버를 JVM 으로 고른 유일한 이유입니다.
+
+Nori 는 **영문을 깨뜨리지 않습니다** — 공백·구두점으로 자르고 소문자화합니다. 다만
+**어간을 안 줄여서** 문서 `production servers` 에 질의 `production server` 가 안 맞습니다.
+한국어 문서에 `Jenkins`·`DEPLOY_TOKEN` 같은 영문 식별자가 섞인 코퍼스에서는 그것들이
+굴절하지 않으므로 문제가 안 됩니다.
+
+영어가 주된 코퍼스라면 **색인할 때** 분석기를 고르세요 —
+`--wikilens.analyzer=korean|english|standard`. 로컬판은 grep 이라 언어와 무관합니다.
+자세한 것은 [`server/README.md`](server/README.md#분석기는-색인-시점에-고른다).
 
 ---
 
 ## 설계 결정 요약
 
-**앵커 텍스트가 가치의 대부분입니다.** 실제 Acme 데이터로 베이스라인(순수 MD 검색)과
-비교했을 때 `ALIASES.md`(앵커 색인)가 정확도·토큰 사용량 둘 다 크게 앞섰다 — 특히
-어휘 격차가 있는 문서에서 개선이 두드러졌다. 신규 기법이 아니라(Brin & Page 1998)
-신뢰도가 높습니다.
-
-**경로 의존 질의는 캐싱하지 않습니다.** "이 데이터가 어떻게 흐르나"에 목적지만
-주면 답한 게 아니라 답을 지운 겁니다. `LOCALIZATION`만 통과시킵니다.
-
-**압축이 아니라 가산입니다.** 원본 궤적을 보존합니다. 무효화·폴백·출처 추적이
-전부 여기 의존합니다.
+**앵커 텍스트가 가치의 대부분입니다.** 실데이터로 베이스라인(순수 MD 검색)과 비교했을 때
+`ALIASES.md` 가 정확도·토큰 사용량 둘 다 크게 앞섰습니다. 신규 기법이 아니라
+(Brin & Page 1998) 신뢰도가 높습니다.
 
 **위키에 쓰지 않습니다.** 쓰면 사람 링크와 기계 링크가 섞여 정답 신호가 영구히
 오염됩니다. 읽기 전용은 규율이 아니라 설계로 얻는 보장입니다.
 
-**서버가 색인을 갖습니다.** 클라이언트 분산 색인은 Confluence API 부하가 사용자 수에
+**서버가 볼트를 배포하지 않습니다.** 배포된 사본은 **회수할 수 없어** 권한 취소가
+불가능해집니다. 서버가 서빙하면 매 요청 ACL 이 걸리고, 부수적으로 훅도 불필요해집니다.
+
+**서버가 색인을 갖습니다.** 클라이언트 분산 색인은 Confluence 부하가 사용자 수에
 비례하고(200명이면 200배), 무엇보다 사용자마다 랭킹 척도가 달라져 학습 레이어에
 이질적 관측이 섞입니다. 대가는 질의 시점 ACL 시행입니다.
 
-**한국어 때문에 서버가 JVM입니다.** 교착어라 형태소 분석 없이는 BM25가 무너지고,
-Lucene Nori가 그 문제의 프로덕션 해답입니다. 색인이 서버에 없던 설계에서는
-이 근거가 없었고 실제로 Python이었습니다.
+**경로 의존 질의는 캐싱하지 않습니다.** "이 데이터가 어떻게 흐르나"에 목적지만 주면
+답한 게 아니라 답을 지운 겁니다.
 
-자세한 근거는 [`docs/architecture.md`](docs/architecture.md), 기각된 안과 뒤집힌
-결정의 이력은 [`DECISIONS.md`](DECISIONS.md) 참조.
+**압축이 아니라 가산입니다.** 원본 궤적을 보존합니다 — 무효화·폴백·출처 추적이 전부
+여기 의존하고, 궤적은 유일하게 복구 불가능한 자산입니다.
 
----
-
-## 측정 지표 (우선순위 순)
-
-1. **제목과 다른 별칭 비율** — 낮으면 여기서 중단
-2. **비링크 도달 비율** — 낮으면 학습 레이어가 링크 그래프의 복사본으로 퇴화
-3. **`pWrong`** — 손익분기 `p_hit > p_wrong/(n−1)`의 분자. 적중률보다 이게 기준
-4. 적중당 절약 대 미스당 검증 오버헤드
+자세한 근거는 [`docs/architecture.md`](docs/architecture.md), 기각된 안과 뒤집힌 결정의
+이력은 [`DECISIONS.md`](DECISIONS.md).
 
 ---
 
-## IntelliJ 실행 구성
+## 만드는 사람을 위해
 
-`.idea/runConfigurations/` 를 저장소에 포함해 두었습니다. 프로젝트를 열면 실행
-드롭다운에 그대로 뜹니다(개인 설정인 `workspace.xml` 등은 계속 무시됩니다).
+### 변경 후 이 넷이 통과해야 합니다
 
-| 구성 | 하는 일 |
-|---|---|
-| 1. 서버 실행 (bootRun) | Spring Boot 기동 (`:8787`) |
-| 2. 재색인 | `/admin/reindex` + 테스트 사용자 등록 + `stats` — **1번이 떠 있어야 함** |
-| 3. 전체 검증 | 계약·Python·MCP·JUnit 넷을 순서대로. **변경 후 이것부터** |
-| 4. 계약 검사만 | `contract/shared_contract.sh` |
-| 5. Kotlin 테스트 | `gradlew test` |
-| 6. Python 테스트 | `pytest` + MCP 프록시 |
+```bash
+./contract/shared_contract.sh          # 교차 언어 계약
+python -m pytest -q                    # cli/tests + plugin/tests
+cd server && ./gradlew test            # JUnit
+python3 plugin/tests/test_mcp_proxy.py # pytest 가 안 걷는 독립 스크립트
+```
 
-3번을 통과시키는 것이 변경의 기본 조건입니다.
+IntelliJ 를 쓴다면 `.idea/runConfigurations/` 의 **"3. 전체 검증"** 이 넷을 한 번에
+돌립니다. 서버를 띄울 때는 **"1. 서버 실행 (bootRun)"** 을 쓰세요 — `fun main` 옆
+화살표로 띄우면 작업 디렉터리가 달라져 볼트·색인·**궤적**이 다른 자리를 씁니다.
 
----
+작업 규율은 [`CLAUDE.md`](CLAUDE.md) 에 있습니다 — 절대 깨면 안 되는 계약,
+조용히 실패하는 것들, 의도적으로 이상해 보이는 것.
 
-## 검증 상태
-
-정직하게 나누면:
+### 검증 상태
 
 | | 검증 |
 |---|---|
 | Python CLI · 앵커 전치 · 파서 | 통과 — 공유 골든 픽스처로 Kotlin 과 같은 산출물 대조 |
-| CLI 배선 (서브커맨드·진단 메시지) | 통과 |
-| Confluence 클라이언트 | 통과 — 가짜 서버로 Cloud/Server·429·페이지네이션·재개·`--follow-refs` |
+| Confluence 클라이언트 | 통과 — 가짜 서버로 Cloud/Server·429·페이지네이션·재개 |
 | 인증 계층 (SSO/IAM) | 통과 — 가짜 IAM 으로 OAuth2·만료 갱신·401 재시도 |
-| Python 스코어링 대조 구현 (`cli/wikilens/scoring_reference.py`) | 통과. 런타임에 안 쓰이고 Kotlin `Scoring.kt` 의 짝으로만 존재 — `LearnLayerTest.kt` 의 기대값 6개가 여기서 나온다 (scipy 는 안 쓴다 — 뉴턴법 자체 구현) |
-| MCP 프록시 (서버판) | 통과 — 핸드셰이크·도구 4개·세션·404·설정 해석 |
-| 로컬판 플러그인 | 통과 — 경로 해석·상태 판정·스킬 정합성·포맷 드리프트 |
 | Kotlin 학습 레이어 (`learn/`) | JUnit 통과. 기대값 6개가 `scoring_reference.py` 산출과 1e-6 일치 |
-| Kotlin 서비스 계층 (search·content·acl·tree) | JUnit 통과 |
-| Kotlin Lucene/Spring 배선 | 빌드·bootRun·재색인 검증됨 (Acme 실데이터 2,383건). 검색 랭킹 품질은 별도 미검증 |
+| Kotlin 서비스 계층 | JUnit 통과 |
+| Lucene/Spring 배선 | 빌드·bootRun·재색인 검증됨 (실데이터 2,383건) |
+| **검색 랭킹 품질** | **미검증** — 배선이 도는 것과 랭킹이 좋은 것은 다른 문제입니다 |
+| **실사용 적중률** | **측정된 바 없음** |
 
-**개수는 일부러 안 적습니다** — 늘 때마다 낡습니다. 실제 수는 위 네 스위트를 돌리면 나옵니다.
+**개수는 일부러 안 적습니다** — 늘 때마다 낡습니다. 위 네 스위트를 돌리면 나옵니다.
+
+### 측정 지표 (우선순위 순)
+
+1. **제목과 다른 별칭 비율** — 낮으면 여기서 중단
+2. **비링크 도달 비율** — 낮으면 학습 레이어가 링크 그래프의 복사본으로 퇴화
+3. **`pWrong`** — 손익분기 `p_hit > p_wrong/(n−1)` 의 분자. 적중률보다 이게 기준
+4. 적중당 절약 대 미스당 검증 오버헤드
 
 ---
 
 ## 미해결
 
-**"유용했다"의 판정.** 서버는 무엇을 읽었는지만 보고 그게 답이었는지는 모릅니다
-(훅은 없습니다 — 읽기가 서버를 거치므로 서버가 직접 관측합니다). 신호 다섯을 씁니다:
-마지막 읽기, 질의 재구성, **서빙했는데 끝내 안 읽힌 힌트**, 지나친 읽기, 그리고
-`dest` 의 검색 순위. 셋째가 유일하게 학습을 **되돌리는** 신호입니다.
-노이즈 크기는 `pWrong`(= 거부된 힌트 / 서빙한 힌트)으로만 알 수 있고, 학습 레이어
-전체가 이 레이블에 걸려 있습니다. `dest = reads.last()` 라는 전제 자체는 그대로입니다.
+**서버판 인증 — 다중 사용자 배포의 선결 조건입니다.** `sync` 가 Confluence 권한을
+안 가져와 모든 페이지가 공개로 들어오고, `/api/admin/*` 에는 인증이 아예 없어 서버에
+닿는 누구나 스스로 권한을 부여할 수 있습니다. 게다가 권한 변경은 `lastModified` 를
+건드리지 않아 콘텐츠 증분 싱크가 놓칩니다. **셋이 한 묶음입니다**
+(로컬판에는 해당 없음 — 개인 토큰이 곧 권한 범위).
 
-**서버판 인증.** `sync` 가 Confluence 권한을 안 가져와 모든 페이지가 공개로 들어오고,
-`/api/admin/*` 에는 인증이 아예 없어 서버에 닿는 누구나 스스로 권한을 부여할 수 있습니다.
-게다가 권한 변경은 `lastModified`를 건드리지 않아 콘텐츠 증분 싱크가 놓칩니다 —
-공유 서버에서는 그 창이 곧 유출 창입니다. **셋이 한 묶음이고, 다중 사용자 배포의
-선결 조건입니다**(로컬판에는 해당 없음 — 개인 토큰이 곧 권한 범위).
+**"유용했다"의 판정.** 서버는 무엇을 읽었는지만 보고 그게 답이었는지는 모릅니다.
+신호 다섯을 씁니다 — 마지막 읽기, 질의 재구성, **서빙했는데 끝내 안 읽힌 힌트**,
+지나친 읽기, `dest` 의 검색 순위. 셋째가 유일하게 학습을 **되돌리는** 신호입니다.
+`dest = reads.last()` 라는 전제 자체는 그대로입니다.
 
 **질의 원문이 서버로 갑니다.** 콘텐츠는 아니지만 질의어 자체가 민감할 수 있습니다.
