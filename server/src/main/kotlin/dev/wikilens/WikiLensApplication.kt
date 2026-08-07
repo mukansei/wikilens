@@ -5,6 +5,7 @@ import dev.wikilens.acl.AclRegistry
 import dev.wikilens.config.WikiLensProperties
 import dev.wikilens.index.AnalyzerKind
 import dev.wikilens.index.LuceneIndex
+import dev.wikilens.service.IndexingService
 import dev.wikilens.learn.FileTrajectorySink
 import dev.wikilens.learn.TrajectoryStore
 import dev.wikilens.vault.VaultReader
@@ -78,46 +79,28 @@ class WikiLensApplication {
      * 로 진단할 길까지 사라진다 — 대신 그 진단이 `INDEXED_DOCS=0` 으로 잡아준다.
      */
     @Bean
-    fun vaultBootstrap(
-        props: WikiLensProperties,
-        vault: VaultReader,
-        index: LuceneIndex,
-        acl: AclRegistry,
-    ): VaultBootstrap {
+    fun vaultBootstrap(props: WikiLensProperties, indexing: IndexingService): VaultBootstrap {
         val log = LoggerFactory.getLogger(WikiLensApplication::class.java)
 
         // **경로를 절대경로로 풀어서 찍는다.** 기본값이 `./mirror-root` 처럼 상대경로라
-        // 실제 위치가 **실행 디렉터리에 달려 있다.** 문서는 `cd server && ./gradlew bootRun`
-        // 만 안내해서 늘 `server/` 였지만, 실배포는 jar 다 — 다른 디렉터리에서 띄우면
+        // 실제 위치가 **실행 디렉터리에 달려 있다.** 다른 디렉터리에서 jar 를 띄우면
         // 빈 볼트를 보고 `문서 0` 으로 **정상 기동한다**(2026-08-06 실측). 어디를 봤는지
         // 로그가 말해주지 않으면 그때 원인을 찾을 방법이 없다.
-        val root = abs(props.vaultRoot)
-        log.info("볼트 {} · 색인 {} · 상태 {}", root, abs(props.indexDir), abs(props.stateDir))
+        log.info("볼트 {} · 색인 {} · 상태 {}",
+            indexing.vaultRoot, abs(props.indexDir), abs(props.stateDir))
 
+        // 적재는 `/admin/reindex` 와 **같은 코드**를 쓴다 — 따로 두었더니 한쪽에만
+        // 방어가 들어가 다른 쪽이 색인을 지웠다(`IndexingService` 주석 참고).
+        //
+        // 볼트를 못 읽어도 기동은 계속한다. 설정이 틀렸다고 서버가 아예 안 뜨면 `--status`
+        // 로 진단할 길까지 사라진다 — 대신 그 진단이 `INDEXED_DOCS=0` 으로 잡아준다.
         return runCatching {
-            val pages = vault.read(root, acl)
-            if (pages.isEmpty()) {
-                // `VaultReader` 는 미러가 없어도 예외를 안 던지고 빈 목록을 준다. 그래서
-                // 예전엔 이 경우가 `기동 적재 완료: 문서 0` 으로 찍혀 정상처럼 보였다.
-                //
-                // **여기서 재색인하면 안 된다.** `rebuild(emptyList())` 는 디스크에 있던
-                // 멀쩡한 색인을 0건으로 덮어쓴다 — 경로 하나 잘못 준 재기동이 마지막으로
-                // 성공한 색인까지 지운다(실측: `색인 재구축 0건`). 볼트를 못 읽는 것은
-                // 고칠 수 있는 문제지만 지워진 색인은 다시 싱크해야 한다.
-                log.error(
-                    "볼트에서 문서를 하나도 못 읽었습니다: {} — 경로가 맞는지 확인하세요" +
-                        "(상대경로는 실행 디렉터리 기준입니다). **기존 색인은 그대로 둡니다** — " +
-                        "검색은 옛 색인으로 계속 동작하고, ACL 페이지 맵만 비어 읽기가 404 가 됩니다.",
-                    root,
-                )
-                return@runCatching VaultBootstrap(index.docCount, acl.pageCount())
-            }
-            index.rebuild(pages)
-            log.info("기동 적재 완료: 문서 {} · ACL 페이지 {}", pages.size, acl.pageCount())
-            VaultBootstrap(pages.size, acl.pageCount())
+            val r = indexing.reload()
+            if (!r.skipped) log.info("기동 적재 완료: 문서 {} · ACL 페이지 {}", r.indexed, r.aclPages)
+            VaultBootstrap(r.indexed, r.aclPages)
         }.getOrElse { e ->
-            log.error("기동 적재 실패 (볼트={}). 색인이 빈 채로 시작합니다 — " +
-                "`--status` 가 INDEXED_DOCS=0 으로 잡습니다.", root, e)
+            log.error("기동 적재 실패. 색인이 빈 채로 시작합니다 — " +
+                "`--status` 가 INDEXED_DOCS=0 으로 잡습니다.", e)
             VaultBootstrap(0, 0)
         }
     }

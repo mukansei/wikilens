@@ -1,17 +1,15 @@
 package dev.wikilens.api
 
 import dev.wikilens.acl.AclRegistry
-import dev.wikilens.config.WikiLensProperties
 import dev.wikilens.index.LuceneIndex
 import dev.wikilens.learn.TrajectoryStore
 import dev.wikilens.service.ContentService
+import dev.wikilens.service.IndexingService
 import dev.wikilens.service.SearchService
-import dev.wikilens.vault.VaultReader
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.server.ResponseStatusException
-import java.nio.file.Path
 
 /**
  * 서버판 API.
@@ -29,10 +27,9 @@ class Controller(
     private val searchService: SearchService,
     private val content: ContentService,
     private val store: TrajectoryStore,
+    private val indexing: IndexingService,
     private val index: LuceneIndex,
-    private val vault: VaultReader,
     private val acl: AclRegistry,
-    private val props: WikiLensProperties,
 ) {
 
     @PostMapping("/search")
@@ -81,11 +78,15 @@ class Controller(
     fun endSession(@RequestBody req: SessionEndRequest): Map<String, Any> =
         mapOf("finalized" to store.onEnd(req.sessionId))
 
+    /**
+     * 수동 재색인. **적재 로직은 [IndexingService] 하나뿐이다** — 기동 적재와 같은 코드다.
+     * 예전엔 여기서 `vault.read` + `index.rebuild` 를 직접 불러서, 기동 쪽에만 넣은
+     * "빈 볼트면 건너뛴다" 방어가 이 경로에는 없었다(실측: 색인 2,383건이 0으로 지워짐).
+     */
     @PostMapping("/admin/reindex")
     fun reindex(): Map<String, Any> {
-        val pages = vault.read(Path.of(props.vaultRoot), acl)
-        index.rebuild(pages)
-        return mapOf("indexed" to pages.size, "aclPages" to acl.pageCount())
+        val r = indexing.reload()
+        return mapOf("indexed" to r.indexed, "aclPages" to r.aclPages, "skipped" to r.skipped)
     }
 
     @PostMapping("/admin/acl/user")
