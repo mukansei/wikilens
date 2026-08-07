@@ -40,7 +40,7 @@ Acme 실데이터로 오늘 실측한 두 갭이 전부 이 표현 방식에서 
 
 ### 유지할 것
 
-- **Gate 분류** (`Scoring.kt`의 `Gate.classify`) — TRACING/RATIONALE 질의를
+- **Gate 분류** (`learn/Gate.kt` 의 `Gate.classify`) — TRACING/RATIONALE 질의를
   걸러내는 로직은 "이 질의를 학습해도 되는가"의 문제고, 표현 방식과 무관하다.
   그대로 둔다.
 - **Empirical Bayes 하한 계산** (`Reliability.ebLower`) — hits/misses로부터

@@ -1,9 +1,5 @@
 package dev.wikilens.config
 
-import org.springframework.boot.context.properties.ConfigurationProperties
-import org.springframework.boot.context.properties.NestedConfigurationProperty
-
-
 data class LearnProps(
     /** EB 하한이 이 값 미만이면 힌트를 서빙하지 않는다. */
     val serveThreshold: Double = 0.45,
