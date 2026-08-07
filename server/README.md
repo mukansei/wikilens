@@ -313,6 +313,40 @@ Python 프로토타입에서 실제로 겪은 버그입니다.
 
 여전히 약한 곳: `dest = reads.last()` 라는 전제 자체입니다.
 
+### 원시 계측 (`/api/stats` 의 `sinceStart`)
+
+**궤적 수로는 검색 횟수를 역산할 수 없습니다.** 읽기도 서빙도 없는 검색은 궤적을 아예
+안 남기는데, 그게 정확히 "결과가 시원찮아 다시 치는" 경우의 첫 시도라 **재검색이
+체계적으로 과소 계상**됩니다. 웹 검색 로그 연구는 질의 자체를 남기므로 이 편향이
+없습니다 — 세션의 약 40%가 질의 2개 이상이라는 수치가 그렇게 나옵니다
+([Chen et al., WWW '21](https://dl.acm.org/doi/10.1145/3442381.3450127)).
+
+```json
+"sinceStart": {
+  "queries": 3, "sessions": 2, "multiQuerySessions": 1,
+  "queriesPerSession": 1.5, "multiQueryRate": 0.5, "unrecordedQueries": 3
+}
+```
+
+**이 블록만 재기동에서 0으로 돌아갑니다.** 위쪽 값들은 궤적 로그에서 재생되지만 이건
+로그에 없습니다 — 기록되지 않는 것을 세려는 지표라서요. 섞어서 빼면 재기동 직후
+음수가 납니다.
+
+`unrecordedQueries` 는 "빗나간 검색 수"가 아닙니다. **아직 안 끝난 세션의 진행 중인
+스팬**도 포함하므로, `activeSessions` 가 0일 때만 그 뜻이 됩니다.
+
+### 클릭 없는 종료를 실패로 세지 않습니다
+
+에이전트가 검색 결과 제목만 보고 답하면 `reads` 가 빕니다. 예전에는 그것을 무조건
+실패로 셌는데, IR 에서 **good abandonment** 로 알려진 오독입니다
+([Li et al., SIGIR '09](https://dl.acm.org/doi/10.1145/1571941.1571951) ·
+[Williams et al., WWW '16](https://www.microsoft.com/en-us/research/wp-content/uploads/2017/05/williams_www2016_good_abandonment.pdf)).
+이제 `abandonedWithHints` 로 따로 세고 `sessionFailureRate` 의 분모에서 뺍니다.
+
+**판정을 바꾸지는 않았습니다** — 만족인지 아닌지 구별할 신호가 아직 없습니다.
+힌트 단위 벌점(`rejected`)은 그대로입니다. 그 힌트가 안 읽혔다는 사실은 확실하고,
+`pWrong` 이 재려던 것이 그것이기 때문입니다.
+
 **질의 원문이 서버로 갑니다.** 콘텐츠는 아니지만 질의어 자체가 민감할 수 있습니다.
 
 ## 버려진 세션은 백그라운드로 거둡니다

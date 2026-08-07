@@ -107,13 +107,50 @@ class TrajectoryStore(
     private val servedCount = AtomicInteger()
     private val rejectedCount = AtomicInteger()
 
+    /**
+     * **원시 질의 수.** 궤적 수로 역산할 수 없다 — 읽기도 서빙도 없는 검색은 궤적을
+     * 안 남기기 때문이다(`finalize` 의 첫 줄). 그런데 그게 정확히 "결과가 시원찮아
+     * 다시 치는" 경우의 첫 시도라, 궤적만 세면 **재검색이 체계적으로 과소 계상**된다.
+     *
+     * 웹 검색 로그 연구는 질의 자체는 남기므로 이 편향이 없다 — 세션의 약 40%가
+     * 질의 2개 이상이라는 수치가 그렇게 나온다(Chen et al., WWW '21). 우리는 그
+     * 비교조차 못 하고 있었다.
+     */
+    private val queryCount = AtomicInteger()
+
+    /** 시작된 세션 수. `queries / sessions` 가 세션당 질의 수다. */
+    private val sessionCount = AtomicInteger()
+
+    /** 질의를 2회 이상 받은 세션 수. 비율이 곧 "재검색이 얼마나 흔한가"다. */
+    private val multiQuerySessions = AtomicInteger()
+
+    /** 이번 기동에서 실제로 기록된 스팬 수. `queries` 와 같은 축이라 빼도 말이 된다. */
+    private val recordedSinceStart = AtomicInteger()
+
+    /**
+     * 힌트는 서빙했는데 **아무것도 안 읽고 끝난** 스팬.
+     *
+     * 클릭 없는 종료를 곧바로 실패로 세면 안 된다는 것이 IR 에서 **good abandonment**
+     * 로 알려진 문제다(Li·Huffman·Tokuda SIGIR '09, Williams et al. WWW '16) —
+     * 결과 목록만 보고 답을 얻었을 수 있다. 여기서는 에이전트가 제목만 보고 답한
+     * 경우가 그것이고, 예전엔 `success = success && reads.isNotEmpty()` 때문에
+     * 무조건 실패로 셌다.
+     *
+     * **판정을 바꾸지는 않았다** — 어느 쪽인지 구별할 신호가 아직 없다.
+     * 대신 세어서 `sessionFailureRate` 에서 빼고 따로 보고한다.
+     */
+    private val abandonedCount = AtomicInteger()
+
     // ---------------------------------------------------------- 관측
 
     fun onQuery(sessionId: String, query: String, keywords: List<String>) {
-        val s = sessions.computeIfAbsent(sessionId) { Session(it) }
+        val s = sessions.computeIfAbsent(sessionId) { sessionCount.incrementAndGet(); Session(it) }
+        queryCount.incrementAndGet()
         synchronized(s) {
             val prev = s.current
             if (prev != null) {
+                // 이 세션이 두 번째 질의를 받는 순간. 세 번째부터는 다시 안 센다.
+                if (s.spans.size == 1) multiQuerySessions.incrementAndGet()
                 val reformulated = overlap(prev.keywords, keywords) >= reformulationOverlap
                 finalize(sessionId, prev, success = !reformulated)
             }
@@ -178,6 +215,7 @@ class TrajectoryStore(
         // 가장 강한 실패 신호다. 둘 다 없으면 배울 것이 없다.
         if ((span.reads.isEmpty() && span.served.isEmpty()) || span.finalized) return
         span.finalized = true
+        recordedSinceStart.incrementAndGet()
         val t = Trajectory(
             ts = System.currentTimeMillis(),
             session = sessionId,
@@ -198,7 +236,14 @@ class TrajectoryStore(
 
     private fun apply(t: Trajectory) {
         trajCount.incrementAndGet()
-        if (t.success) trajHits.incrementAndGet() else trajMisses.incrementAndGet()
+        // 셋으로 나눈다. 읽은 게 없는데 힌트만 서빙된 것은 **실패가 아니라 미판정**이다
+        // (good abandonment). 실패로 세면 `sessionFailureRate` 가 부풀고, 그러면
+        // 학습이 잘 되고 있는지를 그 수로 판단할 수 없게 된다.
+        when {
+            t.success -> trajHits.incrementAndGet()
+            t.reads.isEmpty() && t.served.isNotEmpty() -> abandonedCount.incrementAndGet()
+            else -> trajMisses.incrementAndGet()
+        }
         if (!t.kind.cacheable) return   // 경로 의존 질의는 간선을 만들지 않는다
 
         // 서빙했는데 **끝내 안 읽힌** 힌트 = 틀린 힌트. dest 와 겹치지 않게 뺀다.
@@ -307,8 +352,34 @@ class TrajectoryStore(
             "pWrong" to servedCount.get().let { s ->
                 if (s > 0) rejectedCount.get().toDouble() / s else null
             },
+            // 읽은 것이 있는 세션 중 실패한 비율. good abandonment 는 분모에서 뺀다 —
+            // 클릭 없는 종료를 실패로 세면 안 된다는 것이 IR 의 확립된 지적이다.
             "sessionFailureRate" to if (n > 0) m.toDouble() / n else null,
+            "abandonedWithHints" to abandonedCount.get(),
             "trajectories" to trajCount.get(),
+            // **이 아래는 이번 기동에서만 센 값이다.** 위의 것들은 로그에서 재생되므로
+            // 누적이고, 아래 것들은 로그에 없어서 재생이 불가능하다 — 소득 없는 검색은
+            // 애초에 기록되지 않는다는 것이 이 값들을 만든 이유이기 때문이다.
+            // 섞어서 빼면(예: queries - trajectories) 재기동 직후 음수가 나온다.
+            "sinceStart" to linkedMapOf<String, Any?>(
+                "queries" to queryCount.get(),
+                "sessions" to sessionCount.get(),
+                "multiQuerySessions" to multiQuerySessions.get(),
+                "queriesPerSession" to sessionCount.get().let { s ->
+                    if (s > 0) queryCount.get().toDouble() / s else null
+                },
+                // 질의를 2회 이상 받은 세션 비율. 웹 검색은 약 40% 다(Chen et al., WWW '21) —
+                // 사람과 에이전트가 다르므로 참고점이지 기대값은 아니다.
+                "multiQueryRate" to sessionCount.get().let { s ->
+                    if (s > 0) multiQuerySessions.get().toDouble() / s else null
+                },
+                // 질의 대비 **아직 기록되지 않은** 수. 둘로 나뉜다:
+                //   - 소득 없이 끝난 검색 (읽기도 서빙도 없어 `finalize` 가 버린 것)
+                //   - **아직 안 끝난 세션의 진행 중인 스팬** — 곧 확정될 수도 있다
+                // 그래서 이 값 하나로 "빗나간 검색 수"를 읽으면 안 된다. `activeSessions`
+                // 가 0일 때만 온전히 전자를 뜻한다.
+                "unrecordedQueries" to (queryCount.get() - recordedSinceStart.get()).coerceAtLeast(0),
+            ),
             "activeSessions" to sessions.size,
         )
     }
