@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 
 import requests
 
+from . import credentials
+
 
 class AuthProvider:
     """세션에 인증을 적용한다. 401 을 받으면 refresh 후 한 번 재시도한다."""
@@ -158,11 +160,13 @@ def auth_from_env() -> AuthProvider:
       oauth   IAM_TOKEN_URL + IAM_CLIENT_ID + IAM_CLIENT_SECRET [+ IAM_SCOPE, IAM_AUDIENCE]
       header  CONFLUENCE_HEADERS='Key: Value; Key2: Value2'
     """
-    mode = (os.environ.get("CONFLUENCE_AUTH") or "").strip().lower()
-    email = os.environ.get("CONFLUENCE_EMAIL")
-    token = os.environ.get("CONFLUENCE_TOKEN")
-    headers_raw = os.environ.get("CONFLUENCE_HEADERS")
-    iam_url = os.environ.get("IAM_TOKEN_URL")
+    # 환경변수가 없으면 `~/.wikilens/env.sh` 에서 읽는다 — cron 과 Claude Code 처럼
+    # `export` 가 없는 환경을 덮는다. 우선순위·근거는 `credentials` 모듈에.
+    mode = (credentials.get("CONFLUENCE_AUTH") or "").strip().lower()
+    email = credentials.get("CONFLUENCE_EMAIL")
+    token = credentials.get("CONFLUENCE_TOKEN")
+    headers_raw = credentials.get("CONFLUENCE_HEADERS")
+    iam_url = credentials.get("IAM_TOKEN_URL")
 
     if not mode:
         if iam_url:
@@ -175,8 +179,8 @@ def auth_from_env() -> AuthProvider:
             mode = "pat"
 
     if mode == "oauth":
-        cid = os.environ.get("IAM_CLIENT_ID")
-        sec = os.environ.get("IAM_CLIENT_SECRET")
+        cid = credentials.get("IAM_CLIENT_ID")
+        sec = credentials.get("IAM_CLIENT_SECRET")
         if not (iam_url and cid and sec):
             raise SystemExit(
                 "OAuth 인증에는 IAM_TOKEN_URL, IAM_CLIENT_ID, IAM_CLIENT_SECRET 이 필요합니다.\n"
@@ -184,8 +188,8 @@ def auth_from_env() -> AuthProvider:
             )
         return OAuth2ClientCredentials(
             iam_url, cid, sec,
-            scope=os.environ.get("IAM_SCOPE"),
-            audience=os.environ.get("IAM_AUDIENCE"),
+            scope=credentials.get("IAM_SCOPE"),
+            audience=credentials.get("IAM_AUDIENCE"),
         )
 
     if mode == "header":

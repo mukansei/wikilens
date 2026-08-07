@@ -22,6 +22,8 @@ import requests
 from . import layout
 from .auth import AuthProvider, auth_from_env
 
+from . import credentials
+
 CHECKPOINT_EVERY = 100      # 이 건수마다 상태 저장 → 중단되어도 이어받는다
 MAX_RETRY_WAIT = 120        # 429 백오프 상한. 무한 대기 방지
 
@@ -484,9 +486,14 @@ def sync(root: Path, client: ConfluenceClient, spaces: list,
 
 
 def client_from_env() -> ConfluenceClient:
-    base = os.environ.get("CONFLUENCE_URL")
+    # 환경변수 → `~/.wikilens/env.sh` 순. cron 처럼 `export` 가 없는 환경을 덮는다.
+    base = credentials.get("CONFLUENCE_URL")
     if not base:
-        raise SystemExit("CONFLUENCE_URL 환경변수가 필요합니다.")
+        raise SystemExit(
+            "CONFLUENCE_URL 이 필요합니다 — 환경변수에도 "
+            f"{credentials.ENV_PATH} 에도 없습니다.\n"
+            "  로컬판을 쓴다면 /wikilens-local:setup 이 만들어 줍니다."
+        )
     # CONFLUENCE_PREFIX 미설정 시 None → 자동 판별. "" 로 명시하면 그 값
-    # 그대로(빈 접두사 강제) 쓴다 — os.environ.get 은 둘을 구분해서 돌려준다.
-    return ConfluenceClient(base, auth_from_env(), prefix=os.environ.get("CONFLUENCE_PREFIX"))
+    # 그대로(빈 접두사 강제) 쓴다 — `credentials.get` 은 둘을 구분해서 돌려준다.
+    return ConfluenceClient(base, auth_from_env(), prefix=credentials.get("CONFLUENCE_PREFIX"))

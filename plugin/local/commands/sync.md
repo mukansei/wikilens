@@ -21,6 +21,9 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vault_status.py"
 
 - `STATUS=missing` → 아직 설정 전입니다. `/wikilens-local:setup` 을 안내하고 멈추세요.
 - `CREDS=none` → 자격증명이 없어 싱크가 불가능합니다. 역시 setup 으로 보내세요.
+- `CREDS=partial` → 파일은 있는데 **토큰을 아직 안 채웠습니다**(템플릿 그대로).
+  `~/.wikilens/env.sh` 를 열어 `<...>` 자리를 채우라고 안내하세요 — 토큰은 사용자만
+  입력합니다. 이 상태로 싱크하면 인증 실패로 죽습니다.
 - `CLI=(못 찾음)` → venv·pipx 안에 있을 수 있습니다. `setup_vault.py --cli-path auto` 를
   제안하세요 (setup 전체를 다시 돌릴 필요는 없습니다).
 - `CREDS=shell` → 지금은 되지만 **다음 세션엔 안 됩니다.** 싱크를 마친 뒤

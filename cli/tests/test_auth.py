@@ -18,6 +18,8 @@ from wikilens.auth import (
     BasicAuth, BearerAuth, HeaderAuth, OAuth2ClientCredentials, auth_from_env,
 )
 from wikilens.sync import ConfluenceClient
+from wikilens import credentials
+from wikilens import sync as sync_mod
 
 
 class FakeIAM(BaseHTTPRequestHandler):
@@ -118,6 +120,17 @@ def conf():
 
 
 # ------------------------------------------------------------ 제공자 선택
+
+@pytest.fixture(autouse=True)
+def _isolate_env_file(tmp_path, monkeypatch):
+    """
+    `auth_from_env` 는 환경변수가 없으면 `~/.wikilens/env.sh` 를 읽는다 — cron 처럼
+    `export` 가 없는 환경을 덮기 위해서다. 그래서 환경변수만 지우는 테스트는
+    **개발 머신의 실제 자격증명에 노출된다.** 실제로 그것 때문에 한 테스트가
+    "SystemExit 이 안 났다"로 깨졌고, 나머지는 우연히 통과하고 있었다.
+    """
+    monkeypatch.setattr(credentials, "ENV_PATH", tmp_path / "없는env.sh")
+
 
 def test_env_selects_oauth_when_iam_configured(monkeypatch):
     monkeypatch.setenv("IAM_TOKEN_URL", "https://iam.corp/token")
@@ -242,3 +255,75 @@ def test_non_refreshable_providers_do_not_retry():
     assert BearerAuth("t").refresh() is False
     assert BasicAuth("a", "b").refresh() is False
     assert HeaderAuth({"a": "b"}).refresh() is False
+
+
+# --------------------------------------------------- env.sh 폴백 (2026-08-07)
+#
+# CLI 가 환경변수만 읽던 동안 `export` 없는 환경은 전부 죽었다 — Claude Code 안의
+# 로컬판 sync(래퍼로 막았음)와 **서버판 cron**(안 막혀 있었음)이 같은 실패였다.
+# 실측: `env -i HOME=... wikilens doctor` → "CONFLUENCE_URL 환경변수가 필요합니다".
+
+def _write_env(tmp_path, body: str):
+    p = tmp_path / "env.sh"
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
+def test_credentials_read_from_env_file(tmp_path, monkeypatch):
+    for k in ("CONFLUENCE_URL", "CONFLUENCE_TOKEN"):
+        monkeypatch.delenv(k, raising=False)
+    p = _write_env(tmp_path, "export CONFLUENCE_URL=https://w.example\n"
+                             "export CONFLUENCE_TOKEN=pat-123\n")
+    monkeypatch.setattr(credentials, "ENV_PATH", p)
+
+    assert credentials.get("CONFLUENCE_URL") == "https://w.example"
+    assert credentials.get("CONFLUENCE_TOKEN") == "pat-123"
+
+
+def test_environment_beats_the_file(tmp_path, monkeypatch):
+    """일회성 재정의(토큰 교체 등)를 파일이 덮으면 낡은 자격증명으로 조용히 인증한다."""
+    p = _write_env(tmp_path, "export CONFLUENCE_TOKEN=old\n")
+    monkeypatch.setattr(credentials, "ENV_PATH", p)
+    monkeypatch.setenv("CONFLUENCE_TOKEN", "new")
+
+    assert credentials.get("CONFLUENCE_TOKEN") == "new"
+
+
+def test_empty_value_is_not_missing(tmp_path, monkeypatch):
+    """`CONFLUENCE_PREFIX=""` 는 "Server/DC 라 접두사 없음"이지 미설정이 아니다."""
+    monkeypatch.delenv("CONFLUENCE_PREFIX", raising=False)
+    p = _write_env(tmp_path, 'export CONFLUENCE_PREFIX=""\n')
+    monkeypatch.setattr(credentials, "ENV_PATH", p)
+
+    assert credentials.get("CONFLUENCE_PREFIX") == ""
+
+
+def test_unfilled_template_counts_as_missing(tmp_path, monkeypatch):
+    """
+    setup 이 출력하는 템플릿을 실행만 하고 편집을 잊으면 토큰 자리가
+    `<발급받은 PAT를 여기에>` 다. 그걸 값으로 넘기면 인증이 엉뚱한 에러로 죽는다.
+    """
+    monkeypatch.delenv("CONFLUENCE_TOKEN", raising=False)
+    p = _write_env(tmp_path, "export CONFLUENCE_TOKEN=<발급받은 PAT를 여기에>\n")
+    monkeypatch.setattr(credentials, "ENV_PATH", p)
+
+    assert credentials.get("CONFLUENCE_TOKEN") is None
+
+
+def test_only_known_prefixes_are_read(tmp_path, monkeypatch):
+    """env.sh 에 다른 것이 있어도 자격증명 해석에 섞이지 않는다."""
+    p = _write_env(tmp_path, "export PATH=/evil\nexport CONFLUENCE_TOKEN=t\n")
+    monkeypatch.setattr(credentials, "ENV_PATH", p)
+
+    assert set(credentials.from_file(p)) == {"CONFLUENCE_TOKEN"}
+
+
+def test_client_from_env_names_the_file_when_nothing_is_set(tmp_path, monkeypatch):
+    for k in ("CONFLUENCE_URL", "IAM_TOKEN_URL"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setattr(credentials, "ENV_PATH", tmp_path / "없는env.sh")
+
+    with pytest.raises(SystemExit) as e:
+        sync_mod.client_from_env()
+    # 어디를 봤는지 말해야 사용자가 고칠 수 있다.
+    assert "env.sh" in str(e.value)
