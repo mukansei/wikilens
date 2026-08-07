@@ -49,31 +49,30 @@ Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** "�
 
 ```mermaid
 flowchart TB
-    subgraph CONF["Confluence — 배포 형태를 가리지 않습니다"]
+    subgraph CONF["Confluence"]
         direction LR
-        CLOUD[("<b>Cloud</b><br/>경로 접두사 /wiki")]
-        DC[("<b>Server / Data Center</b><br/>접두사 없음")]
+        CLOUD[("Cloud")]
+        DC[("Server / Data Center")]
     end
 
-    NET["<b>네트워크 · 인증</b> — cli/wikilens/auth.py<br/>doctor 가 배포 형태를 판별<br/>PAT · Cloud API 토큰 · IAM OAuth2 · 리버스 프록시"]
+    NET["네트워크 · 인증<br/>배포 형태 판별 · 인증 4방식"]
+    CLI["cli · Python<br/>sync → build"]
+    VAULT[("볼트<br/>파일")]
 
-    CLI["<b>cli</b> · Python<br/>sync → build"]
-    VAULT[("<b>볼트</b> · 파일<br/>두 판이 같은 포맷을 씁니다")]
-
-    subgraph L["로컬판 — 각자 자기 볼트"]
-        LSKILL["스킬 + 커맨드<br/>ALIASES → TREE → 본문 grep"]
+    subgraph L["로컬판"]
+        LSKILL["스킬<br/>파일을 직접 grep"]
     end
 
-    subgraph S["서버판 — 팀 공용 · 상주"]
-        IDX["Lucene/Nori 색인 + 학습 레이어"]
-        MCP["MCP 도구 4개<br/>search · read · grep · tree"]
+    subgraph S["서버판"]
+        IDX["Lucene/Nori 색인<br/>+ 학습 레이어"]
+        MCP["MCP 도구 4개"]
     end
 
     CLOUD --> NET
     DC --> NET
-    NET -->|CQL · 읽기 전용| CLI --> VAULT
-    VAULT -->|"파일을 직접 grep"| LSKILL
-    VAULT -->|VaultReader| IDX --> MCP
+    NET -->|CQL| CLI --> VAULT
+    VAULT --> LSKILL
+    VAULT --> IDX --> MCP
 
     classDef ext fill:#e5e7eb,stroke:#6b7280,color:#111827
     classDef net fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
@@ -87,33 +86,35 @@ flowchart TB
     class VAULT st
 ```
 
-**색이 곧 구현 언어입니다** — 파랑은 Python(`cli` · 로컬판), 초록은 Kotlin(서버판),
-노랑은 저장된 파일. 두 판은 **볼트에서 갈라지고 그 뒤로 만나지 않습니다.**
+읽는 법이 셋입니다.
 
-**볼트를 만드는 것은 언제나 `cli` 하나**입니다. 서버는 Confluence 를 크롤하지 않고
-그 결과를 읽기만 합니다.
+- **색이 곧 구현 언어** — 파랑 Python(`cli`·로컬판), 초록 Kotlin(서버판), 노랑 파일.
+- **Confluence 는 Cloud 든 Server/DC 든** 상관없습니다. `doctor` 가 배포 형태를 판별하고
+  인증도 넷을 지원합니다 — PAT · Cloud API 토큰 · IAM OAuth2 · 리버스 프록시.
+- **볼트를 만드는 것은 `cli` 하나**입니다. 서버는 Confluence 를 크롤하지 않고
+  그 결과를 읽기만 합니다. 두 판은 볼트에서 갈라져 그 뒤로 만나지 않습니다.
 
 ```mermaid
 flowchart TB
     subgraph S1["① sync — 네트워크"]
-        RAW["mirror/raw/{id뒤2}/{id}.xhtml<br/>원본 XHTML · 무손실"]
+        RAW["mirror/raw/…/{id}.xhtml<br/>원본 XHTML · 무손실"]
         STATE["mirror/.sync-state.json<br/>cursor · version · ancestors"]
     end
 
     subgraph S2["② build — 로컬 · 멱등"]
         PAGES["mirror/pages/<br/>마크다운"]
-        ALIAS["<b>ALIASES.md</b><br/>별칭 색인 · 사람과 grep 용"]
-        TREE["TREE.md<br/>계층 목차 · 사람과 grep 용"]
-        ANCH["derived/anchors.jsonl<br/>앵커 원자료 · 프로그램용"]
+        ALIAS["ALIASES.md<br/>별칭 색인 ★"]
+        TREE["TREE.md<br/>계층 목차"]
+        ANCH["derived/anchors.jsonl<br/>앵커 원자료"]
     end
 
-    subgraph S3L["③ 로컬판 — 파일만 읽습니다"]
+    subgraph S3L["③ 검색 — 로컬판"]
         LQ["스킬<br/>ALIASES → TREE → 본문 순 grep"]
     end
 
-    subgraph S3S["③ 서버판 — 색인해서 서빙합니다"]
-        SQ["/api/search<br/>Nori → BM25(앵커4 : 제목3 : 본문1)<br/>+ 학습 힌트 융합"]
-        ST["/api/tree<br/>TreeIndex"]
+    subgraph S3S["③ 검색 — 서버판"]
+        SQ["/api/search<br/>Nori → BM25 → 학습 힌트 융합"]
+        ST["/api/tree"]
     end
 
     RAW -->|파싱| PAGES
@@ -139,11 +140,17 @@ flowchart TB
     class SQ,ST kt
 ```
 
-**`build` 는 같은 원자료로 두 벌을 냅니다.** 왼쪽으로 가는 마크다운(`ALIASES.md`·`TREE.md`)은
-**grep 하는 사람**용이고, 오른쪽으로 가는 `anchors.jsonl` 과 `.sync-state.json` 의 `ancestors` 는
-**색인하는 프로그램**용입니다. 그래서 **서버판은 두 마크다운 파일을 읽지 않습니다** —
-앵커도 계층도 양쪽 다 갖고 있고, 같은 원본에서 나온 다른 산출물을 볼 뿐입니다.
-`mirror/pages/` 의 본문만 두 판이 함께 씁니다.
+**`build` 는 같은 원자료로 두 벌을 냅니다** — 마크다운은 사람이 grep 하라고, JSON 계열은
+프로그램이 색인하라고:
+
+| 산출물 | 누가 읽나 |
+|---|---|
+| `ALIASES.md` · `TREE.md` | **로컬판만** — 사람과 grep 을 위한 형식 |
+| `derived/anchors.jsonl` · `.sync-state.json` 의 `ancestors` | **서버판만** — 색인을 위한 형식 |
+| `mirror/pages/` 의 본문 | 양쪽 다 |
+
+그래서 **서버판은 두 마크다운 파일을 읽지 않습니다.** 앵커도 계층도 양쪽 다 갖고 있고,
+같은 원본에서 나온 다른 산출물을 볼 뿐입니다.
 
 `sync` 와 `build` 를 나눈 이유는 **제목→ID 해석 완전성**입니다. Confluence 링크는 대개
 제목으로 대상을 가리키는데, 전부 받은 뒤 한 번에 파싱해야 해석이 완전해집니다(실측 94%).
