@@ -21,6 +21,23 @@ Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** "�
 
 ---
 
+**쓰려는 분은** [어느 것을 쓰나요](#어느-것을-쓰나요) → [시작하기](#시작하기) 두 절이면
+충분합니다. 그 아래는 만드는 사람을 위한 것입니다.
+
+| | |
+|---|---|
+| [어느 것을 쓰나요](#어느-것을-쓰나요) | 로컬판과 서버판 — 어느 쪽이 내 상황인가 |
+| [어떻게 동작하나](#어떻게-동작하나) | Confluence → 볼트 → 두 판으로 갈리는 흐름 |
+| [시작하기](#시작하기) | [로컬판 5분](#로컬판--5분) · [서버판 운영자](#서버판--운영자) · [사이에 둘 한 단계](#사이에-한-단계를-두세요) |
+| [학습 레이어](#학습-레이어-서버판만) | 서버판만 — 팀의 탐색 이력이 랭킹을 보정하는 방식 |
+| [저장소 구조](#저장소-구조) | 어느 디렉터리가 무엇을 하나 |
+| [적용 범위](#적용-범위) | Cloud·Server/DC 양쪽 · 언어는 한국어 기본 |
+| [설계 결정 요약](#설계-결정-요약) | 왜 이렇게 만들었나 |
+| [만드는 사람을 위해](#만드는-사람을-위해) | [검증 절차](#변경-후-이-넷이-통과해야-합니다) · [검증 상태](#검증-상태) · [측정 지표](#측정-지표-우선순위-순) |
+| [미해결](#미해결) | 아직 못 푼 것 — 배포 전에 읽으세요 |
+
+---
+
 ## 어느 것을 쓰나요
 
 두 가지 배포 형태가 있습니다. **업그레이드 경로가 아니라 서로 다른 물건입니다.**
@@ -48,31 +65,31 @@ Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** "�
 ## 어떻게 동작하나
 
 ```mermaid
-flowchart TB
-    subgraph CONF["Confluence"]
-        direction LR
-        CLOUD[("Cloud")]
-        DC[("Server / Data Center")]
+flowchart LR
+    subgraph CONF["Confluence — 배포 형태를 가리지 않습니다"]
+        direction TB
+        CLOUD[("Cloud<br/>경로 접두사 /wiki")]
+        DC[("Server / Data Center<br/>접두사 없음")]
     end
 
-    NET["네트워크 · 인증<br/>배포 형태 판별 · 인증 4방식"]
-    CLI["cli · Python<br/>sync → build"]
-    VAULT[("볼트<br/>파일")]
+    NET["네트워크 · 인증<br/>doctor 가 배포 형태 판별<br/>PAT · Cloud 토큰 · IAM · 프록시"]
+    CLI["cli · Python<br/>sync → build<br/>유일한 싱커"]
+    VAULT[("볼트 · 파일<br/>두 판이 같은 포맷")]
 
-    subgraph L["로컬판"]
-        LSKILL["스킬<br/>파일을 직접 grep"]
+    subgraph L["로컬판 — 각자 자기 볼트"]
+        LSKILL["스킬 + 커맨드<br/>ALIASES → TREE → 본문 grep<br/>런타임 의존성 0"]
     end
 
-    subgraph S["서버판"]
-        IDX["Lucene/Nori 색인<br/>+ 학습 레이어"]
-        MCP["MCP 도구 4개"]
+    subgraph S["서버판 — 팀 공용 · 상주"]
+        IDX["Lucene/Nori 색인<br/>+ 학습 레이어<br/>질의 시점 ACL"]
+        MCP["MCP 도구 4개<br/>search · read · grep · tree"]
     end
 
     CLOUD --> NET
     DC --> NET
-    NET -->|CQL| CLI --> VAULT
-    VAULT --> LSKILL
-    VAULT --> IDX --> MCP
+    NET -->|CQL · 읽기 전용| CLI --> VAULT
+    VAULT -->|파일 직접 읽기| LSKILL
+    VAULT -->|VaultReader| IDX --> MCP
 
     classDef ext fill:#e5e7eb,stroke:#6b7280,color:#111827
     classDef net fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
@@ -96,25 +113,25 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph S1["① sync — 네트워크"]
+    subgraph S1["① sync — 네트워크 · 증분"]
         RAW["mirror/raw/…/{id}.xhtml<br/>원본 XHTML · 무손실"]
         STATE["mirror/.sync-state.json<br/>cursor · version · ancestors"]
     end
 
     subgraph S2["② build — 로컬 · 멱등"]
-        PAGES["mirror/pages/<br/>마크다운"]
-        ALIAS["ALIASES.md<br/>별칭 색인 ★"]
-        TREE["TREE.md<br/>계층 목차"]
-        ANCH["derived/anchors.jsonl<br/>앵커 원자료"]
+        PAGES["mirror/pages/<br/>마크다운 본문"]
+        ALIAS["★ ALIASES.md<br/>별칭 색인 · 사람과 grep 용<br/>한 줄에 제목·별칭·인링크·경로"]
+        TREE["TREE.md<br/>계층 목차 · 고아 문서용"]
+        ANCH["derived/anchors.jsonl<br/>앵커 원자료 · 프로그램용"]
     end
 
     subgraph S3L["③ 검색 — 로컬판"]
-        LQ["스킬<br/>ALIASES → TREE → 본문 순 grep"]
+        LQ["스킬<br/>ALIASES → TREE → 본문 순 grep<br/>인링크 많은 쪽이 정본"]
     end
 
     subgraph S3S["③ 검색 — 서버판"]
-        SQ["/api/search<br/>Nori → BM25 → 학습 힌트 융합"]
-        ST["/api/tree"]
+        SQ["/api/search<br/>Nori → BM25(앵커4 : 제목3 : 본문1)<br/>+ 학습 힌트 RRF 융합"]
+        ST["/api/tree<br/>TreeIndex · depth · rootId"]
     end
 
     RAW -->|파싱| PAGES
@@ -261,6 +278,128 @@ curl localhost:8787/api/stats     # trajectories · termPagePairs 가 느는지
 
 이 순서는 의도적으로 **실패해도 산출물이 남게** 짜여 있습니다 — 1단계에서 멈춰도
 볼트와 별칭 색인은 그대로 쓸 수 있습니다.
+
+---
+
+## 학습 레이어 (서버판만)
+
+**"남들이 같은 질문으로 찾아간 문서"를 다음 사람에게 밀어 올립니다.** 어휘 검색이
+못 찾은 것을 사람들의 탐색이 대신 찾아준 셈이니, 그 경로를 기억해 두는 것입니다.
+
+1인 사용에는 없습니다 — 혼자서는 통계가 안 쌓여 어차피 무의미하고,
+로컬판에는 관측할 서버 자체가 없습니다.
+
+### 관측 — 도구 호출이 곧 궤적입니다
+
+```mermaid
+flowchart LR
+    Q["/api/search<br/>onQuery · onServed"]
+    R["/api/read<br/>onRead"]
+    E["세션 종료<br/>onEnd"]
+    SW["SessionSweeper<br/>5분마다 · idle 30분"]
+    FIN["finalize<br/>유용했나 판정"]
+    LOG[("trajectories.jsonl<br/>append-only<br/>유일한 복구 불가 자산")]
+    POST[("postings<br/>항 → 페이지 → hits/misses")]
+
+    Q --> R --> E --> FIN
+    SW -.->|종료를 놓치면| FIN
+    FIN --> LOG
+    FIN --> POST
+    POST -->|hints| Q
+
+    classDef api fill:#d1fae5,stroke:#059669,color:#064e3b
+    classDef st fill:#fef3c7,stroke:#d97706,color:#78350f
+    classDef j fill:#ede9fe,stroke:#7c3aed,color:#4c1d95
+    class Q,R,E api
+    class SW,FIN j
+    class LOG,POST st
+```
+
+**별도의 보고 도구가 없습니다.** 에이전트가 `record_trajectory` 같은 것을 안정적으로
+불러줄 리 없어서(D6), 검색과 읽기 **자체를 관측**합니다. 훅도 없습니다 — 읽기가 서버를
+거치므로 서버가 직접 봅니다.
+
+세션은 MCP 프록시 프로세스 하나입니다. 종료 신호를 놓치면(SIGKILL·크래시)
+`SessionSweeper` 가 거둡니다 — **안 거두면 그 세션이 배운 것이 통째로 사라집니다.**
+
+### 무엇을 기억하나
+
+| | 값 | 왜 |
+|---|---|---|
+| 키 단위 | **항(term)** — 키워드 집합이 아님 | "로그인 붙이는 법 어디"와 "로그인 붙이는 법"이 다른 키가 되면 카운트가 흩어집니다 |
+| 저장 형태 | `항 → 페이지 → (hits, misses)` | 같은 항에 목적지가 여럿인 건 경쟁이 아니라 **질의가 모호한 것**이라 분포로 둡니다 |
+| 캐싱 대상 | `LOCALIZATION` 질의만 | "이 데이터가 어떻게 흐르나"에 목적지만 주면 답한 게 아니라 **답을 지운** 겁니다 |
+
+`Gate.classify` 가 질의를 넷으로 나눕니다 — `LOCALIZATION`(목적지가 곧 답) ·
+`TRACING`(경로가 곧 답) · `RATIONALE`(근거가 경유지에 분산) · `UNKNOWN`(판단 보류).
+**첫째만 간선을 만듭니다.**
+
+### 얼마나 믿나 — Empirical Bayes
+
+Wilson 하한이 아닙니다. Wilson 은 카운트만 봐서 **같은 4승 3패라도 검색이 강하게
+가리키는 후보와 겨우 걸린 후보를 구분하지 못합니다.**
+
+```
+prior = Beta(s·κ, (1−s)·κ)          s = 정규화된 Lucene 점수 · κ = 5
+post  = Beta(s·κ + hits, (1−s)·κ + misses)
+신뢰도 = 그 사후분포의 5% 하한
+```
+
+Wilson 은 **균등 사전분포의 특수한 경우**라, 검색 점수를 사전분포로 주면 그 정보가
+살아납니다. 표본이 쌓이면 사전분포 영향은 저절로 사라집니다(400승 300패에서 격차 0.005).
+
+사전확률은 `[0.05, 0.85]` 로 자릅니다 — 1.0 이면 Beta 한쪽 모수가 0이 되어
+**관측 한 번에 신뢰도 1.0** 이 됩니다.
+
+신뢰도가 **0.45 미만이면 서빙하지 않습니다.** 확신 없을 때 침묵하는 것이 이 설계의
+전제입니다:
+
+```
+손익분기    p_hit · (n−1) > p_wrong
+```
+
+기준이 절대 적중률이 아니라 **적중 대 오답 비율**입니다. 캐시가 침묵하면 `p_wrong → 0`
+이라 거의 항상 이득입니다 — `1/n` 은 틀린 공식입니다(D2).
+
+### "유용했다"는 어떻게 아나 — 이 설계의 최대 미해결
+
+서버는 무엇을 읽었는지만 보고 그게 답이었는지는 모릅니다. 신호 다섯을 씁니다:
+
+| 신호 | 판정 |
+|---|---|
+| 마지막으로 읽은 페이지 | 답일 확률이 높다 — 탐색은 성공에서 멈춥니다 |
+| 키워드가 겹치는 재질의 | 앞 시도는 실패였다 |
+| **서빙했는데 끝내 안 읽힌 힌트** | 그 힌트가 틀렸다 — 유일하게 학습을 **되돌리는** 신호 |
+| 마지막 읽기 앞의 것들 | 열어보고 지나쳤다 (1건이면 미스 0, 6건이면 5) |
+| `dest` 의 검색 순위 | 깊을수록 강한 증거 (1위 ×1 · 2~3위 ×2 · 그 아래 ×3) |
+
+셋째가 중요합니다. 그전에는 미스가 나는 경로가 재질의 하나뿐이라 **엉뚱한 힌트도
+벌점이 없었고**, `pWrong` 이 늘 0.0 이었습니다.
+
+**클릭 없는 종료를 실패로 세지 않습니다.** 결과 제목만 보고 답했을 수 있어서요 —
+IR 에서 [good abandonment](https://dl.acm.org/doi/10.1145/1571941.1571951) 로 알려진
+오독입니다. `abandonedWithHints` 로 따로 셉니다.
+
+> **아직 재지 못한 것:** 순위 가중의 문턱(3·6)과 3배 상한은 **손으로 정한 값**입니다.
+> 깊을수록 강하다는 방향만 웹 검색 클릭 모델에서 확립된 것이고, 이 코퍼스에서
+> 측정하지 않았습니다. `dest = reads.last()` 라는 전제 자체도 그대로입니다.
+> `/api/stats` 의 `pWrong` 과 `sinceStart` 로 모니터링하세요.
+
+### 검색 결과에 어떻게 섞이나
+
+어휘 순위와 학습 힌트를 RRF 로 융합하되, **힌트는 순위가 아니라 신뢰도로 가중**합니다 —
+EB 하한은 이미 확률이라 순위로 뭉개면 보정된 정보를 버리게 됩니다.
+
+```
+어휘   1 / (60 + rank + 1)
+학습   1.6 × 신뢰도 / (60 + rank + 1)
+```
+
+결과에 붙는 표시가 그것입니다 — `*` 는 양쪽에서, `S` 는 학습에서만 나온 것입니다.
+`S` 가 곧 **어휘 검색이 못 찾은 문서를 학습이 찾아낸 경우**이고, 이 레이어의 존재 이유입니다.
+
+**힌트도 ACL 을 다시 통과합니다.** 학습 레이어는 권한을 모르므로 융합 시점에 한 번 더
+거릅니다 — 이중 방어선입니다.
 
 ---
 
