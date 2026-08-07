@@ -1,8 +1,5 @@
 package dev.wikilens.learn
 
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
-
 /** 한 질의와 그 뒤에 이어진 읽기들. */
 class QuerySpan(val keywords: List<String>, val kind: QueryKind) {
     val reads = ArrayList<String>()

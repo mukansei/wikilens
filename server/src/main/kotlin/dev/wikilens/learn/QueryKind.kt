@@ -1,11 +1,5 @@
 package dev.wikilens.learn
 
-import kotlin.math.abs
-import kotlin.math.exp
-import kotlin.math.ln
-import kotlin.math.max
-import kotlin.math.min
-
 /**
  * 학습 레이어의 순수 로직. Spring도 Lucene도 참조하지 않는다.
  *

@@ -1,12 +1,5 @@
 package dev.wikilens.learn
 
-import kotlin.math.abs
-import kotlin.math.exp
-import kotlin.math.ln
-import kotlin.math.max
-import kotlin.math.min
-
-
 object Gate {
     /**
      * 주의: 도메인 명사를 흐름 마커로 쓰면 안 된다. '파이프라인', '워크플로'는

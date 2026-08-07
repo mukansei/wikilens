@@ -1,8 +1,5 @@
 package dev.wikilens.learn
 
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
-
 /**
  * 궤적 저장소. Spring도 Lucene도 참조하지 않는다.
  *
