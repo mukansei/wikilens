@@ -4,6 +4,8 @@ import dev.wikilens.acl.AclRegistry
 import dev.wikilens.config.WikiLensProperties
 import dev.wikilens.index.LuceneIndex
 import dev.wikilens.learn.TrajectoryStore
+import dev.wikilens.service.ContentService
+import dev.wikilens.service.SearchService
 import dev.wikilens.vault.VaultReader
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
