@@ -9,13 +9,20 @@
 > **아무것도 자동으로 실행하지 마세요.** 싱크는 Confluence에 수천 건을 요청하고 수십 MB를
 > 쓰고 수 분이 걸립니다. 각 단계마다 사용자에게 보여주고 승낙을 받은 뒤 실행하세요.
 
-전체는 네 단계입니다. 시작 전에 현재 상태를 확인하세요:
+전체는 세 단계입니다. 시작 전에 현재 상태를 확인하세요:
 
 ```
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vault_status.py"
 ```
 
 `CREDS=`, `CLI=`, `STATUS=` 를 보고 **이미 끝난 단계는 건너뛰세요.**
+
+이후 CLI 호출은 **전부 래퍼를 거칩니다.** 래퍼가 자격증명을 싣고, CLI 위치를 찾고,
+`--root` 를 볼트 경로로 채웁니다:
+
+```
+CLI="${CLAUDE_PLUGIN_ROOT}/scripts/wikilens_cli.sh"
+```
 
 ---
 
@@ -55,39 +62,31 @@ SSO 환경이어도 대개 PAT가 동작합니다. **PAT를 먼저 시도하세�
 `detect_prefix()` 가 `/user/current` 까지 이중 검증하도록 고쳐진 뒤로는 강제 지정 없이
 동작하는 것을 실측했습니다(2026-08-06). 자격증명이 파일에 있는지(`CREDS=file`)를 먼저 보세요.
 
-이후 CLI 호출은 **전부 래퍼를 거칩니다.** 래퍼가 env.sh를 싣고 CLI 위치까지 찾아줍니다:
-
-```
-CLI="${CLAUDE_PLUGIN_ROOT}/scripts/wikilens_cli.sh"
-```
-
 ## 2. 볼트 위치와 CLI — 한 번에 보여주고 승낙받기
 
+볼트 경로를 정하고, 원하면 권한 등록까지 한 번에 합니다:
+
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/setup_vault.py" --vault <경로>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/setup_vault.py" --vault <경로> --register-permissions
 ```
 
 기본은 `~/.wikilens/vault`. **이미 볼트가 있으면 그 경로를 주면 됩니다** — 옮기라고 하지 마세요.
 
+`--register-permissions` 는 볼트를 `~/.claude/settings.json` 의 접근 허용 디렉터리에
+넣습니다. 볼트가 어느 프로젝트 밖에 있어서, 안 하면 프로젝트마다 읽기 승인을 다시
+받아야 합니다. **전역 설정 변경이므로 반드시 승낙을 받고 붙이세요** — 원치 않으면
+빼고 실행하면 되고, 그 경우 프로젝트마다 한 번씩 승인하면 됩니다.
+
 CLI는 볼트를 **만드는 데만** 필요합니다(검색은 파일만 읽으므로 의존성이 없습니다).
-`vault_status.py` 출력으로 판단하세요:
+`CLI=(미설치)` 면 위 명령의 출력에 설치 명령 한 줄이 딸려 나옵니다 — **그것을 그대로
+사용자에게 보여주고 승낙을 받아 실행하세요.** 여기 옮겨 적지 마세요(정본은
+`setup_vault.py` 의 `install_command()` 이고, 옮겨 적으면 둘이 갈립니다).
 
-1. `CLI=` 에 값이 있으면 이미 설치된 것 — 그대로 씁니다
-2. `CLI_SOURCE=` 에 경로가 있으면 `pip install "<CLI_SOURCE>"`
-3. 둘 다 비어 있으면 **사내 git URL을 사용자에게 요청**한 뒤
-   `setup_vault.py --cli-source "git+<URL>#subdirectory=cli"` 로 기록합니다
+CLI 는 `~/.wikilens/venv` 에 설치됩니다. **자리가 정해져 있어서 설치 뒤에 찾는 단계가
+없습니다** — 끝나면 `vault_status.py` 가 곧바로 `CLI=`에 그 경로를 냅니다.
 
-**설치했는데도 `CLI=(못 찾음)` 이면 venv·pipx 안에 있는 것입니다.** 그 셸을 활성화하지
-않으면 PATH 에도 없고 기본 python 으로 import 도 안 되는데, Claude Code 가 띄우는
-셸이 정확히 그 상태입니다. 실제 경로를 `config.json` 에 기록하세요:
-
-```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/setup_vault.py" --cli-path auto
-```
-
-`auto` 는 `<CLI_SOURCE>/.venv/bin/wikilens` 를 찾아봅니다. 못 찾으면 경로를 직접 주세요
-(`--cli-path /path/to/bin/wikilens`). 기록해두면 이후 래퍼가 그 경로로 실행합니다 —
-**PATH 에 의존하지 않습니다.**
+`CLI_SOURCE=` 가 비어 있으면 저장소 위치를 모르는 것입니다 — **사내 git URL을 사용자에게
+요청**한 뒤 `--cli-source "git+<URL>#subdirectory=cli"` 로 기록하고 다시 실행하세요.
 
 ## 3. 스페이스 고르고 싱크
 
@@ -100,34 +99,24 @@ bash "$CLI" doctor
 제시하고 어느 것을 받을지 고르게 하세요 — 필수 인자이고 기본값이 없습니다.
 
 ```
-bash "$CLI" --root <VAULT> sync --space <KEY>
+bash "$CLI" sync --space <KEY>
 ```
 
-- **`--root` 는 서브커맨드 앞에 와야 합니다.** 최상위 파서에 있어서 뒤에 두면 파싱 에러입니다.
 - 스페이스가 여럿이면 `--space A --space B` 로 반복하세요.
 - **`sync` 한 번이 sync + build 를 다 합니다.** 따로 `build`를 부를 필요 없습니다.
 - 수 분 걸립니다. 중단돼도 다음 실행이 이어받습니다.
 
-## 4. 값어치 판정과 마무리
+끝나면 값어치를 판정합니다:
 
 ```
-bash "$CLI" --root <VAULT> stats
+bash "$CLI" stats
 ```
 
 출력의 **"제목과 어휘가 안 겹치는 별칭을 가진 페이지"** 비율을 그대로 보고하세요.
 이 비율이 낮으면 어휘 격차가 없다는 뜻이고, **그러면 이 도구 전체가 값어치가 없습니다.**
 그 판정까지 정직하게 전달하세요 — 숫자를 좋게 포장하지 마세요.
 
-마지막으로 권한 등록을 **물으세요**:
+---
 
-```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/setup_vault.py" --register-permissions
-```
-
-볼트는 어느 프로젝트 밖에 있어서, 등록하지 않으면 프로젝트마다 읽기 승인을 다시
-받아야 합니다. `~/.claude/settings.json` 의 `permissions.additionalDirectories` 를 바꾸는
-**전역 설정 변경이므로 반드시 승낙을 받고 실행하세요.** 원치 않으면 건너뛰어도 되고,
-그 경우 프로젝트마다 한 번씩 승인하면 됩니다.
-
-끝나면 사용자의 **원래 질문으로 돌아가 곧바로 검색해 답하세요.** 설정을 마쳤다는
+마무리로 사용자의 **원래 질문으로 돌아가 곧바로 검색해 답하세요.** 설정을 마쳤다는
 보고만 하고 멈추지 마세요.

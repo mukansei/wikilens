@@ -182,8 +182,25 @@ flowchart TB
 
 ### 로컬판 — 5분
 
+```
+/plugin marketplace add ./
+/plugin install wikilens-local@wikilens
+/wikilens-local:setup
+```
+
+`setup` 이 전부 합니다 — 자격증명을 `~/.wikilens/env.sh`(600)에 고정하고, 볼트 위치를
+`~/.wikilens/config.json` 에 적고, CLI 를 `~/.wikilens/venv` 에 설치하고, 첫 싱크까지.
+준비할 것은 **Confluence 주소와 개인 액세스 토큰(PAT)** 둘뿐입니다.
+**이미 볼트가 있으면 옮기지 말고 그 경로를 등록**하면 됩니다.
+
+싱크가 끝나면 `stats` 가 "제목과 어휘가 안 겹치는 별칭을 가진 페이지" 비율을 냅니다.
+**여기서 판단하세요 — 낮으면 어휘 격차가 없다는 뜻이고, 이 도구 전체가 값어치가 없습니다.**
+
+<details>
+<summary><b>플러그인 없이 CLI 만</b> — cron·서버 운영자용</summary>
+
 ```bash
-cd cli && pip install -e .
+python3 -m venv ~/.wikilens/venv && ~/.wikilens/venv/bin/pip install ./cli
 
 mkdir -p ~/.wikilens && chmod 700 ~/.wikilens
 cat > ~/.wikilens/env.sh <<'EOF'
@@ -192,9 +209,9 @@ export CONFLUENCE_TOKEN=<개인 액세스 토큰>
 EOF
 chmod 600 ~/.wikilens/env.sh
 
-wikilens doctor                                # 연결·인증·스페이스 확인
-wikilens --root ~/wiki sync --space PLATFORM   # 수 분 걸립니다
-wikilens --root ~/wiki stats
+~/.wikilens/venv/bin/wikilens doctor                       # 연결·인증·스페이스 확인
+~/.wikilens/venv/bin/wikilens sync --space PLATFORM --root ~/wiki   # 수 분
+~/.wikilens/venv/bin/wikilens stats --root ~/wiki
 ```
 
 **자격증명은 `export` 가 아니라 파일에 둡니다.** `export` 는 그 셸에서만 살아서
@@ -202,19 +219,10 @@ Claude Code 를 앱으로 띄우면 없는 것과 같고, 실제로 **검색은 
 죽는** 상태를 오래 겪었습니다(→ `DECISIONS.md` D10). CLI 는 환경변수가 없으면
 이 파일을 읽습니다 — cron 에서도 그냥 동작합니다.
 
-**여기서 판단하세요.** `stats` 가 "제목과 어휘가 안 겹치는 별칭을 가진 페이지" 비율을
-냅니다. **낮으면 어휘 격차가 없다는 뜻이고, 이 도구 전체가 값어치가 없습니다.**
+`--root` 는 서브커맨드 앞뒤 어디에 와도 되고, 플러그인을 통해 부르면 래퍼가
+`~/.wikilens/config.json` 의 볼트 경로로 자동으로 채웁니다.
 
-플러그인을 설치하면 어느 프로젝트에서든 볼트를 검색할 수 있습니다:
-
-```
-/plugin marketplace add ./
-/plugin install wikilens-local@wikilens
-/wikilens-local:setup
-```
-
-`setup` 이 위 과정을 대신해 줍니다 — 자격증명 파일, 볼트 위치(`~/.wikilens/config.json`),
-CLI 경로, 첫 싱크까지. **이미 볼트가 있으면 옮기지 말고 그 경로를 등록**하면 됩니다.
+</details>
 
 <details>
 <summary><b>인증이 안 되면</b> — SSO · 게이트웨이 · 접두사 자동판별</summary>
@@ -242,19 +250,21 @@ export CONFLUENCE_PREFIX=""        # Server/DC 강제
 
 ```bash
 # 서비스 계정으로 1회 싱크 (사용자별 싱크 없음 → Confluence 부하 1배)
-CONFLUENCE_TOKEN=<서비스계정> wikilens --root ./mirror-root sync --space PLATFORM
+CONFLUENCE_TOKEN=<서비스계정> wikilens sync --space PLATFORM --root ~/wiki
 
-cd server && ./gradlew bootRun          # 기동 시 자동으로 전량 색인
+cd server && ./gradlew bootRun          # 기동 시 볼트를 찾아 전량 색인
 ```
 
-사용자는 볼트를 받지 않습니다. MCP 플러그인만 설치하고 `~/.wikilens/config.json` 에
-주소와 본인 식별자를 넣으면 됩니다:
+**볼트 경로를 서버에 따로 알려주지 않아도 됩니다.** 기본 자리(`server/mirror-root`)가
+비어 있으면 `~/.wikilens/config.json` 의 `vault` 를 읽습니다 — CLI 가 만든 볼트를
+그대로 찾습니다. 다른 자리에 두려면 `--wikilens.vault-root=/절대/경로` 로 명시하세요
+(명시가 항상 이깁니다). 운영 배포는 절대경로를 주는 쪽을 권합니다.
 
-```json
-{ "server": "http://wikilens.corp:8787", "user": "alice@corp" }
-```
+사용자는 볼트를 받지 않습니다. MCP 플러그인만 설치하고 값 둘을 넣으면 됩니다:
+
 ```
 /plugin install wikilens-client@wikilens
+/wikilens-client:setup                  # 서버 주소 · 본인 식별자
 ```
 
 **`user` 를 빼면 서버가 요청자를 식별하지 못해 결과가 항상 빕니다** — 그게 "문서가 없다"

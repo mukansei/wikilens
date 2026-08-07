@@ -11,9 +11,9 @@ import dev.wikilens.api.GrepResponse
 import dev.wikilens.api.ReadResponse
 
 import dev.wikilens.acl.AclRegistry
-import dev.wikilens.config.WikiLensProperties
 import dev.wikilens.index.LuceneIndex
 import dev.wikilens.vault.VaultLayout
+import dev.wikilens.vault.VaultLocator
 import com.google.re2j.Pattern as Re2
 import com.google.re2j.PatternSyntaxException
 import org.slf4j.LoggerFactory
@@ -39,16 +39,15 @@ import java.nio.file.Path
 class ContentService(
     private val acl: AclRegistry,
     private val index: LuceneIndex,
-    private val props: WikiLensProperties,
+    private val locator: VaultLocator,
 ) {
     private val log = LoggerFactory.getLogger(ContentService::class.java)
 
-    private val root: Path get() = Path.of(props.vaultRoot)
 
     fun read(pageId: String, userKey: String?): ReadResponse? {
         if (!acl.canSee(userKey, pageId)) return null   // 존재 여부도 알리지 않는다
         val meta = index.metaOf(pageId) ?: return null
-        val f = root.resolve(VaultLayout.relPagePath(pageId))
+        val f = locator.root.resolve(VaultLayout.relPagePath(pageId))
         if (!Files.exists(f)) return null
         // 읽기 실패를 그냥 null 로 돌리면 **권한 없음과 똑같은 404** 가 되어, 디스크
         // 문제가 "그런 문서 없음" 으로 보인다. 응답은 그대로 두되(존재 비노출) 로그로 남긴다.
@@ -130,6 +129,11 @@ class ContentService(
         var scanned = 0
         var truncated = false
         val deadline = System.nanoTime() + budgetNanos
+        // **루프 밖에서 한 번 푼다.** `locator.root` 는 폴백을 볼 때 stat 두 번 +
+        // config.json 파싱이라, 문서마다 부르면 스캔에 그만큼이 통째로 얹힌다
+        // (실측: 2,383회 66ms — grep 전체가 0.64초이므로 약 10%).
+        // 한 요청 안에서 볼트가 바뀔 일은 없다.
+        val vaultRoot = locator.root
 
         for (meta in index.allMeta()) {
             // limit 이 찼는데 아직 볼 문서가 남았다 = 잘렸다.
@@ -137,7 +141,7 @@ class ContentService(
             if (System.nanoTime() > deadline) { truncated = true; break }
             // 루프 밖에서 한 번 계산한 tokens 를 재사용한다 (문서마다 재조회하면 수천 회).
             if (!acl.canSee(tokens, meta.id)) continue
-            val f = root.resolve(VaultLayout.relPagePath(meta.id))
+            val f = vaultRoot.resolve(VaultLayout.relPagePath(meta.id))
             // exists + open 두 번 왕복하는 대신 열어보고 실패하면 넘어간다.
             val reader = runCatching { lenientReader(f) }.getOrNull() ?: continue
             scanned++

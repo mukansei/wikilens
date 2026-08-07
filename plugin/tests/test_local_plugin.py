@@ -558,12 +558,90 @@ def test_setup_command_defers_to_the_single_source_of_truth():
     assert "--space" not in text, "커맨드가 절차를 복제하고 있다"
 
 
-def test_setup_reference_covers_the_argument_order_trap():
-    """`--root` 를 서브커맨드 뒤에 두면 파싱 에러다 — 반드시 명시돼 있어야 한다."""
+def test_setup_reference_does_not_hand_assemble_root():
+    """
+    `--root` 는 래퍼가 채운다. 문서가 다시 조립하기 시작하면 볼트 경로를 아는 곳이
+    둘이 되고, 그러면 예전처럼 "서브커맨드 앞에 와야 한다"는 함정 경고까지 함께
+    복제된다 — 그 경고가 문서 세 곳에 있었던 이유가 이것이다.
+    """
     text = SETUP_REF.read_text(encoding="utf-8")
-    assert "--root <VAULT> sync" in text
-    assert "앞에" in text
+    assert "--root <VAULT>" not in text, "문서가 볼트 경로를 다시 조립하고 있다"
     assert "CONFLUENCE_PREFIX" in text, "접두사 강제 지정 탈출구 안내가 빠졌다"
+
+
+def test_wrapper_fills_root_from_config(tmp_path):
+    """볼트 경로 정본은 config.json 이다 — 호출자가 매번 조립하지 않아야 한다."""
+    exe = tmp_path / "bin" / "wikilens"
+    exe.parent.mkdir(parents=True)
+    exe.write_text('#!/bin/sh\nprintf "%s" "$*"\n')
+    exe.chmod(0o755)
+    setup_vault(tmp_path, "--cli-path", str(exe), "--vault", str(tmp_path / "v"))
+
+    def run(*args):
+        return subprocess.run(
+            ["bash", str(WRAPPER), *args], capture_output=True, text=True,
+            env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"}).stdout
+
+    assert run("sync", "--space", "K") == f"--root {tmp_path / 'v'} sync --space K"
+    # 사용자가 준 값은 건드리지 않는다 — 일회성 재정의는 자격증명과 같은 규칙이다.
+    assert run("sync", "--root", "/elsewhere") == "sync --root /elsewhere"
+    assert run("sync", "--root=/elsewhere") == "sync --root=/elsewhere"
+
+
+@pytest.mark.parametrize("content", ["null", "[]", '"hello"', "123", "{깨진"])
+def test_unusable_config_never_crashes_the_diagnostic(tmp_path, content):
+    """
+    `null`·`[]`·`"문자열"` 은 **유효한 JSON** 이라 파싱 검사를 통과한 뒤 `cfg.get()` 에서
+    AttributeError 로 터진다. 그러면 이 스크립트가 통째로 죽고 스킬은 `VAULT=` 대신
+    traceback 을 받는데, **스킬에는 그 분기가 없어 검색이 아예 안 된다.**
+    손으로 고치는 파일이라 이런 내용이 실제로 들어온다.
+    """
+    (tmp_path / ".wikilens").mkdir()
+    (tmp_path / ".wikilens" / "config.json").write_text(content, encoding="utf-8")
+    got = status(tmp_path)                                   # JSON 파싱이 되면 안 죽은 것
+    assert got["vault"] == str(tmp_path / ".wikilens" / "vault")
+    assert got["status"] == "missing"
+
+
+def test_non_dict_config_is_quarantined_too(tmp_path):
+    """파싱만 보면 `[]` 가 통과한 뒤 그대로 덮여 사라진다 — 깨진 파일과 같게 다뤄야 한다."""
+    cfg_dir = tmp_path / ".wikilens"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.json").write_text('["/home/me/wiki"]', encoding="utf-8")
+    setup_vault(tmp_path, "--vault", str(tmp_path / "v"))
+    baks = list(cfg_dir.glob("config.json.bak-*"))
+    assert len(baks) == 1 and "/home/me/wiki" in baks[0].read_text(encoding="utf-8")
+
+
+def test_broken_config_is_quarantined_not_overwritten(tmp_path):
+    """
+    `~/.wikilens/config.json` 은 **사람이 손으로 고치는 파일**이라 깨져 있는 것이 흔하다.
+    `_config()` 가 파싱 실패를 `{}` 로 돌려주므로 그 위에 얹어 저장하면 원본이 통째로
+    사라진다 — 두 판이 같은 파일을 쓰므로 서버판 설정까지 함께 날아간다.
+    """
+    cfg_dir = tmp_path / ".wikilens"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.json").write_text(
+        '{ "server": "http://s:1", "user": "u", }', encoding="utf-8")
+
+    r = setup_vault(tmp_path, "--vault", str(tmp_path / "v"))
+    baks = list(cfg_dir.glob("config.json.bak-*"))
+    assert len(baks) == 1, f"백업이 없다: {list(cfg_dir.iterdir())}"
+    assert "http://s:1" in baks[0].read_text(encoding="utf-8"), "원본 내용이 사라졌다"
+    assert "옮겼습니다" in r.stdout, r.stdout
+    assert status(tmp_path)["vault"] == str(tmp_path / "v"), "새 설정이 기록되지 않았다"
+
+
+def test_venv_cli_is_found_without_being_recorded(tmp_path):
+    """
+    자리를 고정한 것의 요점 — 설치하면 **기록 없이** 잡혀야 한다. 예전에는 설치 뒤에
+    `--cli-path auto` 로 찾아 적는 단계가 따로 있었고 그게 실패하는 경로였다.
+    """
+    venv_cli = tmp_path / ".wikilens" / "venv" / "bin" / "wikilens"
+    venv_cli.parent.mkdir(parents=True)
+    venv_cli.write_text("#!/bin/sh\ntrue\n")
+    venv_cli.chmod(0o755)
+    assert status(tmp_path, PATH="/usr/bin:/bin")["cli"] == str(venv_cli)
 
 
 # --------------------------------------------------------------- 검색 절차

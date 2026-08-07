@@ -341,6 +341,81 @@ def main() -> int:
         check("주소를 넣은 사용자에겐 '설정한 적 없다' 안내를 안 함",
               "설정한 적이 없어" not in st3.stdout, st3.stdout[:200])
 
+        # --- 14. --configure (코드 리뷰에서 나온 결함 둘) ---------------------
+        #
+        # 손으로 쓴 JSON 이 조용히 깨지는 것을 막으려고 만든 경로다. 그 도구가
+        # 스스로 깨진 값을 쓰면 존재 이유가 사라진다.
+        print("\n=== 14. --configure ===")
+
+        def configure(home: str, *args):
+            return subprocess.run([sys.executable, str(PROXY), "--configure", *args],
+                                  capture_output=True, text=True,
+                                  env=dict(clean, HOME=home))
+
+        def cfg_of(home: str) -> dict:
+            p = pathlib.Path(home) / ".wikilens" / "config.json"
+            return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+        h = tempfile.mkdtemp(prefix="wl-conf-")
+        r14 = configure(h, "--server", "http://wikilens.corp:8787", "--user", "me@corp")
+        check("설정을 기록함", cfg_of(h).get("server") == "http://wikilens.corp:8787"
+              and cfg_of(h).get("user") == "me@corp", r14.stdout[:150])
+
+        # 로컬판이 쓰는 키를 지우면 두 판을 같이 쓰는 사용자의 볼트 설정이 사라진다.
+        h2 = tempfile.mkdtemp(prefix="wl-conf-merge-")
+        (pathlib.Path(h2) / ".wikilens").mkdir()
+        (pathlib.Path(h2) / ".wikilens" / "config.json").write_text(
+            json.dumps({"vault": "/home/me/wiki", "cli": "/x/bin/wikilens"}), encoding="utf-8")
+        configure(h2, "--server", "http://s:1", "--user", "u")
+        check("로컬판 설정을 보존 (덮어쓰기 아님)",
+              cfg_of(h2).get("vault") == "/home/me/wiki" and cfg_of(h2).get("cli") == "/x/bin/wikilens",
+              str(cfg_of(h2)))
+
+        # `--server --user me@corp` → server="--user" 를 쓰고 user 를 통째로 잃었다.
+        h3 = tempfile.mkdtemp(prefix="wl-conf-missing-")
+        r = configure(h3, "--server", "--user", "me@corp")
+        check("값을 빠뜨리면 거부 (다음 플래그를 값으로 삼지 않음)",
+              r.returncode == 2 and cfg_of(h3) == {}, f"rc={r.returncode} cfg={cfg_of(h3)}")
+
+        # 스킴 없는 주소는 `urlopen` 이 'unknown url type' 으로 죽는다. 유일한 쓰기
+        # 경로가 여기이므로 여기서 막으면 그 오류가 도달하지 않는다.
+        h4 = tempfile.mkdtemp(prefix="wl-conf-scheme-")
+        r = configure(h4, "--server", "wikilens.corp:8787", "--user", "u")
+        check("스킴 없는 주소를 거부", r.returncode == 2 and cfg_of(h4) == {},
+              f"rc={r.returncode} cfg={cfg_of(h4)}")
+        check("무엇을 고칠지 알려줌", "http://" in r.stderr, r.stderr[:150])
+
+        h5 = tempfile.mkdtemp(prefix="wl-conf-eq-")
+        configure(h5, "--server=http://s:1", "--user=u")
+        check("--키=값 형식도 받음", cfg_of(h5).get("user") == "u", str(cfg_of(h5)))
+
+        # 이 파일은 **사람이 손으로 고치는 파일**이라 깨져 있는 것이 흔하다. `_config()`
+        # 가 파싱 실패를 {} 로 돌려주므로 그 위에 얹어 저장하면 로컬판의 vault·cli 가
+        # 경고 없이 사라진다 — 실측: 쉼표 하나가 잘못된 파일에 --configure 한 번에
+        # 둘 다 소실되고 출력은 "설정했습니다" 였다.
+        h6 = tempfile.mkdtemp(prefix="wl-conf-broken-")
+        (pathlib.Path(h6) / ".wikilens").mkdir()
+        (pathlib.Path(h6) / ".wikilens" / "config.json").write_text(
+            '{ "vault": "/home/me/wiki", "cli": "/x/w", }', encoding="utf-8")
+        r = configure(h6, "--server", "http://s:1", "--user", "u")
+        baks = list((pathlib.Path(h6) / ".wikilens").glob("config.json.bak-*"))
+        check("깨진 설정을 지우지 않고 옆에 치워둠", len(baks) == 1, str(baks))
+        check("치웠다는 사실을 알림", "옮겼습니다" in r.stdout, r.stdout[:200])
+        check("원본 내용이 백업에 살아 있음",
+              bool(baks) and "/home/me/wiki" in baks[0].read_text(encoding="utf-8"))
+        check("새 설정은 정상 기록", cfg_of(h6).get("user") == "u", str(cfg_of(h6)))
+
+        # `null`·`[]` 는 유효한 JSON 이라 파싱 검사를 통과한 뒤 `_CFG.get()` 에서 터진다.
+        # 그 자리가 **모듈 최상단**이라 프록시가 기동 중 죽고 도구 4개가 통째로 사라진다.
+        for junk in ("null", "[]", '"hello"', "123"):
+            hj = tempfile.mkdtemp(prefix="wl-conf-junk-")
+            (pathlib.Path(hj) / ".wikilens").mkdir()
+            (pathlib.Path(hj) / ".wikilens" / "config.json").write_text(junk, encoding="utf-8")
+            st = subprocess.run([sys.executable, str(PROXY), "--status"],
+                                capture_output=True, text=True, env=dict(clean, HOME=hj))
+            check(f"dict 아닌 설정({junk})에 기동이 죽지 않음",
+                  "SERVER=" in st.stdout, st.stderr[:120])
+
     finally:
         if proc.poll() is None:
             proc.kill()

@@ -24,7 +24,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/vault_status.py"
 - `CREDS=partial` → 파일은 있는데 **토큰을 아직 안 채웠습니다**(템플릿 그대로).
   `~/.wikilens/env.sh` 를 열어 `<...>` 자리를 채우라고 안내하세요 — 토큰은 사용자만
   입력합니다. 이 상태로 싱크하면 인증 실패로 죽습니다.
-- `CLI=(못 찾음)` → venv·pipx 안에 있을 수 있습니다. `setup_vault.py --cli-path auto` 를
+- `CLI=(미설치)` → CLI 가 아직 없습니다. `setup_vault.py` 출력의 설치 명령 한 줄을
   제안하세요 (setup 전체를 다시 돌릴 필요는 없습니다).
 - `CREDS=shell` → 지금은 되지만 **다음 세션엔 안 됩니다.** 싱크를 마친 뒤
   `setup_vault.py --capture-env` 로 고정할 것을 권하세요.
@@ -40,10 +40,10 @@ Bash: python3 -c "import json,sys; d=json.load(open(sys.argv[1]))['pages']; prin
 ## 3. 싱크 (사용자 승낙 후)
 
 ```
-bash "$CLI" --root <VAULT> sync --space <KEY>
+bash "$CLI" sync --space <KEY>
 ```
 
-- **`--root` 는 반드시 서브커맨드 앞에 둡니다.** 최상위 파서에 있어서 뒤에 두면 파싱 에러입니다.
+- **`--root` 는 래퍼가 볼트 경로로 채웁니다.** 직접 줄 필요가 없고, 주면 그쪽이 이깁니다.
 - 스페이스가 여럿이면 `--space A --space B` 로 반복하세요.
 - `sync` 가 build 까지 한 번에 합니다. 따로 `build` 를 부르지 마세요.
 - 수 분 걸리고 Confluence 에 수천 건을 요청하므로 **실행 전에 승낙을 받으세요.**

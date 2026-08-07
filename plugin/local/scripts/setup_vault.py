@@ -23,8 +23,8 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from vault_status import (  # noqa: E402
-    CONFIG_DIR, CONFIG_PATH, DEFAULT_VAULT, ENV_PATH, _config, cli_argv,
-    cli_source, discover_cli,
+    CONFIG_DIR, CONFIG_PATH, DEFAULT_VAULT, ENV_PATH, VENV_CLI, _config,
+    cli_argv, cli_source, quarantine_unusable_config,
 )
 
 # env.sh 로 옮길 변수들. `auth.py` 가 읽는 것 전부 + `sync.py` 의 URL·접두사.
@@ -105,7 +105,25 @@ def env_template() -> str:
     )
 
 
+def install_command(source: str) -> str:
+    """
+    CLI 를 **정해진 자리**에 설치하는 명령. 여기서 실행하지 않는다 — pip 는 네트워크를
+    쓰므로 사용자 승낙 뒤 커맨드가 실행한다(이 스크립트의 규칙).
+
+    자리를 고정하는 것이 핵심이다. 예전에는 `pip install` 뒤에 **어디에 깔렸는지 찾는
+    단계**가 따로 있었고(`--cli-path auto`), 그게 못 찾으면 사용자가 경로를 직접 줘야
+    했다. venv 를 우리가 만들면 답이 처음부터 정해져 있어 그 단계 전체가 없어진다.
+    """
+    venv = VENV_CLI.parent.parent
+    return (f"python3 -m venv {shlex.quote(str(venv))} && "
+            f"{shlex.quote(str(venv / 'bin' / 'pip'))} install --quiet --upgrade {shlex.quote(source)}")
+
+
 def write_config(vault: Path | None, source: str | None, cli: str | None = None) -> dict:
+    # 깨진 파일 위에 얹어 쓰면 원본이 통째로 사라진다 — 치워두고 알린다.
+    if (moved := quarantine_unusable_config()):
+        print(f"경고: 기존 {CONFIG_PATH.name} 을 읽지 못해 {moved} 로 옮겼습니다.")
+        print("  그 안의 설정(볼트 경로 등)은 새 파일에 없습니다 — 필요하면 손으로 옮기세요.")
     cfg = _config()
     if vault is not None:
         cfg["vault"] = str(vault)
@@ -157,8 +175,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--vault", help=f"볼트 경로. 생략하면 {DEFAULT_VAULT}")
     ap.add_argument("--cli-source", help="pip install 대상 (경로 또는 git+URL)")
     ap.add_argument("--cli-path", metavar="PATH",
-                    help="wikilens 실행파일 경로를 기록 (venv·pipx 처럼 PATH 에 없을 때). "
-                         "'auto' 를 주면 저장소 옆 venv 를 찾아본다")
+                    help="wikilens 실행파일 경로를 기록 (정해진 자리 밖에 손으로 설치했을 때)")
     ap.add_argument("--register-permissions", action="store_true",
                     help="볼트를 ~/.claude/settings.json 의 허용 디렉터리에 추가 (사용자 승낙 후에만)")
     ap.add_argument("--capture-env", action="store_true",
@@ -202,11 +219,7 @@ def main(argv: list[str]) -> int:
     source = args.cli_source or cli_source(existing)
 
     cli = None
-    if args.cli_path == "auto":
-        cli = discover_cli({**existing, "cli_source": source})
-        if not cli:
-            print("CLI_PATH=(자동 탐지 실패 — 경로를 직접 주세요)")
-    elif args.cli_path:
+    if args.cli_path:
         p = Path(args.cli_path).expanduser().resolve()
         if not (p.is_file() and os.access(p, os.X_OK)):
             print(f"실패: 실행 가능한 파일이 아닙니다 — {p}")
@@ -219,12 +232,14 @@ def main(argv: list[str]) -> int:
     print(f"CLI_SOURCE={cfg.get('cli_source') or '(미정 — 사내 git URL 이 필요합니다)'}")
 
     resolved = cli_argv(cfg)
-    print(f"CLI={' '.join(resolved) if resolved else '(못 찾음)'}")
+    print(f"CLI={' '.join(resolved) if resolved else '(미설치)'}")
     if not resolved:
-        hint = discover_cli(cfg)
-        if hint:
-            print(f"  설치는 돼 있는데 PATH 에 없습니다. 기록하려면:")
-            print(f"    setup_vault.py --cli-path {hint}")
+        # 답이 하나뿐이라 조건 분기가 없다 — 자리를 우리가 정했기 때문이다.
+        if source:
+            print("  설치하려면 (사용자 승낙 후):")
+            print(f"    {install_command(source)}")
+        else:
+            print("  CLI_SOURCE 가 없어 설치 명령을 만들 수 없습니다 — 사내 git URL 이 필요합니다.")
 
     if args.register_permissions:
         print(register_permissions(vault))
@@ -233,8 +248,8 @@ def main(argv: list[str]) -> int:
 
     if not vault.exists():
         wrapper = Path(__file__).resolve().parent / "wikilens_cli.sh"
-        print(f"\n볼트가 아직 없습니다. 다음: bash {wrapper} --root {vault} sync --space <KEY>")
-        print("  (--root 는 서브커맨드 **앞**에 와야 합니다. sync 가 build 까지 한 번에 합니다.)")
+        print(f"\n볼트가 아직 없습니다. 다음: bash {wrapper} sync --space <KEY>")
+        print("  (래퍼가 --root 를 위 VAULT 로 채웁니다. sync 가 build 까지 한 번에 합니다.)")
     return 0
 
 

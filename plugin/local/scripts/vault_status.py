@@ -32,6 +32,15 @@ CONFIG_PATH = CONFIG_DIR / "config.json"
 DEFAULT_VAULT = CONFIG_DIR / "vault"
 ENV_PATH = CONFIG_DIR / "env.sh"
 
+# CLI 를 **정해진 자리** 하나에 설치한다. 예전에는 어디에 설치될지 몰라서
+# (`pip install` 이 PATH 로 갈지 venv 로 갈지 pipx 로 갈지) 그 불확실성 하나를 다루는
+# 장치가 넷이었다 — `--cli-path auto` · `discover_cli()` · `config.json` 의 `cli` 키 ·
+# 문서 세 곳의 "설치했는데도 못 찾음" 안내. 자리를 고정하면 그 넷이 한 줄이 된다.
+#
+# 볼트·설정과 같은 디렉터리를 쓰는 것도 의도다 — 로컬판을 지우는 방법이
+# `rm -rf ~/.wikilens` 하나로 유지된다.
+VENV_CLI = CONFIG_DIR / "venv" / "bin" / "wikilens"
+
 # `cli/wikilens/layout.py` 의 값과 **반드시 같아야 한다.** 여기서 다시 정의하는 이유는
 # 로컬판이 CLI 없이도 동작해야 해서다(CLI 는 볼트 구축에만 필요하고, 검색·진단에는
 # 없을 수 있다). 계약 검사가 두 값의 일치를 강제한다.
@@ -49,12 +58,56 @@ STRAY_REPORT_CAP = 20
 
 
 def _config() -> dict:
+    """
+    설정. **어떤 내용이 들어 있어도 dict 를 돌려준다.**
+
+    파싱만 확인하면 부족하다 — `null`·`[]`·`"문자열"` 은 전부 **유효한 JSON** 이라
+    통과한 뒤 `cfg.get(...)` 에서 `AttributeError` 로 터진다. 그러면 이 스크립트가
+    통째로 죽고, 스킬은 `VAULT=` 대신 traceback 을 받는다 — **검색이 아예 안 되는데
+    스킬에는 그 분기가 없다.** 손으로 고치는 파일이라 이런 내용이 실제로 들어온다.
+    """
     if not CONFIG_PATH.exists():
         return {}
     try:
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def quarantine_unusable_config() -> str:
+    """
+    쓸 수 없는 `config.json` 을 옆으로 치우고 그 경로를 반환한다(없으면 빈 문자열).
+
+    "쓸 수 없다" = 파싱이 안 되거나 **dict 가 아니거나**. 후자를 빼먹으면 `[]` 같은
+    파일이 검사를 통과한 뒤 그대로 덮여 사라진다 — `null`·`[]`·`"문자열"` 은 전부
+    유효한 JSON 이다.
+
+    **쓰기 전에 반드시 부를 것.** `_config()` 는 깨진 파일을 `{}` 로 돌려주는데, 그
+    빈 dict 위에 새 값을 얹어 저장하면 **원본이 통째로 사라진다.** 실측: `vault` 와
+    `cli` 가 든 파일에 쉼표 하나가 잘못 들어가 있었더니 `--configure` 한 번에 둘 다
+    없어지고 "설정했습니다" 라고 보고했다.
+
+    이 파일은 **사람이 손으로 고치는 파일**이라 깨져 있는 것이 예외가 아니라 흔한
+    경우다. 게다가 두 판이 같은 파일을 공유하므로, 한쪽이 지우면 다른 판의 설정이
+    날아간다. 지우지 않고 치워두면 사용자가 되살릴 수 있다.
+    """
+    if not CONFIG_PATH.exists():
+        return ""
+    try:
+        # **dict 인지까지 본다.** `[]` 는 파싱은 되지만 설정이 아니고, 그 위에 얹어
+        # 쓰면 원본이 사라지는 것은 깨진 파일과 똑같다.
+        if isinstance(json.loads(CONFIG_PATH.read_text(encoding="utf-8")), dict):
+            return ""
+    except (json.JSONDecodeError, OSError):
+        pass
+    backup = CONFIG_PATH.with_name(
+        f"{CONFIG_PATH.name}.bak-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    try:
+        CONFIG_PATH.replace(backup)
+    except OSError:
+        return ""
+    return str(backup)
 
 
 def resolve_vault(cfg: dict | None = None) -> Path:
@@ -93,10 +146,14 @@ def cli_argv(cfg: dict | None = None) -> list[str]:
     결과를 받아 쓴다 — 둘이 각자 찾으면 스킬은 "CLI 있음"이라 하고 래퍼는 못 찾는
     상태가 생긴다.
 
-    `config.json` 의 `cli` 를 **가장 먼저** 본다. venv 나 pipx 에 설치하면 그 셸을
-    활성화하지 않는 한 PATH 에도 없고 기본 python 으로 import 도 안 되는데, Claude Code
-    가 띄우는 셸이 바로 그런 셸이다(실측: 이 저장소의 `cli/.venv` 에 설치했더니 래퍼가
-    CLI 를 못 찾았다). 명시 경로를 적어두는 것이 그 상황의 정답이다.
+    순서는 **명시 > 정해진 자리 > PATH > 모듈**이다.
+
+    `config.json` 의 `cli` 가 가장 먼저인 이유는 그것이 사용자가 직접 적은 값이라서다.
+    그다음이 [VENV_CLI] — setup 이 CLI 를 거기 설치하므로 정상 경로는 여기서 끝난다.
+    PATH 와 모듈은 그 자리를 안 쓰고 손으로 설치한 경우를 위한 폴백이다. venv·pipx 에
+    설치하면 그 셸을 활성화하지 않는 한 PATH 에도 없고 기본 python 으로 import 도 안
+    되는데, Claude Code 가 띄우는 셸이 바로 그런 셸이다(실측: 이 저장소의 `cli/.venv` 에
+    설치했더니 래퍼가 CLI 를 못 찾았다).
     """
     cfg = _config() if cfg is None else cfg
 
@@ -105,6 +162,9 @@ def cli_argv(cfg: dict | None = None) -> list[str]:
         p = Path(explicit).expanduser()
         if p.is_file() and os.access(p, os.X_OK):
             return [str(p)]
+
+    if VENV_CLI.is_file() and os.access(VENV_CLI, os.X_OK):
+        return [str(VENV_CLI)]
 
     exe = shutil.which("wikilens")
     if exe:
@@ -130,23 +190,6 @@ def cli_argv(cfg: dict | None = None) -> list[str]:
 def find_cli(cfg: dict) -> str:
     """사람이 읽는 한 줄 표현. 분기 판단은 `cli_argv()` 를 쓸 것."""
     return " ".join(cli_argv(cfg))
-
-
-def discover_cli(cfg: dict) -> str:
-    """
-    설치돼 있는데 안 잡히는 CLI 를 찾아 **제안**한다. setup 이 쓴다.
-
-    가장 흔한 형태가 저장소 옆 venv 다 — `pip install -e ./cli` 를 하면 여기 생긴다.
-    """
-    src = cli_source(cfg)
-    if not src or src.startswith("git+"):
-        return ""
-    base = Path(src).expanduser()
-    for cand in (base / ".venv" / "bin" / "wikilens",
-                 base.parent / ".venv" / "bin" / "wikilens"):
-        if cand.is_file() and os.access(cand, os.X_OK):
-            return str(cand)
-    return ""
 
 
 def cli_source(cfg: dict) -> str:
@@ -344,6 +387,13 @@ def main(argv: list[str]) -> int:
         for part in parts:
             print(part)
         return 0 if parts else 1
+
+    # 같은 이유의 래퍼 전용 경로. 래퍼가 `--root` 를 자동으로 채우려면 볼트 경로가
+    # 필요한데, 스캔 결과 전체를 파싱하게 하면 bash 에서 잘라내야 하고 그 파싱이
+    # 두 번째 해석처가 된다. 한 줄만 준다.
+    if "--vault-path" in argv:
+        print(resolve_vault(cfg))
+        return 0
 
     vault = resolve_vault(cfg)
     info = inspect(vault)

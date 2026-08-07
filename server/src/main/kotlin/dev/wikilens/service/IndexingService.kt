@@ -1,8 +1,8 @@
 package dev.wikilens.service
 
 import dev.wikilens.acl.AclRegistry
-import dev.wikilens.config.WikiLensProperties
 import dev.wikilens.index.LuceneIndex
+import dev.wikilens.vault.VaultLocator
 import dev.wikilens.vault.VaultReader
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -20,15 +20,15 @@ import java.nio.file.Path
  */
 @Service
 class IndexingService(
-    private val props: WikiLensProperties,
     private val vault: VaultReader,
     private val index: LuceneIndex,
     private val acl: AclRegistry,
+    private val locator: VaultLocator,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    /** 설정의 볼트 경로를 절대경로로 푼 것. 상대경로 기본값이 실행 디렉터리에 달려 있다. */
-    val vaultRoot: Path get() = Path.of(props.vaultRoot).toAbsolutePath().normalize()
+    /** 볼트 위치는 [VaultLocator] 하나가 정한다 — 여기서 다시 풀면 read 와 갈린다. */
+    val vaultRoot: Path get() = locator.root
 
     /**
      * 전량 재적재. **볼트가 비면 색인을 건드리지 않는다.**

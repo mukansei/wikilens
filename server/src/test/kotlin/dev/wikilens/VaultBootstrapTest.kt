@@ -5,6 +5,7 @@ import dev.wikilens.acl.AclRegistry
 import dev.wikilens.config.WikiLensProperties
 import dev.wikilens.index.LuceneIndex
 import dev.wikilens.service.IndexingService
+import dev.wikilens.vault.VaultLocator
 import dev.wikilens.vault.VaultReader
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -27,7 +28,9 @@ class VaultBootstrapTest {
     private val fixtureRoot: Path = Path.of("..", "contract", "shared-fixture")
 
     private fun indexing(vaultRoot: String, index: LuceneIndex, acl: AclRegistry) =
-        IndexingService(WikiLensProperties(vaultRoot = vaultRoot), VaultReader(ObjectMapper()), index, acl)
+        WikiLensProperties(vaultRoot = vaultRoot).let {
+            IndexingService(VaultReader(ObjectMapper()), index, acl, VaultLocator(it))
+        }
 
     @Test
     fun `기동 적재가 색인과 ACL 을 함께 채운다`(@TempDir tmp: Path) {

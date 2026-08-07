@@ -45,6 +45,50 @@ def test_unknown_subcommand_is_rejected():
         main(["없는명령"])
 
 
+@pytest.mark.parametrize("argv,expected", [
+    (["--root", "/A", "build"], "/A"),          # 최상위
+    (["build", "--root", "/B"], "/B"),          # 서브커맨드 뒤 — 예전엔 파싱 에러였다
+    (["--root", "/A", "build", "--root", "/B"], "/B"),   # 뒤가 이긴다
+    (["build"], "."),                            # 기본값이 살아 있다
+])
+def test_root_is_accepted_on_both_sides(argv, expected, monkeypatch):
+    """
+    `--root` 가 최상위에만 있으면 `wikilens sync --root ~/wiki` 가 파싱 에러다.
+    자연스러운 순서가 거부되는 것이라 문서 세 곳이 그 함정을 경고하고 있었다.
+
+    **뒤가 이겨야 한다** — 래퍼가 앞에 볼트 경로를 채우므로, 사용자가 뒤에 준 값이
+    지면 일회성 재정의가 불가능해진다.
+    """
+    seen = {}
+
+    def spy(args):
+        seen["root"] = args.root
+        return 0
+
+    monkeypatch.setattr("wikilens.cli._cmd_build", spy)
+    main(argv)
+    assert seen["root"] == expected
+
+
+def test_doctor_hint_uses_the_actual_root(capsys, monkeypatch):
+    """
+    다음 단계 안내가 `~/wiki` 를 박아두고 있었다. 래퍼를 거쳐 들어온 사용자는 볼트가
+    `~/.wikilens/vault` 라 **엉뚱한 경로를 안내받는다** — 그대로 복사하면 빈 볼트가 하나 더 생긴다.
+    """
+    class FakeDoctor:
+        base_url = "https://w.example.com"
+        deployment, prefix, auth_mode = "Server/DC", "", "PAT"
+        authenticated, account, storage_expandable, ok = True, "me", True, True
+        spaces, errors = [("PLATFORM", "플랫폼")], []
+
+    monkeypatch.setattr("wikilens.sync.client_from_env",
+                        lambda: type("C", (), {"doctor": lambda self: FakeDoctor()})())
+    main(["--root", "/my/vault", "doctor"])
+    out = capsys.readouterr().out
+    assert "--root /my/vault sync --space PLATFORM" in out, out
+    assert "~/wiki" not in out, "볼트 경로가 다시 박혔다"
+
+
 def test_sync_requires_space():
     """--space 가 required 라 빠지면 즉시 실패해야 한다 (네트워크 호출 전에)."""
     with pytest.raises(SystemExit):

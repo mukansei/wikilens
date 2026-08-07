@@ -26,21 +26,25 @@ Confluence 미러를 **서버측에서 색인**하고, 탐색 궤적을 축적�
 ERROR  볼트에서 문서를 하나도 못 읽었습니다: …/server/mirror-root
 ```
 
-기동은 되지만 검색이 전부 빕니다. 이미 로컬판으로 만든 볼트가 있으면 심링크 하나면
-됩니다 — 사본을 만들지 마세요. 볼트가 둘이 되면 어느 쪽을 색인했는지 알 수 없습니다:
-
-```bash
-ln -s ~/wiki server/mirror-root      # 로컬판이 쓰는 볼트를 그대로
-```
+기동은 되지만 검색이 전부 빕니다. **대개는 아무것도 안 해도 됩니다** — 그 자리가
+비어 있으면 서버가 `~/.wikilens/config.json` 의 `vault` 를 읽습니다(`config/UserConfig.kt`).
+로컬판으로 볼트를 만들었다면 거기 이미 경로가 적혀 있습니다.
 
 볼트가 아직 없으면 먼저 만듭니다(`cli/README.md` 참고):
 
 ```bash
-wikilens --root ~/wiki sync --space <KEY>
+wikilens sync --space <KEY> --root ~/wiki
 ```
 
-`--wikilens.vault-root=/절대/경로` 로 매번 주는 것도 됩니다. 심링크를 권하는 이유는
-`bootRun` 인자를 IntelliJ 실행 구성과 CLI 양쪽에 중복해 적지 않아도 되기 때문입니다.
+설정 파일을 안 쓰는 배포에서는 경로를 명시합니다 — **명시가 항상 이깁니다**:
+
+```bash
+--wikilens.vault-root=/srv/wikilens/mirror
+```
+
+심링크(`ln -s ~/wiki server/mirror-root`)도 여전히 동작합니다. 어느 방법을 쓰든
+**사본은 만들지 마세요** — 볼트가 둘이 되면 어느 쪽을 색인했는지 알 수 없습니다.
+기동 로그 첫 줄이 실제로 고른 경로를 찍습니다.
 
 ### IntelliJ 에서는 **`1. 서버 실행 (bootRun)`** 구성을 쓰세요
 

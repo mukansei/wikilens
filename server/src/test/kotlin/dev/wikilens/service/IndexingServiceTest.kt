@@ -2,9 +2,12 @@ package dev.wikilens.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.wikilens.acl.AclRegistry
+import dev.wikilens.config.UserConfig
 import dev.wikilens.config.WikiLensProperties
 import dev.wikilens.index.LuceneIndex
+import dev.wikilens.vault.VaultLocator
 import dev.wikilens.vault.VaultReader
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -23,11 +26,10 @@ class IndexingServiceTest {
 
     private val fixtureRoot: Path = Path.of("..", "contract", "shared-fixture")
 
-    private fun svc(vaultRoot: String, index: LuceneIndex, acl: AclRegistry) =
-        IndexingService(
-            WikiLensProperties(vaultRoot = vaultRoot),
-            VaultReader(ObjectMapper()), index, acl,
-        )
+    private fun svc(vaultRoot: String, index: LuceneIndex, acl: AclRegistry): IndexingService {
+        val props = WikiLensProperties(vaultRoot = vaultRoot)
+        return IndexingService(VaultReader(ObjectMapper()), index, acl, VaultLocator(props))
+    }
 
     @Test
     fun `정상 볼트는 색인을 채운다`(@TempDir tmp: Path) {
@@ -58,8 +60,61 @@ class IndexingServiceTest {
     @Test
     fun `상대경로 볼트를 절대경로로 푼다`(@TempDir tmp: Path) {
         LuceneIndex(tmp.resolve("index")).use { index ->
-            val s = svc("./mirror-root", index, AclRegistry())
+            val s = svc(tmp.resolve("어딘가").toString(), index, AclRegistry())
             assertTrue(s.vaultRoot.isAbsolute, "로그와 오류 메시지가 어디를 봤는지 말해야 한다")
+        }
+    }
+
+    /**
+     * 기본 자리가 비면 `~/.wikilens/config.json` 으로 폴백한다 — 심링크를 손으로
+     * 만드는 단계가 이것 때문에 없어졌다.
+     */
+    @Test
+    fun `기본 경로가 없으면 사용자 설정의 볼트를 쓴다`(@TempDir tmp: Path) {
+        val vault = Files.createDirectories(tmp.resolve("wiki"))
+        Files.createDirectories(tmp.resolve(".wikilens"))
+        Files.writeString(tmp.resolve(".wikilens/config.json"), """{"vault": "$vault"}""")
+
+        UserConfig.homeOverride = tmp
+        try {
+            LuceneIndex(tmp.resolve("index")).use { index ->
+                val fallback = svc(WikiLensProperties.DEFAULT_VAULT_ROOT, index, AclRegistry())
+                assertEquals(vault.toAbsolutePath().normalize(), fallback.vaultRoot)
+
+                // 명시로 준 경로는 폴백하지 않는다 — 오타를 조용히 덮으면 안 된다.
+                val explicit = svc(tmp.resolve("내가준경로").toString(), index, AclRegistry())
+                assertEquals(tmp.resolve("내가준경로").normalize(), explicit.vaultRoot)
+            }
+        } finally {
+            UserConfig.homeOverride = null
+        }
+    }
+
+    /**
+     * **색인이 읽은 볼트와 read·grep 이 보는 볼트가 같아야 한다.**
+     *
+     * 예전에는 둘이 각자 `props.vaultRoot` 를 풀었고 `ContentService` 는 절대화조차
+     * 안 했다. 폴백이 들어오자 갈림이 결정적이 됐다 — 실측: 폴백으로 기동한 서버가
+     * 문서 3건을 색인하고 **검색은 되는데 read 는 전부 404** 였다. 이 저장소가 이미
+     * 한 번 겪은 실패 모양이다(`CLAUDE.md` 조용히 실패 12번).
+     */
+    @Test
+    fun `색인과 읽기가 같은 볼트를 본다`(@TempDir tmp: Path) {
+        val vault = Files.createDirectories(tmp.resolve("wiki"))
+        Files.createDirectories(tmp.resolve(".wikilens"))
+        Files.writeString(tmp.resolve(".wikilens/config.json"), """{"vault": "$vault"}""")
+
+        UserConfig.homeOverride = tmp
+        try {
+            val props = WikiLensProperties(vaultRoot = WikiLensProperties.DEFAULT_VAULT_ROOT)
+            val locator = VaultLocator(props)
+            LuceneIndex(tmp.resolve("index")).use { index ->
+                val indexing = IndexingService(VaultReader(ObjectMapper()), index, AclRegistry(), locator)
+                assertEquals(indexing.vaultRoot, locator.root, "해석처가 둘이면 여기서 갈린다")
+                assertEquals(vault.toAbsolutePath().normalize(), locator.root)
+            }
+        } finally {
+            UserConfig.homeOverride = null
         }
     }
 }

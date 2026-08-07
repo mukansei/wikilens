@@ -49,6 +49,22 @@ if [ ${#CLI[@]} -eq 0 ]; then
   exit 127
 fi
 
+# 볼트 경로도 여기서 채운다. 정본은 `~/.wikilens/config.json` 인데 **CLI 는 그걸 안 읽어서**
+# (`--root` 가 필수 인자다) 호출하는 쪽마다 경로를 문자열로 조립하고 있었다. 그러면 그 조립이
+# 문서 세 곳 · 스크립트 하나에 복제되고, 거기 딸린 "`--root` 는 서브커맨드 앞에 와야 한다"는
+# 함정 경고도 같이 복제된다. 정본을 아는 자리가 이미 여기이므로 여기서 채운다.
+#
+# 사용자가 직접 준 `--root` 는 건드리지 않는다 — 일회성 재정의가 이겨야 하는 것은
+# 자격증명과 같은 규칙이다.
+_has_root=0
+for _a in "$@"; do
+  case "$_a" in --root|--root=*) _has_root=1; break ;; esac
+done
+if [ "$_has_root" -eq 0 ]; then
+  _vault="$(python3 "$(dirname "$0")/vault_status.py" --vault-path 2>/dev/null || true)"
+  [ -n "$_vault" ] && set -- --root "$_vault" "$@"
+fi
+
 # 모듈 실행으로 떨어졌을 때 cwd 가 sys.path 에 끼면 이 저장소의 `cli/wikilens/` 소스를
 # 집어 의존성 없는 인터프리터로 돌게 된다(3.11+ 에서만 유효, 그 이하에서는 무시된다).
 PYTHONSAFEPATH=1 exec "${CLI[@]}" "$@"
