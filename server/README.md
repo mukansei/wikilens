@@ -306,6 +306,26 @@ jar 안의 `application.yml` 을 고치려면 다시 빌드해야 하므로, 배
 바꿨습니다. 실측: 볼트 경로를 틀리게 주고 `--wikilens.analyzer=english` 로 띄워도
 색인 2,383건이 그대로 살아 검색 8건이 나옵니다.
 
+**설정을 바꾸는 절차는 재기동 하나입니다.** 값은 빈 생성 시점에 한 번 읽히므로 —
+실행 중인 서버는 `application.yml` 을 고쳐도 모릅니다 — 재기동해야 하고, 재기동하면
+기동 적재가 곧 재색인이라 **그 자리에서 적용됩니다**(포트가 열리기 전에 끝납니다):
+
+```
+색인은 'korean' 로 지어졌고 설정은 'english' 입니다…     ← 순간적으로 찍힌다
+색인 재구축 2383건 · 분석기 english                       ← 곧바로 적용
+```
+
+수동 `POST /api/admin/reindex` 가 필요한 경우는 하나뿐입니다 — **볼트를 못 읽어 기동
+적재가 건너뛰어졌을 때.** 그때만 불일치가 지속되고, 그 상태는 밖에서도 보입니다:
+
+```bash
+curl localhost:8787/api/stats     # analyzer · analyzerConfigured
+python3 plugin/client/mcp/wikilens_mcp.py --status
+#   ANALYZER=korean (설정은 english)
+```
+
+같으면 `--status` 가 한 줄만 찍고, 다를 때만 무엇을 해야 하는지 알려줍니다.
+
 
 > **학습 궤적도 영향을 받습니다.** `trajectories.jsonl` 에는 분석된 항이 저장돼 있어
 > 분석기를 바꾸면 옛 항과 새 질의가 안 맞습니다. 궤적은 복구 불가 자산이라 지우지

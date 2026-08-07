@@ -100,6 +100,7 @@ python3 ~/.claude/plugins/cache/wikilens/wikilens-client/*/mcp/wikilens_mcp.py -
 | `USER=(미설정)` | 결과가 항상 빕니다. `config.json` 의 `user` 를 넣으세요 |
 | `ACL_USERS=0` | **운영자가 아직 아무도 등록하지 않았습니다.** 사용자가 할 수 있는 일이 없습니다 |
 | `INDEXED_DOCS=0` | 색인이 비어 있습니다. 운영자에게 재색인 요청 |
+| `ANALYZER=x (설정은 y)` | 색인이 서버 설정과 다른 분석기로 지어졌습니다. 검색은 되지만 설정이 반영 안 된 상태 — 운영자에게 재색인 요청 |
 
 그 밖에:
 
