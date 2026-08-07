@@ -34,7 +34,7 @@ echo "교차 언어 계약"
 check "샤딩 규칙 Python/Kotlin/플러그인 일치(뒤에서 자름), Kotlin 정의처 1곳(Layout.kt)" \
   'grep -q "SHARD_DEPTH = 1" cli/wikilens/layout.py && grep -q "SHARD_DEPTH = 1" plugin/local/scripts/vault_status.py && grep -qF "takeLast(SHARD_WIDTH)" server/src/main/kotlin/dev/wikilens/vault/Layout.kt && [ $(grep -rl "fun relPagePath" server/src/main/kotlin | wc -l) -eq 1 ]'
 check "사전확률 클램프 양쪽 동일 (0.05, 0.85)" \
-  'grep -q "PRIOR_CEIL = 0.85" server/src/main/kotlin/dev/wikilens/learn/Scoring.kt && grep -q "PRIOR_FLOOR, PRIOR_CEIL = 0.05, 0.85" cli/wikilens/scoring_reference.py'
+  'grep -q "PRIOR_CEIL = 0.85" server/src/main/kotlin/dev/wikilens/learn/Reliability.kt && grep -q "PRIOR_FLOOR, PRIOR_CEIL = 0.05, 0.85" cli/wikilens/scoring_reference.py'
 # `ALIASES.md` 한 줄에 스페이스가 들어간다. 여러 스페이스를 싱크하면 같은 낱말이
 # 여러 영역에서 걸리는데, 줄에 스페이스가 없으면 grep 결과만 보고는 구분이 안 된다
 # (경로도 스페이스로 안 나뉜다 — 샤딩은 페이지 ID 만 쓴다).
@@ -74,9 +74,9 @@ check "canonical_json 결정적 직렬화" \
 check "ancestors 스키마 Python↔Kotlin 일치 (sync.py 가 쓰고 VaultReader 가 같은 키로 읽음)" \
   'grep -qF "\"ancestors\": ancestors" cli/wikilens/sync.py && grep -qF "meta[\"ancestors\"]" server/src/main/kotlin/dev/wikilens/vault/VaultReader.kt'
 check "Gate LOCALIZATION 폴백 임계값 Python/Kotlin 일치 (8토큰)" \
-  'grep -qF ".size <= 8" server/src/main/kotlin/dev/wikilens/learn/Scoring.kt && grep -qF "len(query.strip().split()) <= 8" cli/wikilens/scoring_reference.py'
+  'grep -qF ".size <= 8" server/src/main/kotlin/dev/wikilens/learn/Gate.kt && grep -qF "len(query.strip().split()) <= 8" cli/wikilens/scoring_reference.py'
 check "RATIONALE 마커 '배경' Python/Kotlin 양쪽 존재" \
-  'grep -qF "\"배경\"" server/src/main/kotlin/dev/wikilens/learn/Scoring.kt && grep -qF "\"배경\"" cli/wikilens/scoring_reference.py'
+  'grep -qF "\"배경\"" server/src/main/kotlin/dev/wikilens/learn/Gate.kt && grep -qF "\"배경\"" cli/wikilens/scoring_reference.py'
 
 echo "빌드 구조"
 # 학습 레이어는 프레임워크와 분리돼 있어야 한다. EB·게이트·궤적은 순수 알고리즘이고,
@@ -268,17 +268,19 @@ check "설치되는 플러그인에 회사 고유값이 없음 (측정 라벨은
 # 실제로 `analyzer`·`sweep-interval-millis`·`session-idle-millis` 셋이 그 상태였다 —
 # 동작은 하는데(`--wikilens.analyzer=english` 로 켜짐을 실측) 파일에는 없었다.
 # yml 이 운영자의 유일한 발견 창구다.
-check "WikiLensProperties 의 모든 설정이 application.yml 에 있음 (없으면 발견 불가)" \
+check "설정 클래스의 모든 항목이 application.yml 에 있음 (없으면 발견 불가)" \
   'python3 -c "
 import re, sys, pathlib
-kt = pathlib.Path(sys.argv[1]).read_text()
-yml = pathlib.Path(sys.argv[2]).read_text()
+# 설정 클래스가 둘로 나뉘어 있다(WikiLensProperties · LearnProps). **둘 다** 봐야 한다 —
+# 한쪽만 보면 나머지 파일의 새 설정이 조용히 빠진다.
+kt = \"\".join(pathlib.Path(f).read_text() for f in sys.argv[1:-1])
+yml = pathlib.Path(sys.argv[-1]).read_text()
 def kebab(s): return re.sub(r\"(?<!^)(?=[A-Z])\", \"-\", s).lower()
 keys = [kebab(m) for m in re.findall(r\"^\\s*val (\\w+):\", kt, re.M)]
 # 주석 줄은 안 친다 — \"# analyzer: korean\" 은 적힌 것이 아니다.
 missing = [k for k in keys if not re.search(r\"^[ ]*\" + k + r\":\", yml, re.M)]
 sys.exit(1 if missing else 0)
-" server/src/main/kotlin/dev/wikilens/config/WikiLensProperties.kt server/src/main/resources/application.yml'
+" server/src/main/kotlin/dev/wikilens/config/WikiLensProperties.kt server/src/main/kotlin/dev/wikilens/config/LearnProps.kt server/src/main/resources/application.yml\'
 
 
 # 자격증명 파일 경로가 두 곳에 하드코딩돼 있다 — CLI(`credentials.py`)와 진단

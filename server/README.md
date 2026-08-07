@@ -136,6 +136,7 @@ Lucene Nori가 그 문제의 프로덕션 검증된 해답입니다.
 
 ```
 learn/       게이트 · EB · 궤적 · 항 단위 포스팅   ← 프레임워크 의존성 없음
+             Gate · Reliability · TrajectoryStore … 파일 하나에 선언 하나
 index/       Lucene + Nori, 필드 가중, ACL 필터
 vault/       Python 싱크가 만든 미러 읽기
 acl/         페이지·사용자 권한 토큰
