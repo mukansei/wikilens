@@ -117,36 +117,35 @@ enum class AnalyzerKind(val key: String) {
     }
 }
 
+/**
+ * Lucene 색인.
+ *
+ * **[buildKind] 는 "무엇으로 지을까"이지 "무엇으로 질의할까"가 아니다.** 질의는 항상
+ * 디스크 색인이 실제로 지어진 분석기를 쓴다([Snapshot.kind]) — 색인에 기록이 있는데
+ * 설정을 따라가면, 설정이 낡았을 때 **에러 없이 0건**이 된다. 기록을 그대로 쓰면
+ * 그 불일치가 애초에 성립하지 않는다.
+ *
+ * 둘은 [rebuild] 에서 만난다: 재색인이 [buildKind] 로 다시 짓고, 그 순간부터 질의도
+ * 그것을 쓴다. 그래서 분석기를 바꾸는 절차는 "설정 바꾸고 재색인" 하나뿐이고,
+ * 재색인 전까지는 **옛 분석기로 정상 동작**한다.
+ */
 class LuceneIndex(
     private val dir: Path,
-    val kind: AnalyzerKind = AnalyzerKind.KOREAN,
+    /** 재색인할 때 쓸 분석기. 질의에 쓰이는 것은 [activeKind] 다. */
+    val buildKind: AnalyzerKind = AnalyzerKind.KOREAN,
 ) : AutoCloseable {
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
-     * ID/SPACE/ACL 은 분석하지 않는다 (StringField 이므로 실제로는 무시되지만
-     * 질의 파싱 경로에서 일관성을 위해 명시한다).
-     */
-    private val analyzer: Analyzer = PerFieldAnalyzerWrapper(
-        when (kind) {
-            AnalyzerKind.KOREAN -> KoreanAnalyzer()
-            AnalyzerKind.ENGLISH -> org.apache.lucene.analysis.en.EnglishAnalyzer()
-            AnalyzerKind.STANDARD -> org.apache.lucene.analysis.standard.StandardAnalyzer()
-        },
-        mapOf(
-            Fields.ID to org.apache.lucene.analysis.core.KeywordAnalyzer(),
-            Fields.SPACE to org.apache.lucene.analysis.core.KeywordAnalyzer(),
-            Fields.ACL to org.apache.lucene.analysis.core.KeywordAnalyzer(),
-        ),
-    )
-
-    /**
-     * 검색기·메타데이터·트리를 **한 덩어리로** 들고 있다.
+     * 검색기·메타데이터·트리·**분석기**를 한 덩어리로 들고 있다.
      *
      * 예전엔 셋을 각각 `AtomicReference` 로 따로 교체했는데, 그 사이에 들어온 요청이
      * 새 트리 + 옛 메타처럼 뒤섞인 상태를 볼 수 있었다. 하나로 묶으면 교체가 원자적이다.
      * [dir] 를 함께 들고 있는 이유는 예전에 `DirectoryReader.open(MMapDirectory(...))` 의
      * Directory 를 아무도 안 닫아 교체마다 누수됐기 때문이다.
+     *
+     * **분석기가 여기 있는 이유도 같다.** 색인과 분석기는 한 쌍이라 따로 교체되면
+     * 그 틈에 들어온 질의가 새 색인을 옛 분석기로(또는 그 반대로) 두드린다.
      */
     private class Snapshot(
         val searcher: IndexSearcher?,
@@ -154,14 +153,37 @@ class LuceneIndex(
         val dir: MMapDirectory?,
         val meta: Map<String, PageMeta>,
         val tree: TreeIndex,
+        val kind: AnalyzerKind,
+        val analyzer: Analyzer,
     ) {
         fun close() {
             runCatching { reader?.close() }
             runCatching { dir?.close() }
+            runCatching { analyzer.close() }
         }
 
         companion object {
-            val EMPTY = Snapshot(null, null, null, emptyMap(), TreeIndex.EMPTY)
+            val EMPTY = Snapshot(
+                null, null, null, emptyMap(), TreeIndex.EMPTY,
+                AnalyzerKind.KOREAN, analyzerFor(AnalyzerKind.KOREAN),
+            )
+
+            /**
+             * ID/SPACE/ACL 은 분석하지 않는다 (StringField 이므로 실제로는 무시되지만
+             * 질의 파싱 경로에서 일관성을 위해 명시한다).
+             */
+            fun analyzerFor(kind: AnalyzerKind): Analyzer = PerFieldAnalyzerWrapper(
+                when (kind) {
+                    AnalyzerKind.KOREAN -> KoreanAnalyzer()
+                    AnalyzerKind.ENGLISH -> org.apache.lucene.analysis.en.EnglishAnalyzer()
+                    AnalyzerKind.STANDARD -> org.apache.lucene.analysis.standard.StandardAnalyzer()
+                },
+                mapOf(
+                    Fields.ID to org.apache.lucene.analysis.core.KeywordAnalyzer(),
+                    Fields.SPACE to org.apache.lucene.analysis.core.KeywordAnalyzer(),
+                    Fields.ACL to org.apache.lucene.analysis.core.KeywordAnalyzer(),
+                ),
+            )
         }
     }
 
@@ -177,23 +199,35 @@ class LuceneIndex(
      */
     fun rebuild(pages: Collection<IndexedPage>) {
         val started = System.nanoTime()
-        MMapDirectory(dir).use { d ->
-            val cfg = IndexWriterConfig(analyzer).apply {
-                openMode = IndexWriterConfig.OpenMode.CREATE
-            }
-            IndexWriter(d, cfg).use { w ->
-                for (p in pages) w.addDocument(toDocument(p))
-                // **어떤 분석기로 지었는지를 색인 안에 남긴다.** 커밋 데이터라 커밋과
-                // 원자적이다 — 옆에 파일을 두면 색인과 따로 놀 수 있다.
-                w.setLiveCommitData(mapOf(ANALYZER_KEY to kind.key).entries)
-                w.commit()
+        val prev = snapshotRef.get().kind
+        // 짓는 것은 **설정된** 분석기로. 질의는 이 뒤로 자동으로 같은 것을 쓴다.
+        Snapshot.analyzerFor(buildKind).use { building ->
+            MMapDirectory(dir).use { d ->
+                val cfg = IndexWriterConfig(building).apply {
+                    openMode = IndexWriterConfig.OpenMode.CREATE
+                }
+                IndexWriter(d, cfg).use { w ->
+                    for (p in pages) w.addDocument(toDocument(p))
+                    // **어떤 분석기로 지었는지를 색인 안에 남긴다.** 커밋 데이터라 커밋과
+                    // 원자적이다 — 옆에 파일을 두면 색인과 따로 놀 수 있다.
+                    w.setLiveCommitData(mapOf(ANALYZER_KEY to buildKind.key).entries)
+                    w.commit()
+                }
             }
         }
         swap(
             meta = pages.associate { it.id to PageMeta(it.id, it.title, it.space) },
             tree = TreeIndex.build(pages),
         )
-        log.info("색인 재구축 {}건 · {}ms", pages.size, (System.nanoTime() - started) / 1_000_000)
+        if (prev != buildKind) {
+            log.warn(
+                "분석기가 '{}' → '{}' 로 바뀌었습니다. 검색은 새 분석기로 정상 동작하지만, " +
+                    "궤적 로그에는 옛 분석기로 만든 항이 남아 있어 그만큼 학습이 안 맞습니다.",
+                prev.key, buildKind.key,
+            )
+        }
+        log.info("색인 재구축 {}건 · 분석기 {} · {}ms",
+            pages.size, buildKind.key, (System.nanoTime() - started) / 1_000_000)
     }
 
     private fun toDocument(p: IndexedPage) = Document().apply {
@@ -218,6 +252,11 @@ class LuceneIndex(
         val reader = runCatching { DirectoryReader.open(d) }
             .onFailure { runCatching { d.close() } }   // 열기 실패 시 Directory 를 흘리지 않는다
             .getOrThrow()
+        // **디스크가 정본이다.** 색인이 어떤 분석기로 지어졌는지는 커밋 데이터에 적혀
+        // 있으므로, 설정이 아니라 그것을 따라간다. 기록이 없으면(이 기능 이전 색인)
+        // 설정을 쓴다 — 그때는 대조할 근거가 없다.
+        val recorded = reader.indexCommit.userData[ANALYZER_KEY]
+        val kind = recorded?.let { runCatching { AnalyzerKind.of(it) }.getOrNull() } ?: buildKind
         val cur = snapshotRef.get()
         val old = snapshotRef.getAndSet(
             Snapshot(
@@ -226,6 +265,8 @@ class LuceneIndex(
                 dir = d,
                 meta = meta ?: cur.meta,
                 tree = tree ?: cur.tree,
+                kind = kind,
+                analyzer = Snapshot.analyzerFor(kind),
             )
         )
         old.close()
@@ -234,34 +275,33 @@ class LuceneIndex(
     fun openIfExists() {
         runCatching { swap() }
             .onFailure { log.info("기존 색인 없음 — reindex 필요") }
-        checkAnalyzerMatches()
+        reportAnalyzer()
     }
 
     /**
-     * 디스크 색인을 지은 분석기와 지금 설정된 분석기가 같은지 본다.
+     * 설정과 디스크가 다르면 알린다. **경고일 뿐 고장이 아니다** — 질의는 디스크가
+     * 지어진 분석기를 쓰므로 검색은 정상 동작한다.
      *
-     * **어긋나면 예외가 아니라 조용히 0건이 된다.** 색인에는 `production servers` 가
-     * Nori 토큰으로 들어가 있는데 질의는 English 토큰으로 오면 아무것도 안 맞는다.
-     * 에러도 경고도 없이 "문서가 없다" 로 보인다 — 이 프로젝트가 겪은 실패 1번이
-     * 정확히 이 모양이었다(클라이언트와 서버가 각자 토큰화한 경우).
-     *
-     * 기동 시에는 `vaultBootstrap` 이 어차피 전량 재색인하므로 스스로 낫는다. 문제는
-     * **볼트를 못 읽어 재색인이 건너뛰어진 경우**다 — 그때 옛 분석기 색인이 그대로
-     * 남아 검색만 조용히 빈다. 그래서 여기서 크게 찍는다.
+     * 예전에는 여기서 ERROR 를 찍고 그대로 **설정된** 분석기로 질의했다. 색인에 답이
+     * 적혀 있는데 그것을 안 쓰고 어긋남을 재고만 있었던 셈이라, 재색인 전까지 검색이
+     * 조용히 0건이었다. 지금은 그 상태가 성립하지 않는다.
      */
-    private fun checkAnalyzerMatches() {
+    private fun reportAnalyzer() {
         val built = builtWith() ?: return   // 색인이 없거나 분석기 기록 이전 색인
-        if (built == kind.key) return
-        log.error(
-            "색인은 '{}' 분석기로 지어졌는데 지금 설정은 '{}' 입니다 — 재색인 전까지 " +
-                "**검색이 에러 없이 0건**이 됩니다. POST /api/admin/reindex 로 다시 지으세요.",
-            built, kind.key,
+        if (built == buildKind.key) return
+        log.warn(
+            "색인은 '{}' 로 지어졌고 설정은 '{}' 입니다. 검색은 '{}' 로 정상 동작합니다 — " +
+                "설정을 적용하려면 POST /api/admin/reindex 로 다시 지으세요.",
+            built, buildKind.key, built,
         )
     }
 
     /** 디스크 색인을 지은 분석기 이름. 없으면 null(색인 없음 또는 이 기록 이전 색인). */
     fun builtWith(): String? =
         snapshotRef.get().reader?.indexCommit?.userData?.get(ANALYZER_KEY)
+
+    /** 지금 **질의에 쓰이는** 분석기. 디스크 색인이 지어진 것과 항상 같다. */
+    val activeKind: AnalyzerKind get() = snapshotRef.get().kind
 
     /**
      * 검색. [aclTokens] 는 요청자의 권한 토큰(그룹, 사용자 ID, 공개 마커).
@@ -270,10 +310,11 @@ class LuceneIndex(
      * 실수로 전체가 노출되는 것보다 아무것도 안 나오는 편이 낫다.
      */
     fun search(queryText: String, aclTokens: Collection<String>, limit: Int): List<Scored> {
-        val searcher = snapshotRef.get().searcher ?: return emptyList()
+        val snap = snapshotRef.get()
+        val searcher = snap.searcher ?: return emptyList()
         if (aclTokens.isEmpty()) return emptyList()
 
-        val text = buildTextQuery(queryText) ?: return emptyList()
+        val text = buildTextQuery(queryText, snap.analyzer) ?: return emptyList()
         val acl = TermInSetQuery(Fields.ACL, aclTokens.map { BytesRef(it) })
 
         val q = BooleanQuery.Builder()
@@ -306,7 +347,7 @@ class LuceneIndex(
     }
 
     /** 세 필드에 대한 가중 OR. 파싱 실패 시 null 을 반환해 호출부가 조용히 빈 결과를 내게 한다. */
-    private fun buildTextQuery(text: String): Query? {
+    private fun buildTextQuery(text: String, analyzer: Analyzer): Query? {
         val parser = org.apache.lucene.queryparser.classic.MultiFieldQueryParser(
             arrayOf(Fields.ANCHOR, Fields.TITLE, Fields.BODY),
             analyzer,
@@ -332,7 +373,7 @@ class LuceneIndex(
      */
     fun analyze(text: String): List<String> {
         val out = ArrayList<String>()
-        analyzer.tokenStream(Fields.BODY, text).use { ts ->
+        snapshotRef.get().analyzer.tokenStream(Fields.BODY, text).use { ts ->
             val attr = ts.addAttribute(
                 org.apache.lucene.analysis.tokenattributes.CharTermAttribute::class.java
             )
