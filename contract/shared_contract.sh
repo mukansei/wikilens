@@ -264,6 +264,23 @@ check "설치되는 플러그인에 회사 고유값이 없음 (측정 라벨은
   '! grep -rniE "acme|cwdomesticdt|파트너사|파트너사" plugin/local plugin/client'
 
 
+# 설정을 코드에 추가하고 `application.yml` 에 안 적으면, **있는 줄도 모르는 옵션**이 된다.
+# 실제로 `analyzer`·`sweep-interval-millis`·`session-idle-millis` 셋이 그 상태였다 —
+# 동작은 하는데(`--wikilens.analyzer=english` 로 켜짐을 실측) 파일에는 없었다.
+# yml 이 운영자의 유일한 발견 창구다.
+check "WikiLensProperties 의 모든 설정이 application.yml 에 있음 (없으면 발견 불가)" \
+  'python3 -c "
+import re, sys, pathlib
+kt = pathlib.Path(sys.argv[1]).read_text()
+yml = pathlib.Path(sys.argv[2]).read_text()
+def kebab(s): return re.sub(r\"(?<!^)(?=[A-Z])\", \"-\", s).lower()
+keys = [kebab(m) for m in re.findall(r\"^\\s*val (\\w+):\", kt, re.M)]
+# 주석 줄은 안 친다 — \"# analyzer: korean\" 은 적힌 것이 아니다.
+missing = [k for k in keys if not re.search(r\"^[ ]*\" + k + r\":\", yml, re.M)]
+sys.exit(1 if missing else 0)
+" server/src/main/kotlin/dev/wikilens/config/WikiLensProperties.kt server/src/main/resources/application.yml'
+
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."

@@ -15,11 +15,29 @@ wikilens:
   vault-root: ./mirror-root
   index-dir: ./.wikilens/index
   state-dir: ./.wikilens/state
+
+  # 본문 분석기: korean(Nori) · english · standard
+  #
+  # 이것은 "무엇으로 **지을까**" 다. 질의는 색인이 실제로 지어진 분석기를 쓰므로
+  # (선택이 색인 커밋 데이터에 기록된다), 여기만 바꾸고 재색인을 안 하면 옛 분석기로
+  # 계속 정상 동작한다 — 둘은 `POST /api/admin/reindex` 에서 만난다.
+  #
+  # 한국어 문서에 영문 고유명사·식별자가 섞인 코퍼스라면 korean 이 맞다. Nori 는 영문을
+  # 깨뜨리지 않고 어간만 안 줄이는데, `Jenkins`·`DEPLOY_TOKEN` 같은 말은 굴절하지 않는다.
+  # 영어 산문이 주된 코퍼스일 때만 english 로 바꿀 것 — 그러면 한국어 조사를 못 뗀다.
+  analyzer: korean
+
   learn:
     # EB 하한이 이 값 미만이면 힌트를 서빙하지 않는다
     serve-threshold: 0.45
     # 앞 질의와 키워드가 이만큼 겹치면 앞 시도를 실패로 본다
     reformulation-overlap: 0.5
+    # 버려진 세션을 거두는 주기와, 얼마나 조용하면 끝난 것으로 볼지 (ms)
+    #
+    # MCP 프록시가 SIGKILL 되면 `/api/session/end` 가 안 온다. 거두지 않으면 그 세션의
+    # 궤적이 **확정되지 않아 학습에 안 들어간다** — 맵 누수보다 이쪽이 조용해서 나쁘다.
+    sweep-interval-millis: 300000
+    session-idle-millis: 1800000
 
 logging:
   level:
