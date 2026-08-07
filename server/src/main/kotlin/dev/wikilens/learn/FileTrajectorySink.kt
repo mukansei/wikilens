@@ -34,7 +34,22 @@ class FileTrajectorySink(stateDir: Path, private val mapper: ObjectMapper) : Tra
 
     /** 기동 시 재생. 포스팅은 궤적의 함수이므로 이것으로 완전히 복구된다. */
     fun replayInto(store: TrajectoryStore): Int {
-        if (!Files.exists(file)) return 0
+        if (!Files.exists(file)) {
+            // **조용히 0을 돌려주면 안 된다.** 상태 디렉터리 기본값이 상대경로라
+            // 작업 디렉터리가 달라지면 여기가 다른 자리를 가리키고, 그러면 옛 궤적을
+            // 못 읽은 채 **새 로그를 만들어 학습이 두 갈래로 갈린다.** 궤적은 유일한
+            // 복구 불가 자산인데 그 분기가 아무 표시 없이 일어났다.
+            //
+            // 실제로 겪었다 — IntelliJ 가 main 함수에서 바로 띄우면 작업 디렉터리가
+            // 저장소 루트라 `server/.wikilens/state` 가 아니라 `<루트>/.wikilens/state`
+            // 를 쓴다. 첫 배포면 이 줄이 정상이고, 재기동인데 보이면 그게 신호다.
+            log.warn(
+                "기존 궤적 로그가 없어 새로 시작합니다: {} — 처음이면 정상이지만, " +
+                    "재기동인데 이 줄이 보이면 작업 디렉터리가 달라져 **옛 궤적과 갈라진 것**입니다.",
+                file,
+            )
+            return 0
+        }
         var n = 0
         Files.newBufferedReader(file).useLines { lines ->
             for (line in lines) {
