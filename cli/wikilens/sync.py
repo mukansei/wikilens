@@ -143,7 +143,7 @@ class ConfluenceClient:
         raise ConfluenceError(
             "Confluence REST API 를 찾을 수 없습니다 (" + self.base + "). "
             "마지막 응답: " + str(last) + "\n"
-            "  · URL 이 맞습니까? Cloud 는 https://<회사>.atlassian.net 형식입니다\n"
+            "  · URL 이 맞습니까? Cloud 는 https://<사이트>.atlassian.net 형식입니다\n"
             "  · 자체 호스팅이면 컨텍스트 경로가 다를 수 있습니다"
         )
 
