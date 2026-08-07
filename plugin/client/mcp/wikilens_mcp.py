@@ -142,6 +142,20 @@ def status() -> int:
         print(f"ACL_PAGES={pages}")
         print(f"ACL_USERS={users}")
 
+        # 색인이 지어진 분석기와 서버 설정. **다를 때만** 의미가 있다 — 같으면 정상이라
+        # 줄만 늘어난다. 다르면 재색인이 안 된 상태이고, 실질적으로는 볼트를 못 읽어
+        # 기동 적재가 건너뛰어진 경우다. 그전에는 기동 로그로만 알 수 있었다.
+        built, want = s.get("analyzer"), s.get("analyzerConfigured")
+        if built and want and built != want:
+            print(f"ANALYZER={built} (설정은 {want})")
+            print(f"\n색인은 '{built}' 로 지어졌는데 서버 설정은 '{want}' 입니다.")
+            print("  검색은 정상 동작하지만 설정이 반영되지 않았습니다 —"
+                  " 볼트를 못 읽어 기동 적재가 건너뛰어졌을 수 있습니다.")
+            print("  운영자가 볼트 경로를 확인한 뒤 POST /api/admin/reindex 를 돌려야 합니다.")
+            ok = False
+        elif built:
+            print(f"ANALYZER={built}")
+
         # 서버에 기동 훅이 없다. Lucene 색인은 디스크에 남아 재기동 후에도 검색되는데
         # ACL 페이지 맵은 메모리라 비어서 뜬다 — **검색은 되고 read 는 전부 404** 인
         # 상태다. 겉으로는 전부 초록이라 이 조합을 짚어주지 않으면 못 찾는다

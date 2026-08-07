@@ -13,7 +13,7 @@
       "name": "wikilens-client",
       "source": "./plugin/client",
       "description": "사내 Confluence 위키를 검색하고 읽습니다 (WikiLens 서버 필요). wikilens-local 과 함께 켜져 있으면 이쪽이 우선합니다.",
-      "version": "0.10.1",
+      "version": "0.11.0",
       "category": "documentation"
     },
     {
