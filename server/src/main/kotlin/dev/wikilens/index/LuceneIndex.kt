@@ -171,9 +171,21 @@ class LuceneIndex(
         }
 
         companion object {
-            val EMPTY = Snapshot(
-                null, null, null, emptyMap(), TreeIndex.EMPTY,
-                AnalyzerKind.KOREAN, analyzerFor(AnalyzerKind.KOREAN),
+            /**
+             * 색인이 아직 없을 때의 빈 스냅샷.
+             *
+             * **정적 상수로 두면 안 된다** — 상수는 [LuceneIndex.buildKind] 를 모르므로
+             * 항상 korean 이 되고, 그러면 **설정이 english 인데 색인이 없을 때 질의만
+             * korean 으로 분석된다.** 검색은 어차피 0건이라 안 보이지만 `analyze()` 가
+             * 내는 항은 학습 포스팅의 키라, 그 상태로 쌓인 궤적이 나중 것과 안 맞는다.
+             * 첫 배포에서 볼트 경로를 틀리게 준 경우가 그 상황이다.
+             *
+             * (`swap()` 이 옛 스냅샷의 분석기를 닫는 것은 문제가 아니다 — Lucene
+             * `Analyzer.close()` 는 스레드 로컬만 비우고 다음 사용에 다시 만든다.
+             * 실측으로 확인했다.)
+             */
+            fun empty(kind: AnalyzerKind) = Snapshot(
+                null, null, null, emptyMap(), TreeIndex.EMPTY, kind, analyzerFor(kind),
             )
 
             /**
@@ -195,7 +207,9 @@ class LuceneIndex(
         }
     }
 
-    private val snapshotRef = AtomicReference(Snapshot.EMPTY)
+    // 색인이 없어도 **설정된 분석기**로 시작한다. 이 시점의 분석기가 곧 `analyze()` 가
+    // 쓰는 것이라, 여기서 korean 으로 굳으면 english 설정이 조용히 무시된다.
+    private val snapshotRef = AtomicReference(Snapshot.empty(buildKind))
 
     val docCount: Int get() = snapshotRef.get().reader?.numDocs() ?: 0
 
@@ -409,7 +423,7 @@ class LuceneIndex(
     }
 
     override fun close() {
-        snapshotRef.getAndSet(Snapshot.EMPTY).close()
+        snapshotRef.getAndSet(Snapshot.empty(buildKind)).close()
     }
 
     companion object {

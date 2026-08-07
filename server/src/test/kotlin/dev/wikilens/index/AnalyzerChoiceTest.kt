@@ -154,6 +154,19 @@ class AnalyzerChoiceTest {
     }
 
     @Test
+    fun `색인이 없어도 설정된 분석기를 쓴다`() {
+        // 첫 배포에서 볼트 경로를 틀리게 준 상황. 색인이 없으니 검색은 어차피 0건이지만,
+        // `analyze()` 가 내는 항은 **학습 포스팅의 키**라 여기서 korean 으로 굳으면
+        // english 설정이 조용히 무시된 채 궤적이 쌓인다.
+        LuceneIndex(createTempDirectory("noindex"), AnalyzerKind.ENGLISH).use { idx ->
+            idx.openIfExists()   // 색인이 없어 실패한다
+            assertEquals(AnalyzerKind.ENGLISH, idx.activeKind, "설정을 따라야 한다")
+            assertEquals(listOf("product", "server"), idx.analyze("production servers"),
+                "English 어간이 나와야 한다 — korean 이면 [production, servers] 다")
+        }
+    }
+
+    @Test
     fun `분석기 기록 이전 색인은 null 이고 경고하지 않는다`() {
         LuceneIndex(createTempDirectory("empty"), AnalyzerKind.KOREAN).use {
             it.openIfExists()
