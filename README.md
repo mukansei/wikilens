@@ -88,6 +88,7 @@ flowchart TB
     subgraph S3["③ 검색"]
         LQ["로컬판<br/>ALIASES → TREE → 본문 순 grep"]
         SQ["서버판<br/>Nori → BM25(앵커4 : 제목3 : 본문1)<br/>+ 학습 힌트 융합"]
+        ST["서버판 /api/tree<br/>TreeIndex"]
     end
 
     RAW -->|파싱| PAGES
@@ -97,14 +98,18 @@ flowchart TB
     TREE --> LQ
     ALIAS --> SQ
     PAGES --> SQ
+    STATE -.->|ancestors<br/>같은 원본| ST
 
     classDef st fill:#fef3c7,stroke:#d97706,color:#78350f
     classDef key fill:#fde68a,stroke:#b45309,color:#78350f
     classDef q fill:#e0e7ff,stroke:#4f46e5,color:#312e81
     class RAW,STATE,PAGES,TREE st
     class ALIAS key
-    class LQ,SQ q
+    class LQ,SQ,ST q
 ```
+
+**서버판은 `TREE.md` 파일을 읽지 않습니다.** 같은 원본(`.sync-state.json` 의 `ancestors`)에서
+자기 트리를 따로 만들어 `/api/tree` 로 서빙합니다 — 계층은 **양쪽 다 있고 산출물만 다릅니다.**
 
 `sync` 와 `build` 를 나눈 이유는 **제목→ID 해석 완전성**입니다. Confluence 링크는 대개
 제목으로 대상을 가리키는데, 전부 받은 뒤 한 번에 파싱해야 해석이 완전해집니다(실측 94%).
