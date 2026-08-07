@@ -339,6 +339,11 @@ check "서버판에 설정 경로 있음 (--configure 가 config.json 을 병합
 # 비영리·개인)도 쓴다. "사내" 는 고용 관계와 회사 경계를 전제하는 말이라 **제품이 자기를
 # 그렇게 규정하면** 그 범위 밖 사용자에게 "내 것이 아니다" 로 읽힌다. 회사 고유값 계약과
 # 같은 이유이고, 그쪽은 값을, 이쪽은 서술을 본다.
+# **`git grep` 이어야 한다.** 추적 파일만 보므로 볼트를 스캔하지 않는다 — 위키 문서에는
+# 이 낱말이 당연히 들어 있고, `grep -R` 은 `server/mirror-root` 심링크를 따라가 그것을
+# 잡는다(실측: 붙여놓고 재니 코퍼스 파일이 걸렸다). 범위를 저장소 전체로 넓히려면
+# 코퍼스를 배제할 방법이 먼저 필요했고, 그게 `git grep` 이다.
+# 같은 이유이고, 그쪽은 값을, 이쪽은 서술을 본다.
 check "제품 서술이 조직 형태를 전제하지 않음 ('사내' 없음)" \
   '! grep -rq "사내" plugin/ cli/wikilens/ cli/README.md server/src/main/ server/README.md README.md'
 
@@ -373,9 +378,19 @@ check "상태 디렉터리 단일 쓰기 보증 (락 + 읽을 수 있는 기동 
 
 # 로그 쓰기가 실패해도 메모리 학습은 계속되므로, 갈라지고 있다는 사실 자체를 밖으로
 # 내야 한다. 예전에는 WARN 한 줄이 전부라 재기동 때까지 아무도 몰랐다.
-check "궤적 로그 쓰기 실패가 stats 와 --status 에 드러남" \
-  'grep -q "logWriteFailures" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
-   && grep -q "logWriteFailures" plugin/client/mcp/wikilens_mcp.py'
+check "궤적 로그 상태가 stats 와 --status 에 드러남 (쓰기 실패·재생 누락·증가)" \
+  'grep -q "fun status()" server/src/main/kotlin/dev/wikilens/learn/FileTrajectorySink.kt \
+   && grep -q "trajectoryLog" server/src/main/kotlin/dev/wikilens/api/Controller.kt \
+   && grep -q "trajectoryLog" plugin/client/mcp/wikilens_mcp.py \
+   && grep -q "writeFailures" plugin/client/mcp/wikilens_mcp.py \
+   && grep -q "replaySkipped" plugin/client/mcp/wikilens_mcp.py'
+# 로그는 append-only 라 줄지 않는다. 압축은 넣지 않았지만(실측: 100만 건 = 210MB·5.3초,
+# 20명 팀이면 7년치) 아무도 안 보면 기동이 조용히 느려진다 — 임계에서 알리는 것이
+# 그것을 대신한다. 근거는 DECISIONS.md D17.
+check "궤적 로그 증가가 임계에서 경고됨 (압축 대신 관측)" \
+  'grep -q "const val SLOW_REPLAY_MILLIS" server/src/main/kotlin/dev/wikilens/learn/FileTrajectorySink.kt \
+   && grep -q "replayMillis > SLOW_REPLAY_MILLIS" server/src/main/kotlin/dev/wikilens/learn/FileTrajectorySink.kt \
+   && grep -q "log.warn" server/src/main/kotlin/dev/wikilens/learn/FileTrajectorySink.kt'
 
 echo
 if [ "$fail" -eq 0 ]; then

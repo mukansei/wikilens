@@ -188,12 +188,24 @@ def status() -> int:
         # 궤적 로그 쓰기가 실패해도 메모리 학습은 계속된다. 그래서 이 값이 0 이 아니면
         # **메모리와 로그가 갈라지는 중**이고, 재기동하면 그만큼이 사라진다.
         # 궤적은 유일한 복구 불가 자산이라 서버 로그의 WARN 만으로는 부족하다.
-        if s.get("logWriteFailures"):
-            print(f"LOG_WRITE_FAILURES={s['logWriteFailures']}")
+        tl = s.get("trajectoryLog") or {}
+        if tl.get("writeFailures"):
+            print(f"LOG_WRITE_FAILURES={tl['writeFailures']}")
             print("\n궤적 로그 쓰기가 실패하고 있습니다 — 검색은 정상이지만 **재기동하면"
                   " 그만큼의 학습이 사라집니다.**")
             print("  운영자가 상태 디렉터리의 여유 공간과 권한을 확인해야 합니다.")
             ok = False
+        if tl.get("replaySkipped"):
+            print(f"LOG_REPLAY_SKIPPED={tl['replaySkipped']}")
+            print("\n기동 시 궤적 일부를 읽지 못했습니다 — **옛 학습이 버려지는 중**입니다"
+                  "(대개 스키마 변경). 로그를 지우지 말고 운영자에게 알리세요.")
+            ok = False
+        # 로그는 append-only 라 줄지 않는다. 조용히 느려지는 자리라 임계 전에 알린다.
+        if (tl.get("replayMillis") or 0) > 10000:
+            mb = (tl.get("bytes") or 0) // (1024 * 1024)
+            print(f"LOG_REPLAY_MILLIS={tl['replayMillis']} (로그 {mb}MB)")
+            print("\n궤적 로그가 커져 기동이 느려지고 있습니다. 동작에는 문제가 없지만"
+                  " 운영자가 체크포인트를 검토할 시점입니다.")
 
         # 권한 폭이 다른 사람들의 관측이 한 포스팅에 섞이면 rank 가중과 목적지 분포가
         # 사람마다 다른 의미를 갖는다. 지금은 전 페이지가 @public 이라 0 또는 1 이다.

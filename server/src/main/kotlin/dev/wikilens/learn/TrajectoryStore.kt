@@ -335,9 +335,6 @@ class TrajectoryStore(
             "trajectories" to trajCount.get(),
             // 1 이면 학습이 균질하다. 2 이상이면 권한 폭이 다른 관측이 섞이는 중이다.
             "permissionScopes" to scopesSeen.size,
-            // 궤적 로그 쓰기 실패. **0 이 아니면 메모리 학습만 앞서가고 있다** —
-            // 재기동하면 그만큼이 사라진다. 유일한 복구 불가 자산이라 따로 낸다.
-            "logWriteFailures" to sink.failures,
             // **이 아래는 이번 기동에서만 센 값이다.** 위의 것들은 로그에서 재생되므로
             // 누적이고, 아래 것들은 로그에 없어서 재생이 불가능하다 — 소득 없는 검색은
             // 애초에 기록되지 않는다는 것이 이 값들을 만든 이유이기 때문이다.
