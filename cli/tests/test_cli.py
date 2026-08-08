@@ -70,6 +70,15 @@ def test_root_is_accepted_on_both_sides(argv, expected, monkeypatch):
     assert seen["root"] == expected
 
 
+@pytest.mark.parametrize("argv", [["-v", "build"], ["build", "-v"], ["build", "--verbose"]])
+def test_verbose_is_accepted_on_both_sides(argv, monkeypatch):
+    """`--root` 만 고치고 `-v` 를 남겨뒀더니 `acl -v` 가 죽었다 — 같은 규칙이어야 한다."""
+    seen = {}
+    monkeypatch.setattr("wikilens.cli._cmd_build", lambda a: seen.setdefault("v", a.verbose) or 0)
+    main(argv)
+    assert seen["v"] is True
+
+
 def test_doctor_hint_uses_the_actual_root(capsys, monkeypatch):
     """
     다음 단계 안내가 `~/wiki` 를 박아두고 있었다. 래퍼를 거쳐 들어온 사용자는 볼트가

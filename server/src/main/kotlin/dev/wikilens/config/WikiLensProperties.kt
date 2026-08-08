@@ -35,6 +35,13 @@ data class WikiLensProperties(
      * (개인 서버·개발·신뢰 경계 안의 소규모 팀). 자세한 근거는 [AclRegistry].
      */
     val aclEnforced: Boolean = true,
+    /**
+     * `/api/admin` 하위 공유 토큰. **비어 있으면 관리 API 가 전부 404 다.**
+     *
+     * 열어두는 것을 기본으로 하면 조용히 열린 채 배포된다 — 서버에 닿는 누구나
+     * 스스로 권한을 부여할 수 있게 된다. 자세한 근거는 [dev.wikilens.api.AdminGuard].
+     */
+    val adminToken: String = "",
     @NestedConfigurationProperty val learn: LearnProps = LearnProps(),
 ) {
     companion object {

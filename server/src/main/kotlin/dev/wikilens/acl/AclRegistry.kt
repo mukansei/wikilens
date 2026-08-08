@@ -29,12 +29,22 @@ import java.util.concurrent.ConcurrentHashMap
  * 기본값은 **켜짐**이다. 조용히 열리는 것보다 조용히 빈손인 편이 낫다 — 후자는 눈에
  * 띄고 전자는 안 띈다. 꺼져 있으면 기동 로그와 `/api/stats`·`--status` 가 말한다.
  */
-class AclRegistry(private val enforced: Boolean = true) {
+class AclRegistry(
+    private val enforced: Boolean = true,
+    /** 등록을 디스크에 남긴다. 없으면(테스트) 메모리 전용 — 예전 동작 그대로다. */
+    private val store: UserStore? = null,
+) {
     /** pageId -> 이 페이지를 볼 수 있는 토큰들 (그룹 키, 사용자 키, 공개 마커) */
     private val byPage = ConcurrentHashMap<String, Set<String>>()
 
     /** userKey -> 그 사용자가 가진 토큰들 */
     private val byUser = ConcurrentHashMap<String, Set<String>>()
+
+    init {
+        // 디스크에서 되살린다. **없으면 재기동마다 전원이 사라지고**, 그 상태가
+        // "문서가 없다"와 구별되지 않는다(조용히 실패 10·12번).
+        store?.load()?.forEach { (u, tokens) -> byUser[u] = tokens }
+    }
 
     /**
      * 지금까지 본 모든 권한 토큰. 시행을 껐을 때 "모두가 가진 것" 으로 넘긴다.
@@ -48,7 +58,12 @@ class AclRegistry(private val enforced: Boolean = true) {
         byPage[pageId] = tokens.toSet()
         allTokens.addAll(tokens)
     }
-    fun putUser(userKey: String, tokens: Collection<String>) { byUser[userKey] = tokens.toSet() + userKey }
+    fun putUser(userKey: String, tokens: Collection<String>) {
+        byUser[userKey] = tokens.toSet() + userKey
+        // **바로 저장한다.** 등록은 드물고(운영자가 손으로 부른다) 잃으면 전원이 빈손이
+        // 되므로, 주기적 저장으로 창을 남길 이유가 없다.
+        store?.save(byUser)
+    }
     fun tokensOf(pageId: String): Set<String> = byPage[pageId] ?: emptySet()
 
     /**

@@ -49,6 +49,16 @@ wikilens:
   index-dir: ./.wikilens/index
   state-dir: ./.wikilens/state
 
+  # /api/admin/* 공유 토큰. **비어 있으면 관리 API 가 전부 404.**
+  #
+  # 없으면 서버에 닿는 누구나 `POST /api/admin/acl/user?userKey=자기자신` 으로 스스로
+  # 권한을 부여한다 — 권한을 정확히 수집해도 이게 열려 있으면 의미가 없다.
+  # 잠김을 기본으로 두는 이유는 열림이 기본이면 **조용히 열린 채 배포**되기 때문이다.
+  #
+  # 호출: `-H "X-WikiLens-Admin: <토큰>"`. 리버스 프록시(SSO) 뒤에 둘 거면 그 위에
+  # 겹치면 되고, 이것만으로는 `userKey` 위조를 막지 못한다 — `DECISIONS.md` D18.
+  admin-token: ""
+
   # 질의 시점 ACL 시행. **기본은 켜짐.**
   #
   # 지금의 "ACL" 은 실질적으로 사용자 허용목록이다 — `sync` 가 권한을 수집하지 않아

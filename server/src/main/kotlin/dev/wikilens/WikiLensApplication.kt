@@ -2,6 +2,7 @@ package dev.wikilens
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.wikilens.acl.AclRegistry
+import dev.wikilens.acl.UserStore
 import dev.wikilens.config.WikiLensProperties
 import dev.wikilens.index.AnalyzerKind
 import dev.wikilens.index.LuceneIndex
@@ -54,7 +55,7 @@ class WikiLensApplication {
                     "볼트를 싱크한 계정의 권한 범위를 이 서버에 닿는 전원이 공유해도 되는 경우에만 맞습니다.",
             )
         }
-        return AclRegistry(props.aclEnforced)
+        return AclRegistry(props.aclEnforced, UserStore(abs(props.stateDir), ObjectMapper()))
     }
 
     @Bean
