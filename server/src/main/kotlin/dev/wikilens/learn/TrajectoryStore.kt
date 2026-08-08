@@ -190,6 +190,7 @@ class TrajectoryStore(
             served = span.served,
             rank = span.reads.lastOrNull()?.let { span.ranked.indexOf(it) } ?: -1,
             scope = scope,
+            readTs = span.readTs.toList(),
         )
         sink.append(t)
         apply(t)
