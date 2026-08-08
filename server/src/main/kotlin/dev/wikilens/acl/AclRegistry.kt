@@ -1,6 +1,5 @@
 package dev.wikilens.acl
 
-import org.springframework.stereotype.Component
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
@@ -10,16 +9,45 @@ import java.util.concurrent.ConcurrentHashMap
  * **권한 변경은 `lastModified` 를 건드리지 않는다.** 콘텐츠 증분 싱크로는 잡히지 않으므로
  * ACL 싱크를 분리해 더 자주 돌려야 한다. 그러지 않으면 더는 볼 수 없게 된 페이지를
  * 계속 서빙하게 되고, 공유 서버에서는 그것이 전 사용자에게 나간다.
+ *
+ * ### 시행을 끌 수 있다 ([enforced])
+ *
+ * **끄면 모두가 모든 토큰을 가진 것으로 본다** — 등록 없이 전 문서가 보인다.
+ * 소비자(`search`·`read`·`grep`·`tree`·학습 힌트)는 전부 `tokensFor`·`canSee` 만
+ * 거치므로 스위치가 여기 하나면 된다.
+ *
+ * **왜 필요한가:** 지금의 "ACL" 은 실질적으로 **사용자 허용목록**이다. `sync` 가 권한을
+ * 수집하지 않아 전 페이지가 `@public` 이고, 그래서 시행이 하는 일은 "등록된 사람인가"
+ * 뿐이다. 그런데 등록을 안 하면 fail-closed 로 전원이 빈손이 되고, 그 상태가 **"문서가
+ * 없다"와 구별되지 않는다**(`CLAUDE.md` 조용히 실패 10번). 혼자 쓰거나 신뢰 경계 안에
+ * 띄우는 경우엔 그 허용목록이 얻는 것 없이 함정만 된다.
+ *
+ * **끄는 것이 정당한 경우는 좁다** — 볼트를 서비스 계정 하나로 싱크했고 **그 계정의 권한
+ * 범위를 이 서버에 닿는 전원이 공유해도 되는** 배포뿐이다. 개인 서버·개발·신뢰 경계
+ * 안의 소규모 팀이 그것이다. 그 밖에서는 못 볼 문서가 그대로 나간다.
+ *
+ * 기본값은 **켜짐**이다. 조용히 열리는 것보다 조용히 빈손인 편이 낫다 — 후자는 눈에
+ * 띄고 전자는 안 띈다. 꺼져 있으면 기동 로그와 `/api/stats`·`--status` 가 말한다.
  */
-@Component
-class AclRegistry {
+class AclRegistry(private val enforced: Boolean = true) {
     /** pageId -> 이 페이지를 볼 수 있는 토큰들 (그룹 키, 사용자 키, 공개 마커) */
     private val byPage = ConcurrentHashMap<String, Set<String>>()
 
     /** userKey -> 그 사용자가 가진 토큰들 */
     private val byUser = ConcurrentHashMap<String, Set<String>>()
 
-    fun putPage(pageId: String, tokens: Collection<String>) { byPage[pageId] = tokens.toSet() }
+    /**
+     * 지금까지 본 모든 권한 토큰. 시행을 껐을 때 "모두가 가진 것" 으로 넘긴다.
+     *
+     * 페이지마다 합집합을 다시 구하면 검색 한 번이 전 페이지 스캔이 된다. 크기는
+     * 페이지 수가 아니라 **그룹 수**에 묶여 있어(지금은 `@public` 하나) 저렴하다.
+     */
+    private val allTokens = ConcurrentHashMap.newKeySet<String>()
+
+    fun putPage(pageId: String, tokens: Collection<String>) {
+        byPage[pageId] = tokens.toSet()
+        allTokens.addAll(tokens)
+    }
     fun putUser(userKey: String, tokens: Collection<String>) { byUser[userKey] = tokens.toSet() + userKey }
     fun tokensOf(pageId: String): Set<String> = byPage[pageId] ?: emptySet()
 
@@ -27,8 +55,15 @@ class AclRegistry {
      * 요청자의 권한 토큰. **모르는 사용자에게는 빈 집합을 준다.**
      * 실수로 전체가 노출되는 것보다 아무것도 안 나오는 편이 낫다.
      */
-    fun tokensFor(userKey: String?): Set<String> =
-        if (userKey.isNullOrBlank()) emptySet() else byUser[userKey] ?: emptySet()
+    fun tokensFor(userKey: String?): Set<String> {
+        // 시행을 끄면 **등록 여부와 무관하게** 전부 준다. 여기서 한 번만 갈라놓으면
+        // 소비자 넷이 그대로 동작한다 — 각자 분기하면 한 곳이 빠져 반쪽으로 열린다.
+        if (!enforced) return allTokens
+        return if (userKey.isNullOrBlank()) emptySet() else byUser[userKey] ?: emptySet()
+    }
+
+    /** 시행 중인가. 진단에 쓴다 — 꺼진 것을 아무도 모르면 안 된다. */
+    fun isEnforced(): Boolean = enforced
 
     fun canSee(userKey: String?, pageId: String): Boolean = canSee(tokensFor(userKey), pageId)
 

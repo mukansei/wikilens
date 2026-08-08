@@ -27,6 +27,14 @@ data class WikiLensProperties(
      * 궤적은 유일한 복구 불가 자산이므로 지우지는 않는다.
      */
     val analyzer: String = "korean",
+    /**
+     * 질의 시점 ACL 시행. **기본은 켜짐.**
+     *
+     * 끄면 등록 없이 전원이 전 문서를 본다. 볼트를 서비스 계정 하나로 싱크했고 **그
+     * 권한 범위를 이 서버에 닿는 전원이 공유해도 되는** 배포에서만 정당하다
+     * (개인 서버·개발·신뢰 경계 안의 소규모 팀). 자세한 근거는 [AclRegistry].
+     */
+    val aclEnforced: Boolean = true,
     @NestedConfigurationProperty val learn: LearnProps = LearnProps(),
 ) {
     companion object {

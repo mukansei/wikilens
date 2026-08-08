@@ -1,6 +1,7 @@
 package dev.wikilens
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import dev.wikilens.acl.AclRegistry
 import dev.wikilens.config.WikiLensProperties
 import dev.wikilens.index.AnalyzerKind
 import dev.wikilens.index.LuceneIndex
@@ -38,6 +39,24 @@ class WikiLensApplication {
     // 따라 다른 자리를 쓰고, 로그·오류 메시지도 어디였는지 말해주지 못한다.
     // 오타는 여기서 죽는 편이 낫다. 조용히 기본값으로 떨어지면 그게 "검색이 0건" 의
     // 원인이 되고, 그때는 설정이 아니라 색인을 의심하게 된다.
+    /**
+     * ACL 시행 여부는 설정이므로 여기서 주입한다. `@Component` 로 두면 무인자 생성이라
+     * 스위치를 받을 자리가 없다.
+     *
+     * **꺼져 있으면 기동에서 크게 알린다.** 조용히 열려 있는 것이 이 프로젝트에서
+     * 가장 나쁜 상태다 — 겉으로는 전부 정상으로 보인다.
+     */
+    @Bean
+    fun aclRegistry(props: WikiLensProperties): AclRegistry {
+        if (!props.aclEnforced) {
+            LoggerFactory.getLogger(WikiLensApplication::class.java).warn(
+                "ACL 시행이 꺼져 있습니다 (wikilens.acl-enforced=false) — **등록 없이 전원이 전 문서를 봅니다.** " +
+                    "볼트를 싱크한 계정의 권한 범위를 이 서버에 닿는 전원이 공유해도 되는 경우에만 맞습니다.",
+            )
+        }
+        return AclRegistry(props.aclEnforced)
+    }
+
     @Bean
     fun luceneIndex(props: WikiLensProperties): LuceneIndex =
         LuceneIndex(abs(props.indexDir), AnalyzerKind.of(props.analyzer)).also { it.openIfExists() }
