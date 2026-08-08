@@ -145,6 +145,7 @@ def status() -> int:
         return 2
 
     ok = True
+    enforced = True          # stats 를 못 받으면 보수적으로 본다
     try:
         s = get("/api/stats")
         docs, users = s.get("indexedDocs", 0), s.get("aclUsers", 0)
@@ -180,7 +181,13 @@ def status() -> int:
         if not docs:
             print("\n색인이 비어 있습니다. 운영자에게 재색인을 요청하세요.")
             ok = False
-        if not users:
+        # ACL 시행이 꺼져 있으면 등록이 필요 없다 — 아래 경고들이 다 헛말이 된다.
+        enforced = s.get("aclEnforced", True)
+        if not enforced:
+            print("ACL_ENFORCED=no")
+            print("\n이 서버는 권한을 확인하지 않습니다 — 접속한 누구나 색인된 전 문서를"
+                  " 봅니다. 운영자가 의도한 것인지 확인하세요.")
+        if enforced and not users:
             print("\n등록된 사용자가 없습니다 — 아무도 아무것도 못 봅니다.")
             print("  운영자가 POST /api/admin/acl/user 로 계정을 등록해야 합니다.")
             ok = False
@@ -216,7 +223,7 @@ def status() -> int:
         print(f"STATS=실패 ({e})")
         ok = False
 
-    if not USER:
+    if not USER and enforced:
         print("\nUSER 가 없어 모든 검색이 빈 결과가 됩니다:")
         print(f"  python3 {pathlib.Path(__file__).name} --configure --user <본인 식별자>")
         return 2

@@ -352,6 +352,24 @@ check "두 판 모두 dict 아닌 설정을 견딤 (유효한 JSON 이 곧 쓸 �
    && grep -q "isinstance(cfg, dict)" plugin/client/mcp/wikilens_mcp.py'
 
 
+# ACL 시행 스위치는 **`AclRegistry` 한 곳**이다. 소비자(search·read·grep·tree·학습 힌트)가
+# 각자 분기하면 한 곳이 빠져 **반쪽으로 열린다** — 겉으로는 정상이라 아무도 모른다.
+# 소비자는 스위치의 존재를 몰라야 하고 `tokensFor`·`canSee` 만 거쳐야 한다.
+check "ACL 시행 스위치가 한 곳뿐 (소비자는 스위치를 모른다)" \
+  '! git grep -lE "isEnforced|aclEnforced" -- server/src/main/kotlin/dev/wikilens/service \
+        server/src/main/kotlin/dev/wikilens/index server/src/main/kotlin/dev/wikilens/vault'
+
+# 기본값이 꺼짐이면 **조용히 열린 채** 배포된다. 조용히 빈손인 쪽이 낫다 — 그건 눈에 띈다.
+check "ACL 시행 기본값이 켜짐 (상수와 application.yml 이 함께)" \
+  'grep -q "val aclEnforced: Boolean = true" server/src/main/kotlin/dev/wikilens/config/WikiLensProperties.kt \
+   && grep -q "^  acl-enforced: true$" server/src/main/resources/application.yml'
+
+# 꺼두면 계속 말해야 한다 — 기동 로그 한 번으로는 재기동 뒤 아무도 모른다.
+check "ACL 시행이 꺼진 것이 기동·stats·--status 세 곳에서 보임" \
+  'grep -q "ACL 시행이 꺼져 있습니다" server/src/main/kotlin/dev/wikilens/WikiLensApplication.kt \
+   && grep -q "aclEnforced" server/src/main/kotlin/dev/wikilens/api/Controller.kt \
+   && grep -q "ACL_ENFORCED" plugin/client/mcp/wikilens_mcp.py'
+
 # 권한이 좁은 사용자는 상위 후보가 전부 안 보일 때 **힌트가 통째로 0** 이 된다 —
 # 볼 수 있는 후보가 더 아래에 있어도 슬롯을 이미 뺏겼기 때문이다. `SearchService` 가
 # 어휘 결과에서 이미 겪은 실패다(조용히 실패 8번: "take 를 필터 뒤로"). 지금은 전 페이지가

@@ -109,6 +109,9 @@ class Controller(
             "indexedDocs" to index.docCount,
             "aclPages" to acl.pageCount(),
             "aclUsers" to acl.userCount(),
+            // **꺼져 있으면 등록 없이 전원이 전 문서를 본다.** 겉으로는 정상이라
+            // 밖에서 볼 수 없으면 아무도 모른다.
+            "aclEnforced" to acl.isEnforced(),
             // 서버는 알고 있는데 밖으로 안 내보내던 값이다. 둘이 **다를 때만** 진단
             // 가치가 있다 — 재색인이 안 된 상태라는 뜻이고, 실질적으로는 볼트를 못 읽어
             // 기동 적재가 건너뛰어진 경우다. 그전에는 기동 로그를 뒤져야만 알 수 있었다.
