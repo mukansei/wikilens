@@ -6,6 +6,7 @@ import java.nio.channels.OverlappingFileLockException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import org.slf4j.LoggerFactory
 
 /**
  * 상태 디렉터리를 **한 프로세스만** 쓰도록 잠근다.
@@ -59,6 +60,31 @@ class StateDirLock(stateDir: Path) {
         }
         channel = ch
         held = lock
+        warnIfNetworkFileSystem(stateDir)
+    }
+
+    /**
+     * 네트워크 파일시스템이면 경고한다.
+     *
+     * 궤적 로그는 `O_APPEND` 원자성에 의존한다 — NFS 에서는 그 보장이 없어 **줄이
+     * 섞인다.** 그동안 이 사실은 `FileTrajectorySink` 주석에만 있었고, 운영자가
+     * `state-dir` 를 NFS 에 두면 아무도 모르게 로그가 망가졌다.
+     *
+     * **막지는 않는다.** 파일시스템 판정은 플랫폼마다 다르고 오탐이 기동을 막으면
+     * 그게 더 나쁘다 — 락 충돌과 달리 여기서는 "정말 안전한가" 를 우리가 확신할 수 없다.
+     */
+    private fun warnIfNetworkFileSystem(dir: Path) {
+        val type = runCatching { Files.getFileStore(dir).type().lowercase() }.getOrNull() ?: return
+        if (NETWORK_FS.none { it in type }) return
+        LoggerFactory.getLogger(javaClass).warn(
+            "상태 디렉터리가 네트워크 파일시스템입니다 ({} — {}): 궤적 로그는 O_APPEND " +
+                "원자성에 의존하므로 **줄이 섞일 수 있습니다.** 로컬 디스크로 옮기세요.",
+            type, dir,
+        )
+    }
+
+    companion object {
+        private val NETWORK_FS = listOf("nfs", "smb", "cifs", "afp", "webdav", "fuse")
     }
 
     /** 잠근 자리. 진단 로그용. */
