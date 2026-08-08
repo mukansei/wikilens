@@ -34,4 +34,12 @@ data class Trajectory(
      * 옛 로그에는 이 필드가 없다. 기본값이 빈 문자열이라 재생이 그대로 통과한다.
      */
     val scope: String = "",
+    /**
+     * [reads] 와 같은 길이·순서의 읽은 시각(epoch ms). 옛 로그에는 없다.
+     *
+     * **`dest = reads.last()` 전제를 나중에 검증하기 위한 것**이다 — 마지막으로 읽은
+     * 것과 가장 오래 머문 것이 같은지. 지금은 기록만 하고 판정은 안 바꾼다.
+     * 로그가 append-only 라 지금 넣지 않으면 그때까지의 궤적은 이 질문에 못 답한다.
+     */
+    val readTs: List<Long> = emptyList(),
 )
