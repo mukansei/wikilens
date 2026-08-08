@@ -7,6 +7,7 @@ import dev.wikilens.learn.TrajectoryStore
 import dev.wikilens.service.ContentService
 import dev.wikilens.service.IndexingService
 import dev.wikilens.service.SearchService
+import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.*
@@ -32,6 +33,7 @@ class Controller(
     private val indexing: IndexingService,
     private val index: LuceneIndex,
     private val acl: AclRegistry,
+    private val guard: AdminGuard,
 ) {
 
     @PostMapping("/search")
@@ -89,19 +91,28 @@ class Controller(
      * "빈 볼트면 건너뛴다" 방어가 이 경로에는 없었다(실측: 색인 2,383건이 0으로 지워짐).
      */
     @PostMapping("/admin/reindex")
-    fun reindex(): Map<String, Any> {
+    fun reindex(req: HttpServletRequest): Map<String, Any> {
+        guard.check(req)
         val r = indexing.reload()
         return mapOf("indexed" to r.indexed, "aclPages" to r.aclPages, "skipped" to r.skipped)
     }
 
     @PostMapping("/admin/acl/user")
-    fun putUser(@RequestParam userKey: String, @RequestBody tokens: List<String>): Map<String, Any> {
+    fun putUser(
+        req: HttpServletRequest,
+        @RequestParam userKey: String,
+        @RequestBody tokens: List<String>,
+    ): Map<String, Any> {
+        guard.check(req)
         acl.putUser(userKey, tokens)
         return mapOf("userKey" to userKey, "tokens" to tokens.size)
     }
 
     @PostMapping("/admin/sweep")
-    fun sweep(): Map<String, Any> = mapOf("finalized" to store.sweep())
+    fun sweep(req: HttpServletRequest): Map<String, Any> {
+        guard.check(req)
+        return mapOf("finalized" to store.sweep())
+    }
 
     @GetMapping("/stats")
     fun stats(): Map<String, Any?> =

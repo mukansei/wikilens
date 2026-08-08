@@ -101,6 +101,31 @@ def _cmd_build(args) -> int:
     return 0
 
 
+def _cmd_acl(args) -> int:
+    """
+    권한을 수집한다. **콘텐츠 싱크와 분리돼 있다** — 권한 변경은 `lastModified` 를
+    건드리지 않아 증분 sync 가 영영 못 잡는다. 더 자주 돌려야 하는 이유다.
+    """
+    from .acl import collect
+    from .sync import client_from_env
+
+    rep = collect(Path(args.root), client_from_env(), verbose=args.verbose, sleep_s=args.sleep)
+    print(f"권한 수집 완료: 페이지 {rep.pages} · 제한 있음 {rep.restricted} "
+          f"(그중 상속 {rep.inherited}) · 실패 {rep.failed} · {rep.elapsed_s:.1f}초")
+    print(f"토큰 {len(rep.tokens)}종")
+    for t in sorted(rep.tokens)[:20]:
+        print(f"  {t}")
+    if len(rep.tokens) > 20:
+        print(f"  ... 외 {len(rep.tokens)-20}종")
+    if rep.failed:
+        # **공개로 바뀌지 않는다** — 실패분은 이전 값을 유지한다. 다만 새 페이지는
+        # 아예 빠지므로 서버가 그 페이지를 못 보게 된다(fail-closed).
+        print(f"\n주의: {rep.failed}건을 조회하지 못했습니다. 그 페이지는 이전 권한을 "
+              f"유지하며, 처음 보는 페이지라면 **아무에게도 안 보입니다.**")
+    print("\n다음: 서버에서 POST /api/admin/reindex (권한이 색인에 반영됩니다)")
+    return 1 if rep.failed else 0
+
+
 def _cmd_stats(args) -> int:
     from .tokenizer import tokenize
 
@@ -159,9 +184,9 @@ def _cmd_stats(args) -> int:
     return 0
 
 
-def _add_root(parser) -> None:
+def _add_common(parser) -> None:
     """
-    `--root` 를 서브커맨드 **뒤에도** 허용한다.
+    최상위 플래그(`--root`·`-v`)를 서브커맨드 **뒤에도** 허용한다.
 
     최상위 파서에만 두면 `wikilens sync --root ~/wiki` 가 파싱 에러다. 자연스러운 순서가
     거부되는 것이라 문서 세 곳이 "반드시 서브커맨드 앞에" 를 경고하고 있었는데,
@@ -172,6 +197,10 @@ def _add_root(parser) -> None:
     """
     parser.add_argument("--root", default=argparse.SUPPRESS,
                         help="볼트 루트 (최상위에도 줄 수 있습니다)")
+    # `-v` 도 같은 함정이었다 — `--root` 만 고치고 남겨뒀더니 `acl -v` 가 죽었다(실측).
+    # 최상위 플래그는 전부 같은 규칙이어야 한다.
+    parser.add_argument("-v", "--verbose", action="store_true", default=argparse.SUPPRESS,
+                        help="자세한 진행 출력 (최상위에도 줄 수 있습니다)")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -204,8 +233,13 @@ def main(argv: list[str] | None = None) -> int:
     st = sub.add_parser("stats", help="볼트 통계 — 어휘 격차와 고아 문서")
     st.set_defaults(func=_cmd_stats)
 
-    for parser in (s, dr, b, st):
-        _add_root(parser)
+    ac = sub.add_parser("acl", help="페이지별 읽기 권한을 수집합니다 (sync 와 별도 주기)")
+    ac.add_argument("--sleep", type=float, default=0.0,
+                    help="요청 사이 대기(초). Confluence 부하를 낮춥니다")
+    ac.set_defaults(func=_cmd_acl)
+
+    for parser in (s, dr, b, st, ac):
+        _add_common(parser)
 
     args = p.parse_args(argv)
     return args.func(args)

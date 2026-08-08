@@ -352,6 +352,35 @@ check "두 판 모두 dict 아닌 설정을 견딤 (유효한 JSON 이 곧 쓸 �
    && grep -q "isinstance(cfg, dict)" plugin/client/mcp/wikilens_mcp.py'
 
 
+# 관리 API 가 열려 있으면 서버에 닿는 누구나 `acl/user` 로 **스스로 권한을 부여**한다 —
+# 권한을 아무리 정확히 수집해도 이게 열려 있으면 의미가 없다. 기본이 "열림" 이면
+# 조용히 열린 채 배포되므로 **잠김이 기본**이어야 하고, 거부는 404 여야 한다(403 은
+# 엔드포인트의 존재를 알린다 — `read` 와 같은 규칙).
+check "관리 API 가 기본 잠김이고 세 엔드포인트 모두 통과 검사를 거침" \
+  'grep -q "val adminToken: String = \"\"" server/src/main/kotlin/dev/wikilens/config/WikiLensProperties.kt \
+   && grep -q "^  admin-token: \"\"$" server/src/main/resources/application.yml \
+   && [ "$(grep -c "guard.check(req)" server/src/main/kotlin/dev/wikilens/api/Controller.kt)" = "3" ] \
+   && [ "$(grep -c "@PostMapping(\"/admin" server/src/main/kotlin/dev/wikilens/api/Controller.kt)" = "3" ]'
+
+# `mirror/acl/acl.json` 은 CLI 가 쓰고 Kotlin 이 읽는 **파일로만 이어진 계약**이다.
+# 갈리면 서버가 파일을 못 읽어 전 페이지가 `@public` 폴백이 된다 — 조용한 과다 노출.
+check "ACL 파일 경로·형식이 Python 과 Kotlin 에서 같음 (mirror/acl/*.json)" \
+  'grep -q "root / \"mirror\" / \"acl\"" cli/wikilens/acl.py \
+   && grep -q "resolve(\"mirror\").resolve(\"acl\")" server/src/main/kotlin/dev/wikilens/vault/VaultReader.kt'
+
+# 조회 실패를 "제한 없음" 으로 뭉개면 **못 읽은 페이지가 공개로 적힌다.** 네트워크 오류
+# 한 번이 노출로 이어지면 안 된다 — 실패는 옛 값을 지키고, 처음 보는 페이지는 뺀다.
+check "ACL 수집이 조회 실패를 공개로 바꾸지 않음" \
+  'grep -q "if own is None:" cli/wikilens/acl.py \
+   && grep -q "previous\[pid\]" cli/wikilens/acl.py'
+
+# 사용자 등록이 메모리 전용이면 재기동마다 전원이 사라지고, 그 상태가 "문서가 없다"와
+# 구별되지 않는다(조용히 실패 10·12번).
+check "사용자 등록이 재기동을 넘음 (상태 디렉터리에 원자적으로 저장)" \
+  '[ -f server/src/main/kotlin/dev/wikilens/acl/UserStore.kt ] \
+   && grep -q "ATOMIC_MOVE" server/src/main/kotlin/dev/wikilens/acl/UserStore.kt \
+   && grep -q "store?.save(byUser)" server/src/main/kotlin/dev/wikilens/acl/AclRegistry.kt'
+
 # `~/.wikilens/` 는 **두 판이 공유**하고 안에 토큰(`env.sh`)이 든다. 만드는 경로가 셋인데
 # (템플릿의 umask 077 · 로컬판 setup · 서버판 --configure) 한 곳이라도 `mkdir()` 기본값을
 # 쓰면 umask 022 로 755 가 되고, **먼저 쓰는 쪽이 권한을 정한다** — 설치 순서에 따라

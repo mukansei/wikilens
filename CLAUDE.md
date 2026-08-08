@@ -62,6 +62,9 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 | 볼트 설정 키 `vault` 가 세 곳에서 같음 | `vault_status.py` · `setup_vault.py` · `config/UserConfig.kt` | 서버 볼트 폴백이 조용히 멈춤 |
 | 볼트 경로 해석처가 **한 곳** | `vault/VaultLocator.kt` | 검색은 되고 읽기만 404 |
 | 권한 없음은 **404** (403 아님) | `Controller.read` | 문서 존재가 유출됨 |
+| 관리 API 기본이 **잠김** | `WikiLensProperties.adminToken` ↔ `application.yml` | 조용히 열린 채 배포됨 |
+| ACL 파일 경로·형식 | `cli/wikilens/acl.py` ↔ `VaultReader.readAcl` | 전 페이지가 `@public` 폴백 |
+| ACL 조회 실패는 **옛 값 유지** | `acl.py` `collect` | 못 읽은 페이지가 공개로 |
 | 학습 힌트는 **자르기 전에** 권한으로 거름 | `TrajectoryStore.hints` ↔ `SearchService` | 좁은 권한은 힌트가 0건 |
 | 궤적에 남기는 것은 **범위**이지 신원 아님 | `Trajectory.scope` ↔ `AclRegistry.scopeOf` | 검색 이력이 영구 기록됨 |
 | 상태 디렉터리는 **한 프로세스만** | `learn/StateDirLock.kt` | 학습이 조용히 갈림 |
@@ -347,19 +350,21 @@ grep 엔진 RE2 전환(D12), 두 판 우선순위(D13), 분석기 색인 시점 
 로컬판은 각자 자기 토큰으로 싱크해 그 문제가 설계상 없다. 대가는 Confluence 부하가
 사용자 수에 비례하는 것이라 소규모 팀에 한한다.
 
-1. **서버판 인증 — ACL 수집과 한 묶음이다.**
-   - **`/api/admin/*` 에 인증이 없다.** 서버에 닿는 누구나
-     `POST /api/admin/acl/user?userKey=자기자신` 으로 **스스로 권한을 부여**할 수 있고
-     `/admin/reindex` 도 아무나 부른다. 권한을 아무리 정확히 수집해도 이게 열려 있으면
-     의미가 없다. 방식은 설계 결정이라 미정(공유 토큰·리버스 프록시·루프백 바인딩).
-   - **ACL 수집** — `sync`가 권한을 전혀 가져오지 않아 모든 페이지가 `@public`이 된다.
-     `/rest/api/content/{id}/restriction/byOperation`.
-     권한 변경은 `lastModified`를 안 건드리므로 콘텐츠 싱크와 분리해 더 자주 돌려야 한다.
-   - **사용자 등록(`byUser`)이 메모리 전용**이라 재기동하면 전원 사라진다(조용히 실패 12번).
+1. **서버판 인증·ACL — 만들었다(2026-08-08). 남은 것은 운영 절차다.**
+   - **`/api/admin/*` 은 공유 토큰으로 잠긴다**(`wikilens.admin-token`). **기본이 잠김**이라
+     안 주면 전부 404 다 — 열림이 기본이면 조용히 열린 채 배포된다. 거부는 403 이 아니라
+     404(엔드포인트 존재를 안 알린다). **이것으로 `userKey` 위조는 못 막는다** — 그건
+     리버스 프록시(SSO)가 필요하고, 공유 토큰은 그 아래 깔리는 바닥이다(D18).
+   - **`wikilens acl` 이 권한을 수집한다.** `sync` 와 분리돼 있다 — 권한 변경은
+     `lastModified` 를 안 건드려 증분 sync 가 영영 못 잡는다. **더 자주 돌려야 한다.**
+     `byOperation` 은 직접 제한만 주므로 `ancestors` 로 상속을 직접 푼다(안 그러면
+     상속으로 잠긴 문서가 통째로 노출된다). 제한 없는 페이지는 `@public` 이 아니라
+     `@space:<KEY>` 다 — 여러 스페이스를 한 볼트에 모으면 사용자마다 볼 수 있는
+     스페이스가 다르기 때문이다.
+   - **사용자 등록이 재기동을 넘는다**(`acl-users.json`, 원자 교체).
+   - **남은 것:** `userKey` 는 여전히 자기주장이다. 스페이스 권한 자체는 안 가져온다
+     (누가 어느 스페이스를 보는지는 운영자가 `acl/user` 로 정한다).
 
-   셋 다 **서버판 다중 사용자 배포 전 필수**다 — 지금 상태로 제3자를 붙이면 그 사람이
-   Confluence에서 못 보는 문서까지 노출된다. (로컬판에는 해당 없음 — 개인 토큰이 곧
-   권한 범위다.)
 2. **싱크 자동화** — 현재 `sync` → `/admin/reindex`가 수동이다. cron으로 충분:
    `wikilens sync ... && curl -XPOST .../admin/reindex` (`&&` 필수 — 실패 시
    절반만 반영되는 것을 막는다).
