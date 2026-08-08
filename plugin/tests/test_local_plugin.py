@@ -613,6 +613,61 @@ def test_non_dict_config_is_quarantined_too(tmp_path):
     assert len(baks) == 1 and "/home/me/wiki" in baks[0].read_text(encoding="utf-8")
 
 
+def test_config_dir_is_700_however_it_was_made(tmp_path):
+    """
+    `~/.wikilens/` 안에 토큰이 든다. 그런데 만드는 경로가 둘이라 권한이 갈렸다 —
+    템플릿은 `umask 077` 로 700, `--capture-env` 는 `mkdir()` 기본값(umask 022)이라
+    **755** 였다(실측 2026-08-08). 토큰 파일은 600 이라 값 자체는 안전하지만, 한 경로가
+    다른 경로보다 약한 상태를 남기면 어느 쪽이 기준인지 알 수 없다.
+    """
+    # 이미 느슨한 권한으로 있는 경우도 맞춰줘야 한다 — 옛 설치가 그 상태다.
+    (tmp_path / ".wikilens").mkdir(mode=0o755)
+    setup_vault(tmp_path, "--capture-env",
+                CONFLUENCE_URL="https://w.example.com", CONFLUENCE_TOKEN="t")
+    assert oct((tmp_path / ".wikilens").stat().st_mode)[-3:] == "700"
+
+    # 볼트 경로만 기록하는 경로도 같아야 한다.
+    other = tmp_path / "other"
+    other.mkdir()
+    setup_vault(other, "--vault", str(other / "v"))
+    assert oct((other / ".wikilens").stat().st_mode)[-3:] == "700"
+
+
+@pytest.mark.parametrize("home_name", ["plain", "Hyun Woo Park"])
+def test_env_template_runs_on_a_machine_that_has_never_used_wikilens(tmp_path, home_name):
+    """
+    `CREDS=none` 은 **정의상 처음 쓰는 사람**이다. 그런데 템플릿이 `mkdir -p` 없이
+    `cat > ~/.wikilens/env.sh` 를 했었다 — 디렉터리가 없어 `No such file or directory`
+    로 죽는다. **이 명령이 유일하게 실패하는 대상이 이 명령을 받는 사람이었다.**
+    개발 중에는 디렉터리가 이미 있어 한 번도 안 드러났다(2026-08-08 실측으로 발견).
+
+    그래서 문자열을 검사하지 않고 **실제로 실행한다.** `mkdir` 이 있는지 grep 하면
+    다른 이유로 깨지는 것을 놓친다.
+    """
+    # 홈에 공백이 있으면(`/Users/Hyun Woo Park`) 인용 없는 경로가 깨진다 — `mkdir -p` 가
+    # 조각마다 디렉터리를 만든 뒤 리다이렉트가 죽어 **실패하면서 쓰레기까지 남긴다.**
+    home = tmp_path / home_name
+    home.mkdir()
+
+    r = setup_vault(home, "--capture-env")
+    marker = "직접** 실행하세요:\n\n"
+    assert marker in r.stdout, f"템플릿 출력 형식이 바뀌었다: {r.stdout[:200]}"
+    cmd = r.stdout.split(marker, 1)[1]
+
+    done = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True,
+                          env={"HOME": str(home), "PATH": "/usr/bin:/bin"})
+    assert done.returncode == 0, done.stderr
+    assert list(home.parent.iterdir()) == [home], "홈 밖에 쓰레기가 생겼다"
+
+    env = home / ".wikilens" / "env.sh"
+    assert env.is_file(), "템플릿이 파일을 못 만들었다"
+    # 토큰이 든다 — 디렉터리도 파일도 남에게 열려 있으면 안 된다.
+    assert oct((home / ".wikilens").stat().st_mode)[-3:] == "700"
+    assert oct(env.stat().st_mode)[-3:] == "600"
+    # 자리표시자는 채운 것으로 세면 안 된다 — 그대로면 인증이 엉뚱하게 죽는다.
+    assert status(home)["creds"] == "partial"
+
+
 def test_broken_config_is_quarantined_not_overwritten(tmp_path):
     """
     `~/.wikilens/config.json` 은 **사람이 손으로 고치는 파일**이라 깨져 있는 것이 흔하다.

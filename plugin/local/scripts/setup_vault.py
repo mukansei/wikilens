@@ -40,6 +40,19 @@ HEADER = ["#!/bin/sh",
           ""]
 
 
+def _ensure_config_dir() -> None:
+    """
+    `~/.wikilens/` 를 **700 으로** 만든다(이미 있으면 맞춰준다).
+
+    `mkdir()` 만 부르면 umask 기본값(022)이 먹어 755 가 된다. 그러면 `--capture-env`
+    로 만든 사람과 템플릿(`umask 077`)으로 만든 사람이 **같은 자리에 다른 권한**을
+    갖는다 — 실측으로 확인했다(2026-08-08). 토큰 파일은 600 이라 값 자체는 안전하지만,
+    한 경로가 다른 경로보다 약한 상태를 남기면 어느 쪽이 기준인지 알 수 없다.
+    """
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(CONFIG_DIR, 0o700)
+
+
 def capture_env() -> tuple[list[str], list[str], str]:
     """
     지금 셸에 export 된 자격증명을 `~/.wikilens/env.sh` 에 **병합**한다.
@@ -80,7 +93,7 @@ def capture_env() -> tuple[list[str], list[str], str]:
     kept = sorted({m.group(1) for line in existing
                    if (m := re.match(r"\s*export\s+([A-Z_][A-Z0-9_]*)=", line))} - set(present))
 
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    _ensure_config_dir()
     # 토큰이 들어가므로 만들 때부터 600 이어야 한다 — 쓰고 나서 chmod 하면 그 사이가 열려 있다.
     fd = os.open(ENV_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -90,9 +103,25 @@ def capture_env() -> tuple[list[str], list[str], str]:
 
 
 def env_template() -> str:
-    """자격증명이 셸에 없을 때, 사용자가 **직접** 실행할 명령. 토큰은 사용자만 만진다."""
+    """
+    자격증명이 셸에 없을 때, 사용자가 **직접** 실행할 명령. 토큰은 사용자만 만진다.
+
+    **`mkdir -p` 가 필수다.** 없으면 `~/.wikilens/` 가 아직 없는 사람에게
+    `No such file or directory` 로 죽는다 — 그런데 `CREDS=none` 은 **정의상 처음 쓰는
+    사람**이라, 이 명령이 유일하게 실패하는 대상이 정확히 이 명령을 받는 사람이었다.
+    개발 중에는 디렉터리가 이미 있어 한 번도 안 드러났고, 저장소를 초기 상태로 되돌려
+    진짜 첫 실행을 밟자 바로 나왔다(2026-08-08 실측).
+
+    `umask 077` 을 `mkdir` 앞에 두어 디렉터리도 700 으로 만든다 — 안에 토큰이 든다.
+
+    **경로는 인용한다.** 홈에 공백이 있으면(`/Users/Hyun Woo Park`) 인용 없이는
+    `mkdir -p` 가 `Hyun`·`Woo`·`Park` 세 디렉터리를 만든 뒤 리다이렉트가 죽어
+    **실패하면서 쓰레기까지 남긴다**(실측). `install_command()` 가 같은 이유로
+    `shlex.quote` 를 쓴다 — 사용자에게 건네는 셸 명령은 전부 같은 규칙이다.
+    """
     return (
-        f"(umask 077; cat > {ENV_PATH} <<'EOF'\n"
+        f"(umask 077; mkdir -p {shlex.quote(str(ENV_PATH.parent))}"
+        f" && cat > {shlex.quote(str(ENV_PATH))} <<'EOF'\n"
         "export CONFLUENCE_URL=https://wiki.example.com\n"
         "export CONFLUENCE_TOKEN=<발급받은 PAT를 여기에>\n"
         "# Cloud 는 보통 이메일도 필요합니다 (Server/DC 는 PAT 하나면 됩니다)\n"
@@ -131,7 +160,7 @@ def write_config(vault: Path | None, source: str | None, cli: str | None = None)
         cfg["cli_source"] = source
     if cli:
         cfg["cli"] = cli
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    _ensure_config_dir()
     CONFIG_PATH.write_text(
         json.dumps(cfg, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -248,7 +277,9 @@ def main(argv: list[str]) -> int:
 
     if not vault.exists():
         wrapper = Path(__file__).resolve().parent / "wikilens_cli.sh"
-        print(f"\n볼트가 아직 없습니다. 다음: bash {wrapper} sync --space <KEY>")
+        # 사용자가 그대로 붙여넣는 명령이므로 경로를 인용한다 — 플러그인은
+        # `~/.claude/plugins/cache/...` 아래 있고 홈에 공백이 있을 수 있다.
+        print(f"\n볼트가 아직 없습니다. 다음: bash {shlex.quote(str(wrapper))} sync --space <KEY>")
         print("  (래퍼가 --root 를 위 VAULT 로 채웁니다. sync 가 build 까지 한 번에 합니다.)")
     return 0
 
