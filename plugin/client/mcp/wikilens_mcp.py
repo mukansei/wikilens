@@ -293,7 +293,12 @@ def configure(argv: list[str]) -> int:
 
     cfg = _config()
     cfg.update({k: v for k, v in args.items() if v})
+    # **700 으로 맞춘다.** `mkdir()` 만 부르면 umask 기본값(022)이 먹어 755 가 되는데,
+    # 이 디렉터리는 두 판이 공유하고 안에 토큰(`env.sh`)이 든다 — 먼저 쓰는 쪽이 권한을
+    # 정하므로 한쪽만 700 이면 설치 순서에 따라 결과가 갈린다(로컬판
+    # `setup_vault._ensure_config_dir` 와 같은 이유).
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(CONFIG_PATH.parent, 0o700)
     CONFIG_PATH.write_text(
         json.dumps(cfg, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 

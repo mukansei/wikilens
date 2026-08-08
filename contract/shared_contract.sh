@@ -352,6 +352,24 @@ check "두 판 모두 dict 아닌 설정을 견딤 (유효한 JSON 이 곧 쓸 �
    && grep -q "isinstance(cfg, dict)" plugin/client/mcp/wikilens_mcp.py'
 
 
+# `~/.wikilens/` 는 **두 판이 공유**하고 안에 토큰(`env.sh`)이 든다. 만드는 경로가 셋인데
+# (템플릿의 umask 077 · 로컬판 setup · 서버판 --configure) 한 곳이라도 `mkdir()` 기본값을
+# 쓰면 umask 022 로 755 가 되고, **먼저 쓰는 쪽이 권한을 정한다** — 설치 순서에 따라
+# 결과가 갈린다(실측 2026-08-08: 로컬판만 고쳤더니 서버판이 755 로 만들었다).
+check "설정 디렉터리를 만드는 두 판이 모두 700 으로 맞춤 (토큰이 든다)" \
+  'grep -q "os.chmod(CONFIG_DIR, 0o700)" plugin/local/scripts/setup_vault.py \
+   && grep -q "os.chmod(CONFIG_PATH.parent, 0o700)" plugin/client/mcp/wikilens_mcp.py'
+
+# 사용자에게 **그대로 붙여넣으라고 건네는 셸 명령**은 경로를 인용해야 한다. 홈에 공백이
+# 있으면(`/Users/Hyun Woo Park`) 인용 없는 `mkdir -p` 가 조각마다 디렉터리를 만든 뒤
+# 리다이렉트가 죽어 **실패하면서 쓰레기까지 남긴다**(실측). 실제로 두 곳이 그랬다.
+# **`grep -P` 를 쓰지 말 것.** macOS 기본 grep(BSD)에는 없고, 없으면 `invalid option` 으로
+# 죽는데 종료코드가 비0이라 `! grep` 이 **참이 되어 검사가 통과한다** — 검사가 조용히
+# 사라진다(실측: 대화형 셸에는 GNU grep 이 잡혀 있어 안 드러났다). 그래서 전방탐색 대신
+# "명령 뒤에 보간이 있는 줄" 을 뽑고 `shlex.quote` 가 없는 줄이 남는지로 본다.
+check "사용자에게 건네는 셸 명령이 경로를 인용함 (홈에 공백이 있어도)" \
+  '[ -z "$(grep -E "(bash |cat > |mkdir -p |python3 -m venv )[{]" plugin/local/scripts/setup_vault.py | grep -v "shlex\.quote")" ]'
+
 # ACL 시행 스위치는 **`AclRegistry` 한 곳**이다. 소비자(search·read·grep·tree·학습 힌트)가
 # 각자 분기하면 한 곳이 빠져 **반쪽으로 열린다** — 겉으로는 정상이라 아무도 모른다.
 # 소비자는 스위치의 존재를 몰라야 하고 `tokensFor`·`canSee` 만 거쳐야 한다.
