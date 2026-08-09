@@ -3,6 +3,14 @@ package dev.wikilens.api
 
 data class GrepResponse(
     val pattern: String,
+    /**
+     * 훑은 문서 수.
+     *
+     * **[truncated] 가 true 면 하한이고 엔진마다 다르다.** JVM 은 실제로 연 파일 수를
+     * 세지만, rg 는 매치가 나온 파일만 JSON 으로 내보내므로 그보다 적게 보인다
+     * (실측: 같은 질의에 JVM 116 · rg 5). 끝까지 갔을 때는 둘 다 대상 전량으로 같다 —
+     * 그쪽만 `GrepEngineParityTest` 가 대조한다.
+     */
     val scanned: Int,
     val matches: List<GrepMatch>,
     val truncated: Boolean,
