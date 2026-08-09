@@ -22,30 +22,51 @@
 # 예전 IntelliJ 구성은 `set -e` 였다. 판정은 옳지만 **첫 실패에서 멈춰** 나머지가
 # 멀쩡한지 알 수 없다. 한 번에 전체 그림을 보는 편이 고치는 순서를 정하기 좋다.
 set -u
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
+
+# 개발용 venv. **이 경로를 아는 곳은 여기와 계약 둘뿐이고, 만드는 법은 여기에만 있다** —
+# README 의 `~/.wikilens/venv` 는 사용자 설치라 다른 물건이다.
+#
+# 없으면 앞질러 막는다. 그냥 돌리면 pytest·MCP 가 `No such file or directory` 로 죽고
+# 계약도 한 건 깨져 **새로 clone 한 사람에게 코드가 고장난 것처럼 보인다**(실측: 3/4 실패).
+VENV=.venv
+if [ ! -x "$VENV/bin/python" ]; then
+  echo "개발용 venv 가 없습니다. 처음 한 번만:"
+  echo
+  echo "  python3 -m venv $VENV && $VENV/bin/pip install -e ./cli pytest"
+  echo
+  exit 1
+fi
 
 fail=0
+total=0
+tmp=""
+trap 'rm -f "$tmp"' EXIT INT TERM         # Ctrl-C 로 끊어도 임시 로그를 안 남긴다
+
 run() {                                   # run <이름> <명령...>
   local name=$1; shift
-  local log rc
-  log=$(mktemp)
-  if "$@" >"$log" 2>&1; then
-    printf '  PASS  %-8s %s\n' "$name" "$(tail -1 "$log")"
+  local rc
+  total=$((total + 1))
+  tmp=$(mktemp)
+  # 이름을 `%-8s` 로 패딩하지 않는다 — printf 는 **바이트**를 세므로 한글 이름이
+  # 어긋난다. 판정 열(PASS/FAIL)은 앞에 있고 ASCII 라 그것만으로 충분하다.
+  if "$@" >"$tmp" 2>&1; then
+    printf '  PASS  %s — %s\n' "$name" "$(tail -1 "$tmp")"
   else
     rc=$?
-    printf '  FAIL  %-8s (종료코드 %d)\n' "$name" "$rc"
-    tail -20 "$log" | sed 's/^/          /'
+    printf '  FAIL  %s (종료코드 %d)\n' "$name" "$rc"
+    tail -20 "$tmp" | sed 's/^/          /'
     fail=$((fail + 1))
   fi
-  rm -f "$log"
+  rm -f "$tmp"; tmp=""
 }
 
 # `bash -c` 로 감싸는 이유: `env -C` 는 BSD/GNU 가 갈린다.
 # gradle 에 `-q` 를 안 주는 이유: 로그는 **실패할 때만** 보이므로 자세할수록 낫다 —
 # `-q` 는 어느 테스트가 깨졌는지를 지운다(개수만 남는다).
 run 계약    bash contract/shared_contract.sh
-run pytest .venv/bin/python -m pytest -q
-run MCP    .venv/bin/python plugin/tests/test_mcp_proxy.py
+run pytest "$VENV/bin/python" -m pytest -q
+run MCP    "$VENV/bin/python" plugin/tests/test_mcp_proxy.py
 # gradle 은 마지막 줄이 광고("Consider enabling…")라 PASS 요약이 그걸 집는다. 지운다.
 # `pipefail` 이 있어야 파이프의 종료 코드가 gradle 것이 된다 — 없으면 grep 이 판정한다.
 run JUnit  bash -c 'set -o pipefail
@@ -55,6 +76,6 @@ echo
 if [ "$fail" -eq 0 ]; then
   echo "검증 넷 모두 통과"
 else
-  echo "$fail/4 실패 — 위 로그를 보라"
+  echo "$fail/$total 실패 — 위 로그를 보라"
 fi
 exit "$fail"
