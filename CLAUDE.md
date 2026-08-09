@@ -25,19 +25,25 @@ docs/      아키텍처 · 임베딩 설계 제안
 ## 먼저 실행할 것
 
 ```bash
-./contract/shared_contract.sh                     # 교차 언어 계약
-python -m pytest -q                               # cli/tests + plugin/tests
-cd server && ./gradlew test                       # JUnit
-python3 plugin/tests/test_mcp_proxy.py            # pytest 가 안 걷는 독립 스크립트
+./check.sh
 ```
+
+계약(교차 언어) · pytest(cli+plugin) · MCP 프록시(pytest 가 안 걷는 독립 스크립트) ·
+JUnit 넷을 돌리고 **한 줄로 판정**한다. 종료 코드가 실패 개수다.
+
+**판정을 눈으로 하지 않는다.** 각 도구의 종료 코드로 보고 성공·실패를 같은 모양
+(`PASS`/`FAIL`)으로 낸다 — 예전에는 출력을 grep 해서 판정했고, 성공만 라벨이라
+`BUILD FAILED` 한 줄이 다른 출력에 묻혀 **실패한 채로 커밋한 적이 있다**(2026-08-08).
+
+**명령 목록을 여기 옮겨 적지 말 것** — `check.sh` 가 정본이고 IntelliJ 실행 구성
+"3. 전체 검증"도 그것을 부른다. 예전에는 이 목록이 두 곳에 있었다.
 
 `shared_contract.sh`가 특히 중요하다. Python과 Kotlin이 파일로만 연결되어 있어
 아래 계약이 어긋나면 **테스트는 통과하는데 런타임에 조용히 틀어진다.**
 
 **개수는 일부러 안 적는다** — 늘 때마다 낡고, 돌리면 바로 나온다.
 
-**변경 후 이 넷이 통과하는지 반드시 확인할 것.** IntelliJ 를 쓴다면 실행 구성
-"3. 전체 검증"이 이 넷을 한 번에 돌린다.
+**변경 후 반드시 `./check.sh` 가 통과하는지 확인할 것.**
 
 ---
 

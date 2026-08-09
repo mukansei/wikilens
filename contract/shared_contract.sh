@@ -14,13 +14,18 @@ set -u
 cd "$(dirname "$0")/.."
 fail=0
 total=0
+# 깨진 것의 이름을 모아 **끝에서 다시 말한다.** 이 스크립트를 다른 도구가 감싸면 보통
+# 꼬리 몇 줄만 보여주는데, 그 자리가 OK 로 가득 차 정작 깨진 줄이 위로 밀려났다(실측).
+broken=""
 
 check() {
   total=$((total+1))
   if eval "$2" >/dev/null 2>&1; then
     printf '  \033[0;32mOK  \033[0m %s\n' "$1"
   else
-    printf '  \033[0;31m깨짐\033[0m %s\n' "$1"; fail=$((fail+1))
+    printf '  \033[0;31m깨짐\033[0m %s\n' "$1"
+    fail=$((fail+1)); broken="$broken  - $1
+"
   fi
 }
 
@@ -483,10 +488,26 @@ check "궤적 로그 증가가 임계에서 경고됨 (압축 대신 관측)" \
    && grep -q "replayMillis > SLOW_REPLAY_MILLIS" server/src/main/kotlin/dev/wikilens/learn/FileTrajectorySink.kt \
    && grep -q "log.warn" server/src/main/kotlin/dev/wikilens/learn/FileTrajectorySink.kt'
 
+# 검증 명령 목록을 아는 곳이 둘이었다 — CLAUDE.md 와 IntelliJ 실행 구성. 갈리면 한쪽만
+# 돌리는 사람이 생기고 그건 조용하다. `check.sh` 가 정본이고 나머지는 그것을 부른다.
+check "검증 명령 목록이 한 곳뿐 (check.sh 가 정본, 나머지는 그것을 부른다)" \
+  '[ -x check.sh ] \
+   && grep -q "./check.sh" CLAUDE.md \
+   && grep -q "SCRIPT_TEXT\" value=\"./check.sh\"" .idea/runConfigurations/3________.xml \
+   && ! grep -q "shared_contract.sh" .idea/runConfigurations/3________.xml'
+
+# 출력을 grep 해 판정하면 파이프라인 종료 코드가 grep 의 것이 되어 도구가 죽어도 0 이
+# 될 수 있다. 실제로 BUILD FAILED 를 못 보고 커밋한 적이 있다(2026-08-08).
+check "check.sh 가 종료 코드로 판정함 (출력 grep 아님)" \
+  'grep -q "exit \"\$fail\"" check.sh \
+   && grep -q "PASS" check.sh && grep -q "FAIL" check.sh \
+   && ! grep -qE "\|\| echo .*(통과|PASS)" check.sh'
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."
 else
+  printf '%s' "$broken"
   echo "$fail/$total 개 계약이 깨졌습니다. CLAUDE.md 의 '절대 깨면 안 되는 계약'을 확인하세요."
 fi
 exit "$fail"
