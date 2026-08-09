@@ -73,6 +73,7 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 | 관리 API 기본이 **잠김** | `WikiLensProperties.adminToken` ↔ `application.yml` | 조용히 열린 채 배포됨 |
 | ACL 파일 경로·형식 | `cli/wikilens/acl.py` ↔ `VaultReader.readAcl` | 전 페이지가 `@public` 폴백 |
 | ACL 조회 실패는 **옛 값 유지** | `acl.py` `collect` | 못 읽은 페이지가 공개로 |
+| 상속은 **못 읽은 조상에서 멈춤** | `acl.py` `collect` | 잠긴 부모 밑이 `@space` 로 |
 | 학습 힌트는 **자르기 전에** 권한으로 거름 | `TrajectoryStore.hints` ↔ `SearchService` | 좁은 권한은 힌트가 0건 |
 | 궤적에 남기는 것은 **범위**이지 신원 아님 | `Trajectory.scope` ↔ `AclRegistry.scopeOf` | 검색 이력이 영구 기록됨 |
 | 상태 디렉터리는 **한 프로세스만** | `learn/StateDirLock.kt` | 학습이 조용히 갈림 |

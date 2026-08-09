@@ -111,7 +111,8 @@ def _cmd_acl(args) -> int:
 
     rep = collect(Path(args.root), client_from_env(), verbose=args.verbose, sleep_s=args.sleep)
     print(f"권한 수집 완료: 페이지 {rep.pages} · 제한 있음 {rep.restricted} "
-          f"(그중 상속 {rep.inherited}) · 실패 {rep.failed} · {rep.elapsed_s:.1f}초")
+          f"(그중 상속 {rep.inherited}) · 실패 {rep.failed} · 미확정 {rep.unresolved} "
+          f"· {rep.elapsed_s:.1f}초")
     print(f"토큰 {len(rep.tokens)}종")
     for t in sorted(rep.tokens)[:20]:
         print(f"  {t}")
@@ -122,8 +123,13 @@ def _cmd_acl(args) -> int:
         # 아예 빠지므로 서버가 그 페이지를 못 보게 된다(fail-closed).
         print(f"\n주의: {rep.failed}건을 조회하지 못했습니다. 그 페이지는 이전 권한을 "
               f"유지하며, 처음 보는 페이지라면 **아무에게도 안 보입니다.**")
+    if rep.unresolved:
+        # 실패 한 건이 그 아래 가지 전체를 미확정으로 만든다(조상 깊이 중앙값 5).
+        # 실패 개수만 보면 영향 범위를 못 읽으므로 따로 말한다.
+        print(f"주의: {rep.unresolved}건은 **조상을 못 읽어** 권한을 확정하지 "
+              f"못했습니다. 다시 돌리면 대개 해소됩니다.")
     print("\n다음: 서버에서 POST /api/admin/reindex (권한이 색인에 반영됩니다)")
-    return 1 if rep.failed else 0
+    return 1 if (rep.failed or rep.unresolved) else 0
 
 
 def _cmd_stats(args) -> int:
