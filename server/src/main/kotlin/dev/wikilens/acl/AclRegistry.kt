@@ -58,6 +58,22 @@ class AclRegistry(
         byPage[pageId] = tokens.toSet()
         allTokens.addAll(tokens)
     }
+
+    /**
+     * 재적재 결과로 페이지 맵을 **갈아끼운다.** `putPage` 만 쓰면 맵이 늘기만 해서,
+     * 볼트에서 사라진 페이지가 재기동 전까지 계속 "볼 수 있음" 으로 남는다
+     * (`/api/stats` 의 `aclPages` 도 그만큼 부푼다).
+     *
+     * **비었으면 아무것도 안 한다.** 볼트를 잘못 가리킨 재기동이 멀쩡한 색인을 지우던
+     * 것과 같은 자리다(조용히 실패 14번) — 여기서 비우면 색인은 남고 권한만 사라져
+     * 읽기가 전부 404 가 된다(12번). 넣고 나서 지우는 순서인 것도 같은 이유로,
+     * 그 사이에 오는 요청이 보이던 페이지를 잠깐 못 보면 안 된다.
+     */
+    fun replacePages(pages: Map<String, Collection<String>>) {
+        if (pages.isEmpty()) return
+        pages.forEach { (id, tokens) -> putPage(id, tokens) }
+        byPage.keys.retainAll(pages.keys)
+    }
     fun putUser(userKey: String, tokens: Collection<String>) {
         byUser[userKey] = tokens.toSet() + userKey
         // **바로 저장한다.** 등록은 드물고(운영자가 손으로 부른다) 잃으면 전원이 빈손이
