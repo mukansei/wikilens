@@ -500,8 +500,15 @@ check "검증 명령 목록이 한 곳뿐 (check.sh 가 정본, 나머지는 그
 # 될 수 있다. 실제로 BUILD FAILED 를 못 보고 커밋한 적이 있다(2026-08-08).
 check "check.sh 가 종료 코드로 판정함 (출력 grep 아님)" \
   'grep -q "exit \"\$fail\"" check.sh \
-   && grep -q "PASS" check.sh && grep -q "FAIL" check.sh \
+   && grep -q "printf .  PASS" check.sh && grep -q "printf .  FAIL" check.sh \
    && ! grep -qE "\|\| echo .*(통과|PASS)" check.sh'
+
+# 계약도 `.venv` 로 EB 기대값을 대조한다. 없으면 그 검사가 깨지는데, 새로 clone 한
+# 사람에게는 코드 결함처럼 보인다 — check.sh 가 앞질러 막고 만드는 법을 말한다.
+check "개발용 venv 를 아는 두 곳이 같고, 없을 때 만드는 법이 나옴" \
+  'grep -q "\.\./\.venv/bin/python" contract/shared_contract.sh \
+   && grep -q "^VENV=\.venv" check.sh \
+   && grep -q "python3 -m venv" check.sh'
 
 echo
 if [ "$fail" -eq 0 ]; then
