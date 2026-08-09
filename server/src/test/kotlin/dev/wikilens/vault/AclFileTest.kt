@@ -37,8 +37,10 @@ class AclFileTest {
 
         assertEquals(setOf("@space:DOCS"), acl.tokensOf("100"))
         assertEquals(setOf("group:secret"), acl.tokensOf("200"))
-        // 파일에 없는 페이지는 폴백 — 파일이 아예 없을 때와 같은 동작이어야 한다.
-        assertEquals(setOf(VaultReader.PUBLIC), acl.tokensOf("300"))
+        // 파일에 **없는** 페이지는 공개가 아니다. Python `collect` 은 권한을 확정하지
+        // 못한 페이지를 일부러 생략하므로, 여기서 공개로 채우면 그쪽 fail-closed 가
+        // 뒤집힌다. "파일이 아예 없을 때"(= 수집 전 볼트)와는 다른 상황이다.
+        assertEquals(emptySet(), acl.tokensOf("300"))
     }
 
     @Test
@@ -52,12 +54,20 @@ class AclFileTest {
         assertFalse(acl.canSee("alice", "200"), "제한된 문서가 보였다")
     }
 
-    /** 깨진 acl 파일이 **전 페이지를 공개로** 만들면 안 된다 — 폴백이 곧 노출이다. */
+    /**
+     * 깨진 acl 파일이 **전 페이지를 공개로** 만들면 안 된다 — 폴백이 곧 노출이다.
+     *
+     * **예전에는 이 설명 바로 밑에서 정반대를 단정하고 있었다**(`assertEquals(PUBLIC, …)`).
+     * 주석은 구멍을 막겠다고 하는데 단정은 그 구멍을 잠그고 있었으니, 테스트가 있다는
+     * 사실이 오히려 안심시켰다. 파일이 있는데 못 읽은 것은 "권한 정보가 없던 볼트" 가
+     * 아니다.
+     */
     @Test
-    fun `깨진 acl 파일은 폴백으로 떨어진다`(@TempDir tmp: Path) {
+    fun `깨진 acl 파일은 공개로 떨어지지 않는다`(@TempDir tmp: Path) {
         val root = vaultWithAcl(tmp, "{이건 JSON 이 아니다")
         val acl = AclRegistry()
         VaultReader(ObjectMapper()).read(root, acl)
-        assertEquals(setOf(VaultReader.PUBLIC), acl.tokensOf("200"))
+        assertEquals(emptySet(), acl.tokensOf("200"))
+        assertFalse(acl.canSee(setOf(VaultReader.PUBLIC), "200"))
     }
 }

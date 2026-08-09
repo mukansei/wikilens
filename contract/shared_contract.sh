@@ -518,6 +518,15 @@ check "개발용 venv 를 아는 두 곳이 같고, 없을 때 만드는 법이 
    && grep -q "^VENV=\.venv" check.sh \
    && grep -q "python3 -m venv" check.sh'
 
+# 두 판이 각자 합리적인 기본값을 골라 정반대가 되던 자리다. Python 은 확정 못 한
+# 페이지를 **일부러 생략**하는데(fail-closed), 서버가 없는 항목을 @public 으로 채우면
+# 그것이 fail-open 으로 뒤집힌다. 구별해야 하는 것은 "수집한 적 없음"과 "없는 항목"이다.
+check "acl.json 에 없는 페이지가 공개로 바뀌지 않음 (Python 의 생략은 fail-closed 다)" \
+  'grep -q "Map<String, List<String>>?" server/src/main/kotlin/dev/wikilens/vault/VaultReader.kt \
+   && grep -q "aclByPage == null -> listOf(PUBLIC)" server/src/main/kotlin/dev/wikilens/vault/VaultReader.kt \
+   && grep -q "emptyList<String>().also { unresolved++ }" server/src/main/kotlin/dev/wikilens/vault/VaultReader.kt \
+   && grep -q "unresolved" cli/wikilens/acl.py'
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."
