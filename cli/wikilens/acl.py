@@ -12,6 +12,14 @@
 "없음 = 공개" 로 적으면 **상속으로 잠긴 문서가 통째로 노출된다.** 그래서 `ancestors`
 (싱크가 이미 저장해 둔다)를 위로 훑어 가장 가까운 제한을 찾는다.
 
+**조상을 못 읽으면 자식도 확정할 수 없다.** 예전에는 조상 조회가 실패하면 그 조상을
+"제한 없음" 과 똑같이 취급하고 계속 위로 올라갔다 — 실측: 부모 하나가 500 을 내자
+자식이 `@space:` 를 받았다(잠긴 부모 밑의 문서가 스페이스 전체에 열린 것이다).
+페이지 자신의 실패는 막고 있었는데 **조상의 실패는 안 막고 있었다.**
+
+싱크 집합에 없는 조상도 조회한다. 안 그러면 "안 가져왔다" 와 "제한이 없다" 가
+구별되지 않는다 — 실측(13,921건)에서 그런 조상은 2개뿐이라 비용은 없다시피 하다.
+
 ### 제한이 없어도 `@public` 이 아니다
 
 여러 스페이스를 한 볼트에 모으면, 어느 스페이스에도 제한이 없더라도 **사용자마다 볼 수
@@ -46,6 +54,8 @@ class AclReport:
     restricted: int = 0
     inherited: int = 0
     failed: int = 0
+    #: 자신은 읽었지만 **조상을 못 읽어** 권한을 확정하지 못한 페이지
+    unresolved: int = 0
     elapsed_s: float = 0.0
     tokens: set[str] = field(default_factory=set)
 
@@ -92,18 +102,34 @@ def collect(root: Path, client, verbose: bool = False, sleep_s: float = 0.0) -> 
     out_path = acl_dir / "acl.json"
     previous: dict[str, list[str]] = {}
     if out_path.exists():
-        previous = json.loads(out_path.read_text(encoding="utf-8"))
+        # 깨져 있거나 dict 가 아니면 없는 것으로 친다. 방향이 안전하다 — 옛 값을 못
+        # 쓰면 실패분이 빠져 **안 보이게** 되지 실수로 열리지는 않는다.
+        loaded = None
+        try:
+            loaded = json.loads(out_path.read_text(encoding="utf-8"))
+        except ValueError:
+            pass
+        if isinstance(loaded, dict):
+            previous = loaded
+        else:
+            print(f"경고: {out_path} 를 읽을 수 없어 이전 권한 없이 진행합니다.")
 
     rep = AclReport(pages=len(pages))
+    # 싱크 집합 밖의 조상도 대상에 넣는다. 빠뜨리면 `direct` 에 없다는 사실이
+    # "제한 없음" 과 구별되지 않아, 상속을 푸는 쪽에서 조용히 열린다.
+    outside = {str(a.get("id")) for m in pages.values()
+               for a in (m.get("ancestors") or [])} - set(pages)
+    targets = list(pages) + sorted(outside)
+
     direct: dict[str, list[str] | None] = {}
-    for i, pid in enumerate(pages, 1):
+    for i, pid in enumerate(targets, 1):
         direct[pid] = _direct_tokens(client, pid)
         if direct[pid] is None:
             rep.failed += 1
         if sleep_s:
             time.sleep(sleep_s)
         if verbose and i % 200 == 0:
-            print(f"  {i}/{len(pages)} …", flush=True)
+            print(f"  {i}/{len(targets)} …", flush=True)
 
     result: dict[str, list[str]] = {}
     for pid, meta in pages.items():
@@ -116,12 +142,23 @@ def collect(root: Path, client, verbose: bool = False, sleep_s: float = 0.0) -> 
         if not tokens:
             # 가장 가까운 조상의 제한을 상속한다. `ancestors` 는 루트→부모 순이라
             # 뒤에서부터 본다.
+            unresolved = False
             for anc in reversed(meta.get("ancestors") or []):
                 inherited = direct.get(str(anc.get("id")))
+                if inherited is None:
+                    # 못 읽은 조상. 제한이 있었는지 없었는지 알 수 없으므로 **여기서
+                    # 멈춘다** — 계속 올라가면 "없음" 으로 결론 나 자식이 열린다.
+                    unresolved = True
+                    break
                 if inherited:
                     tokens = inherited
                     rep.inherited += 1
                     break
+            if unresolved:
+                rep.unresolved += 1
+                if pid in previous:
+                    result[pid] = previous[pid]
+                continue
         if not tokens:
             tokens = [SPACE_PREFIX + (meta.get("space") or "")]
         else:

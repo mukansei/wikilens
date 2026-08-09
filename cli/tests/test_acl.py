@@ -127,3 +127,60 @@ def test_report_counts_what_matters(tmp_path):
     })
     rep = collect(root, FakeClient({"a": [GROUP_PREFIX + "g"]}))
     assert (rep.pages, rep.restricted, rep.inherited, rep.failed) == (2, 2, 1, 0)
+
+
+def test_ancestor_lookup_failure_does_not_open_the_child(tmp_path):
+    """
+    **네 번째 경로다.** 페이지 자신의 실패는 막고 있었는데 조상의 실패는 안 막고
+    있었다 — 못 읽은 조상을 "제한 없음" 과 똑같이 취급하고 계속 위로 올라가서,
+    잠긴 부모 밑의 문서가 `@space:` 를 받았다(실측).
+    """
+    root = vault(tmp_path, {
+        "parent": {"space": "SEC", "ancestors": []},
+        "child": {"space": "SEC", "ancestors": [{"id": "parent", "title": "p"}]},
+    })
+    rep = collect(root, FakeClient({"parent": None, "child": []}))
+
+    assert "child" not in written(root), "조상을 못 읽었는데 자식이 열렸다"
+    assert rep.unresolved == 1
+
+
+def test_ancestor_failure_keeps_the_child_old_value(tmp_path):
+    """확정을 못 할 뿐이므로, 옛 값이 있으면 그것을 지킨다 — 갑자기 사라지지 않는다."""
+    root = vault(tmp_path, {
+        "parent": {"space": "SEC", "ancestors": []},
+        "child": {"space": "SEC", "ancestors": [{"id": "parent", "title": "p"}]},
+    })
+    acl_dir = root / "mirror" / "acl"
+    acl_dir.mkdir(parents=True)
+    (acl_dir / "acl.json").write_text(
+        json.dumps({"child": [GROUP_PREFIX + "old"]}), encoding="utf-8")
+
+    collect(root, FakeClient({"parent": None, "child": []}))
+    assert written(root)["child"] == [GROUP_PREFIX + "old"]
+
+
+def test_ancestor_outside_the_synced_set_is_still_queried(tmp_path):
+    """
+    싱크 집합에 없는 조상을 안 물어보면 "안 가져왔다" 와 "제한이 없다" 가 구별되지
+    않는다. 실측(13,921건)에서 그런 조상은 2개뿐이라 비용은 없다시피 하다.
+    """
+    root = vault(tmp_path, {
+        "child": {"space": "SEC", "ancestors": [{"id": "outside", "title": "o"}]},
+    })
+    client = FakeClient({"outside": [GROUP_PREFIX + "locked"], "child": []})
+    collect(root, client)
+
+    assert "outside" in client.asked, "싱크 밖 조상을 안 물어봤다"
+    assert written(root)["child"] == [GROUP_PREFIX + "locked"]
+
+
+def test_unusable_previous_file_does_not_crash_or_open(tmp_path):
+    """`null` 도 유효한 JSON 이다 — 파싱된다고 쓸 수 있는 값은 아니다."""
+    root = vault(tmp_path, {"1": {"space": "ENG", "ancestors": []}})
+    acl_dir = root / "mirror" / "acl"
+    acl_dir.mkdir(parents=True)
+    (acl_dir / "acl.json").write_text("null", encoding="utf-8")
+
+    collect(root, FakeClient({"1": None}))
+    assert "1" not in written(root)

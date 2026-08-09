@@ -405,6 +405,14 @@ check "ACL 수집이 조회 실패를 공개로 바꾸지 않음" \
   'grep -q "if own is None:" cli/wikilens/acl.py \
    && grep -q "previous\[pid\]" cli/wikilens/acl.py'
 
+# 페이지 자신의 실패는 막고 있었는데 **조상의 실패는 안 막고 있었다** — 못 읽은 조상을
+# "제한 없음" 과 같이 취급해 계속 위로 올라가면 잠긴 부모 밑의 문서가 @space 를 받는다.
+check "ACL 상속이 못 읽은 조상에서 멈춤 (계속 올라가면 자식이 열린다)" \
+  'grep -q "if inherited is None:" cli/wikilens/acl.py \
+   && grep -q "unresolved" cli/wikilens/acl.py \
+   && grep -q "rep.unresolved" cli/wikilens/cli.py'
+
+
 # 사용자 등록이 메모리 전용이면 재기동마다 전원이 사라지고, 그 상태가 "문서가 없다"와
 # 구별되지 않는다(조용히 실패 10·12번).
 check "사용자 등록이 재기동을 넘음 (상태 디렉터리에 원자적으로 저장)" \
