@@ -77,6 +77,9 @@ class RipgrepEngine(private val mapper: ObjectMapper) : GrepEngine {
         }
 
         val matches = ArrayList<GrepMatch>()
+        // rg 의 JSON 은 **매치가 있는 파일만** `begin` 을 낸다 — 실제로 훑은 수는 알 수
+        // 없다. 그래서 잘렸을 때는 이것이 하한이고, 끝까지 갔으면 전량을 본 것이 맞다.
+        val seen = HashSet<String>()
         var truncated = false
         val deadline = System.nanoTime() + q.budgetNanos
         try {
@@ -86,14 +89,20 @@ class RipgrepEngine(private val mapper: ObjectMapper) : GrepEngine {
                 for (line in lines) {
                     if (matches.size >= q.cap) { truncated = true; break }
                     if (System.nanoTime() > deadline) { truncated = true; break }
-                    val m = parseMatch(line, visible) ?: continue
+                    val m = parseMatch(line, visible, seen) ?: continue
                     matches.add(m)
                 }
             }
             val done = proc.waitFor(remainingMillis(deadline), TimeUnit.MILLISECONDS)
             if (!done) truncated = true
             // rg 는 일치 없음이 1, 오류가 2 다. 문법 오류를 "0건" 으로 뭉개면 안 된다.
-            if (done && proc.exitValue() >= 2) {
+            //
+            // **이미 받은 매치가 있으면 오류로 보지 않는다.** cap 이 차서 파이프를 일찍
+            // 닫으면 rg 가 브로큰 파이프로 죽는데, 그 종료 코드는 버전·플랫폼에 달려
+            // 있다(이 머신의 15.2.0 은 0 을 준다). 거기에 기대면 어느 날 **매치를 통째로
+            // 버리면서 "문법 오류" 라고 답하게** 된다. 문법 오류는 정의상 매치가 0 이므로
+            // 이 조건으로 잃는 진단은 없다.
+            if (done && proc.exitValue() >= 2 && matches.isEmpty() && !truncated) {
                 val err = reader(proc.errorStream).readText().trim()
                 return GrepOutcome(0, emptyList(), false,
                     error = JvmGrepEngine.syntaxError(err))
@@ -101,17 +110,21 @@ class RipgrepEngine(private val mapper: ObjectMapper) : GrepEngine {
         } finally {
             if (proc.isAlive) proc.destroyForcibly()
         }
-        return GrepOutcome(q.pages.size, matches, truncated)
+        // 끝까지 갔으면 대상 전량을 본 것이다. 잘렸으면 우리가 아는 것은 매치가 나온
+        // 파일 수뿐이라 **하한**이다 — JVM 엔진도 잘리면 부분 수를 낸다.
+        return GrepOutcome(if (truncated) seen.size else q.pages.size, matches, truncated)
     }
 
     /** rg 가 낸 한 줄(JSON)을 매치로. 우리 목록에 없는 문서(=권한 없음)는 버린다. */
-    private fun parseMatch(line: String, visible: Map<String, PageRef>): GrepMatch? {
+    private fun parseMatch(line: String, visible: Map<String, PageRef>,
+                          seen: MutableSet<String>): GrepMatch? {
         val node: JsonNode = runCatching { mapper.readTree(line) }.getOrNull() ?: return null
         if (node.path("type").asText() != "match") return null
         val data = node.path("data")
         val path = data.path("path").path("text").asText()
         val id = path.substringAfterLast('/').removeSuffix(".md")
         val page = visible[id] ?: return null          // ACL 로 걸러진 문서
+        seen.add(id)
         val text = data.path("lines").path("text").asText()
         val no = data.path("line_number").asInt()
         return GrepMatch(page.id, page.title, no, text.trim().take(JvmGrepEngine.SNIPPET))

@@ -75,6 +75,12 @@ class GrepEngineParityTest {
                     "(jvm=${a.error} rg=${b.error})")
             if (a.error != null) continue
             assertEquals(key(a), key(b), "패턴 '$pattern'(regex=$regex) 에서 답이 갈렸다")
+            assertEquals(a.truncated, b.truncated, "패턴 '$pattern': 잘림 여부가 갈렸다")
+            // **사용자에게 "문서 N개 스캔" 으로 그대로 보인다** — 엔진에 따라 다른 수를
+            // 말하면 안 된다. 잘렸을 때만 하한이라 예외로 둔다(엔진마다 아는 것이 다르다).
+            if (!a.truncated) {
+                assertEquals(a.scanned, b.scanned, "패턴 '$pattern': scanned 가 갈렸다")
+            }
         }
     }
 
