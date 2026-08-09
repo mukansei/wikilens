@@ -8,11 +8,15 @@ import java.io.InputStreamReader
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 
 /**
- * ripgrep 프로세스로 스캔한다. 실측(D12)에서 JVM 대비 65배였다.
+ * ripgrep 프로세스로 스캔한다. 서버 안에서 실측 **4~6배**다(2026-08-08).
+ *
+ * D12 에 적힌 "65배" 는 셸에서 맨몸으로 잰 값이라 이 맥락에서는 틀리다 — 서버는 두 엔진이
+ * ACL 목록을 만드는 고정비를 똑같이 내므로 그만큼이 안 줄어든다. 근거는 D20.
  *
  * ### 왜 필요해졌나
  *
@@ -24,7 +28,7 @@ import org.springframework.stereotype.Component
  *
  * ACL 을 통과한 경로만 인자로 주는 편이 정확하지만, 13,921개면 `ARG_MAX` 를 넘는다.
  * 그래서 `mirror/pages` 를 통째로 주고 **결과를 받아서 거른다.** rg 가 못 볼 문서까지
- * 읽는 낭비가 있지만 유출은 아니다 — 걸러낸 것은 응답에 안 실린다. 65배가 그 낭비를
+ * 읽는 낭비가 있지만 유출은 아니다 — 걸러낸 것은 응답에 안 실린다. 4~6배가 그 낭비를
  * 덮는다.
  *
  * `scanned` 는 **ACL 을 통과한 문서 수**로 보고한다. rg 는 중간에 안 멈추므로 전량을
@@ -82,19 +86,34 @@ class RipgrepEngine(private val mapper: ObjectMapper) : GrepEngine {
         val seen = HashSet<String>()
         var truncated = false
         val deadline = System.nanoTime() + q.budgetNanos
-        try {
-            // stdout 을 흘려 읽는다. cap 이 차면 **바로 죽인다** — 전량을 받아놓고
-            // 자르면 rg 가 끝까지 도는 동안 기다리게 된다.
-            reader(proc.inputStream).useLines { lines ->
-                for (line in lines) {
-                    if (matches.size >= q.cap) { truncated = true; break }
-                    if (System.nanoTime() > deadline) { truncated = true; break }
-                    val m = parseMatch(line, visible, seen) ?: continue
-                    matches.add(m)
+        val killed = AtomicBoolean(false)
+        val watchdog = Thread {
+            runCatching {
+                if (!proc.waitFor(remainingMillis(deadline), TimeUnit.MILLISECONDS) && proc.isAlive) {
+                    killed.set(true)
+                    proc.destroyForcibly()
                 }
             }
-            val done = proc.waitFor(remainingMillis(deadline), TimeUnit.MILLISECONDS)
-            if (!done) truncated = true
+        }.apply { isDaemon = true; name = "rg-watchdog"; start() }
+        try {
+            // stdout 을 흘려 읽는다. cap 이 차면 **바로 죽인다** — 전량을 받아놓고
+            // 자르면 rg 가 끝까지 도는 동안 기다리게 된다. 마감은 감시 스레드가 건다.
+            // 감시 스레드가 죽이면 스트림은 EOF 가 아니라 `IOException` 으로 끝난다
+            // (fd 가 닫힌다). 그건 오류가 아니라 **우리가 시킨 마감**이므로 그때까지
+            // 받은 매치를 살린다 — 여기서 던지면 부분 결과가 통째로 사라진다.
+            runCatching {
+                reader(proc.inputStream).useLines { lines ->
+                    for (line in lines) {
+                        if (matches.size >= q.cap) { truncated = true; break }
+                        val m = parseMatch(line, visible, seen) ?: continue
+                        matches.add(m)
+                    }
+                }
+            }.onFailure { if (!killed.get()) throw it }
+            if (killed.get()) truncated = true
+            // 거두는 것은 예산 밖이다. 남은 예산으로 기다리면 **완주한 스캔이 잘림으로**
+            // 보고된다(위 실측). EOF 까지 읽었으면 rg 는 사실상 끝나 있다.
+            val done = proc.waitFor(REAP_GRACE_MILLIS, TimeUnit.MILLISECONDS)
             // rg 는 일치 없음이 1, 오류가 2 다. 문법 오류를 "0건" 으로 뭉개면 안 된다.
             //
             // **이미 받은 매치가 있으면 오류로 보지 않는다.** cap 이 차서 파이프를 일찍
@@ -108,6 +127,7 @@ class RipgrepEngine(private val mapper: ObjectMapper) : GrepEngine {
                     error = JvmGrepEngine.syntaxError(err))
             }
         } finally {
+            watchdog.interrupt()
             if (proc.isAlive) proc.destroyForcibly()
         }
         // 끝까지 갔으면 대상 전량을 본 것이다. 잘렸으면 우리가 아는 것은 매치가 나온
@@ -128,6 +148,14 @@ class RipgrepEngine(private val mapper: ObjectMapper) : GrepEngine {
         val text = data.path("lines").path("text").asText()
         val no = data.path("line_number").asInt()
         return GrepMatch(page.id, page.title, no, text.trim().take(JvmGrepEngine.SNIPPET))
+    }
+
+    companion object {
+        /**
+         * EOF 뒤에 프로세스를 거두는 데 주는 여유. **예산과 무관하다** — 스캔은 이미
+         * 끝났고 남은 것은 종료 처리뿐이라, 예산이 바닥났다는 이유로 잘렸다고 하면 안 된다.
+         */
+        private const val REAP_GRACE_MILLIS = 2_000L
     }
 
     private fun remainingMillis(deadline: Long): Long =
