@@ -239,9 +239,12 @@ check "두 스킬이 같은 우선순위를 말함 (서버판 우선 · 배타�
 # 대소문자를 구분하고, 서버는 리터럴 경로가 ignoreCase 라 정규식도 거기 맞췄다.
 # 실측: rg 로 `acme` 가 `Acme` 를 못 찾고, 서버는 찾는다. 합의가 파일로만 이어져 있어
 # 한쪽만 고쳐도 아무 에러가 안 난다.
-check "두 판이 대소문자를 똑같이 무시함 (로컬 Grep -i · 서버 RE2 CASE_INSENSITIVE)" \
-  'grep -q "Re2.compile(pattern, Re2.CASE_INSENSITIVE)" server/src/main/kotlin/dev/wikilens/service/ContentService.kt \
-   && grep -q "ignoreCase = true" server/src/main/kotlin/dev/wikilens/service/ContentService.kt \
+# 서버 쪽 스캔이 `ContentService` 에서 `JvmGrepEngine`·`RipgrepEngine` 으로 나뉘면서
+# 이 검사도 함께 옮겼다 — **계약이 파일 경로를 grep 하므로 파일을 나눌 때 계약도
+# 고쳐야 한다**(실제로 이 분할에서 빨개졌다).
+check "세 경로가 대소문자를 똑같이 무시함 (로컬 Grep -i · JVM RE2 · rg -i)" \
+  'grep -q "Re2.compile(q.pattern, Re2.CASE_INSENSITIVE)" server/src/main/kotlin/dev/wikilens/service/JvmGrepEngine.kt \
+   && grep -q "ignoreCase = true" server/src/main/kotlin/dev/wikilens/service/JvmGrepEngine.kt \
    && ! grep -n "Grep(" plugin/local/skills/search/SKILL.md | grep -qv -- "-i=true"'
 
 # 모델에게 지시하는 파일 다섯(스킬 2 · 커맨드 2 · 레퍼런스 1)은 독자가 같으므로 문체도
@@ -351,6 +354,29 @@ check "두 판 모두 dict 아닌 설정을 견딤 (유효한 JSON 이 곧 쓸 �
   'grep -q "isinstance(cfg, dict)" plugin/local/scripts/vault_status.py \
    && grep -q "isinstance(cfg, dict)" plugin/client/mcp/wikilens_mcp.py'
 
+
+# 본문 스캔 경로가 둘이다(JVM·ripgrep). rg 가 없는 머신이 있어 폴백이 영구히 공존하므로
+# **갈리는지 모르는 채로 두기** 와 **갈리면 빨개지게 하기** 중 후자를 골랐다. 그 장치가
+# `GrepEngineParityTest` 다 — 없어지면 두 경로가 조용히 갈라진다.
+check "두 grep 엔진의 답을 대조하는 테스트가 있음 (대소문자·ACL 포함)" \
+  '[ -f server/src/test/kotlin/dev/wikilens/service/GrepEngineParityTest.kt ] \
+   && grep -q "두 엔진이 같은 매치를 낸다" server/src/test/kotlin/dev/wikilens/service/GrepEngineParityTest.kt \
+   && grep -q "대소문자를 무시한다" server/src/test/kotlin/dev/wikilens/service/GrepEngineParityTest.kt \
+   && grep -q "목록 밖을 내보내지 않는다" server/src/test/kotlin/dev/wikilens/service/GrepEngineParityTest.kt'
+
+# **엔진은 ACL 을 몰라야 한다.** 권한 해석이 엔진마다 갈리면 한쪽이 조용히 더 보여준다 —
+# `AclRegistry` 에 스위치를 한 곳만 둔 것과 같은 이유다. 거르는 것은 ContentService 다.
+check "grep 엔진이 ACL 을 직접 보지 않음 (호출부가 이미 거른 목록만 받는다)" \
+  '! grep -lE "AclRegistry|canSee|tokensFor" \
+      server/src/main/kotlin/dev/wikilens/service/JvmGrepEngine.kt \
+      server/src/main/kotlin/dev/wikilens/service/RipgrepEngine.kt'
+
+# `--no-config` 이 없으면 운영자의 `~/.ripgreprc` 가 플래그를 얹어 **같은 질의가 머신마다
+# 다른 답**을 낸다. `-i` 는 두 판이 함께 지키는 대소문자 계약이다.
+check "ripgrep 이 사용자 환경을 안 받고 대소문자를 무시함 (--no-config · -i)" \
+  '[ "$(grep -cE "^ *add\(\"--no-config\"\)" server/src/main/kotlin/dev/wikilens/service/RipgrepEngine.kt)" = "1" ] \
+   && [ "$(grep -cE "^ *add\(\"--no-ignore\"\)" server/src/main/kotlin/dev/wikilens/service/RipgrepEngine.kt)" = "1" ] \
+   && [ "$(grep -cE "^ *add\(\"-i\"\)" server/src/main/kotlin/dev/wikilens/service/RipgrepEngine.kt)" = "1" ]'
 
 # 관리 API 가 열려 있으면 서버에 닿는 누구나 `acl/user` 로 **스스로 권한을 부여**한다 —
 # 권한을 아무리 정확히 수집해도 이게 열려 있으면 의미가 없다. 기본이 "열림" 이면

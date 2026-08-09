@@ -42,7 +42,10 @@ class ContentServiceTest {
         vault = createTempDirectory("content-svc-vault")
         index = LuceneIndex(createTempDirectory("content-svc-idx"))
         acl = AclRegistry()
-        svc = ContentService(acl, index, VaultLocator(WikiLensProperties(vaultRoot = vault.toString())))
+        svc = WikiLensProperties(vaultRoot = vault.toString(), grepEngine = "jvm").let { p ->
+            ContentService(acl, index, VaultLocator(p),
+                RipgrepEngine(com.fasterxml.jackson.databind.ObjectMapper()), JvmGrepEngine(), p)
+        }
 
         write("1", "공개 문서", "첫 줄 APPLE\n둘째 줄\n셋째 줄 APPLE\n", listOf("@public"))
         write("2", "기밀 문서", "APPLE 이 여기도 있다\n", listOf("@secret"))

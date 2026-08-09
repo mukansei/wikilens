@@ -59,6 +59,17 @@ wikilens:
   # 겹치면 되고, 이것만으로는 `userKey` 위조를 막지 못한다 — `DECISIONS.md` D18.
   admin-token: ""
 
+  # 본문 스캔 엔진: auto(기본) · jvm · ripgrep
+  #
+  # JVM 스캔은 13,921건에 2.44초인데 grep 예산이 3초다(실측 2026-08-08) — 약 17,000건
+  # 에서 닿고, 그때부터 `truncated=true` 가 상시화돼 **뒤쪽 문서는 영영 안 읽힌다.**
+  # ripgrep 은 실측 65배라 그 한계를 한참 뒤로 민다(D12).
+  #
+  # auto 는 rg 가 있으면 rg 다. 머신에 따라 경로가 갈리지만 두 경로가 같은 답을 내는지는
+  # 계약과 `GrepEngineParityTest` 가 지킨다. 고정하려면 jvm 또는 ripgrep 을 명시할 것.
+  # 어느 엔진이 처리했는지는 grep 응답의 `engine` 과 기동 로그에 나온다.
+  grep-engine: auto
+
   # 질의 시점 ACL 시행. **기본은 켜짐.**
   #
   # 지금의 "ACL" 은 실질적으로 사용자 허용목록이다 — `sync` 가 권한을 수집하지 않아
