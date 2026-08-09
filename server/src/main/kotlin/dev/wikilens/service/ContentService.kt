@@ -13,9 +13,8 @@ import dev.wikilens.api.ReadResponse
 import dev.wikilens.acl.AclRegistry
 import dev.wikilens.index.LuceneIndex
 import dev.wikilens.vault.VaultLayout
+import dev.wikilens.config.WikiLensProperties
 import dev.wikilens.vault.VaultLocator
-import com.google.re2j.Pattern as Re2
-import com.google.re2j.PatternSyntaxException
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.io.BufferedReader
@@ -40,7 +39,23 @@ class ContentService(
     private val acl: AclRegistry,
     private val index: LuceneIndex,
     private val locator: VaultLocator,
+    private val ripgrep: RipgrepEngine,
+    private val fallback: JvmGrepEngine,
+    private val props: WikiLensProperties,
 ) {
+    /**
+     * 어느 엔진으로 스캔하나. **기동 시 한 번 정하고 로그에 남긴다** — 요청마다 달라지면
+     * 같은 질의가 다른 경로로 처리되고, 그 갈림을 아무도 못 본다.
+     *
+     * `auto` 는 rg 가 있으면 rg 다. 머신에 따라 경로가 달라지는 것이 마음에 걸리지만,
+     * 두 경로가 같은 답을 내는지는 `GrepEngineParityTest` 가 지킨다. 고정하고 싶으면
+     * `wikilens.grep-engine=jvm|ripgrep` 으로 명시한다.
+     */
+    private val engine: GrepEngine = when (props.grepEngine.lowercase()) {
+        "jvm" -> fallback
+        "ripgrep" -> ripgrep
+        else -> if (ripgrep.isAvailable()) ripgrep else fallback
+    }
     private val log = LoggerFactory.getLogger(ContentService::class.java)
 
 
@@ -109,62 +124,28 @@ class ContentService(
         // 객체가 매치 줄 수만큼 쌓인다 — 이 볼트가 16.4만 줄이니 `.` 한 글자로 65MB,
         // 10만 문서면 수 GB 다. 잘린 것은 `truncated` 가 이미 알려준다.
         val cap = limit.coerceIn(1, MAX_LIMIT)
-        // RE2 는 역참조·전방탐색을 파싱 단계에서 거부한다. 그 메시지를 그대로 넘기는
-        // 편이 낫다 — 사용자는 `\1` 을 쓴 줄도 모르고 "일치 없음" 을 볼 것이다.
-        var rx: Re2? = null
-        if (regex) {
-            try {
-                // **CASE_INSENSITIVE 는 리터럴 경로와 맞추려는 것이다.** 없으면 `regex`
-                // 토글이 문법뿐 아니라 대소문자 민감도까지 바꾼다 — 실측: 본문이
-                // `Coway` 일 때 `coway` 가 리터럴 1건 · 정규식 0건. 도구 설명은 이
-                // 플래그가 문법만 바꾼다고 말하므로 그대로면 설명이 거짓이 된다.
-                // 나중에 rg 프로세스를 붙인다면 `-i` 를 함께 넘겨야 답이 같다.
-                rx = Re2.compile(pattern, Re2.CASE_INSENSITIVE)
-            } catch (e: PatternSyntaxException) {
-                return GrepResponse(pattern, 0, emptyList(), false, syntaxError(e))
-            }
-        }
 
-        val matches = ArrayList<GrepMatch>()
-        var scanned = 0
-        var truncated = false
-        val deadline = System.nanoTime() + budgetNanos
-        // **루프 밖에서 한 번 푼다.** `locator.root` 는 폴백을 볼 때 stat 두 번 +
+        // **ACL 은 여기서 한 번만 건다.** 엔진에는 통과한 목록만 넘어간다 — 권한 해석이
+        // 엔진마다 갈리면 한쪽이 조용히 더 보여준다.
+        //
+        // **루프 밖에서 볼트를 한 번 푼다.** `locator.root` 는 폴백을 볼 때 stat 두 번 +
         // config.json 파싱이라, 문서마다 부르면 스캔에 그만큼이 통째로 얹힌다
-        // (실측: 2,383회 66ms — grep 전체가 0.64초이므로 약 10%).
-        // 한 요청 안에서 볼트가 바뀔 일은 없다.
+        // (실측: 2,383회 66ms — 스캔 전체가 0.64초였다).
         val vaultRoot = locator.root
+        val visible = index.allMeta()
+            .filter { acl.canSee(tokens, it.id) }
+            .map { PageRef(it.id, it.title, VaultLayout.relPagePath(it.id)) }
 
-        for (meta in index.allMeta()) {
-            // limit 이 찼는데 아직 볼 문서가 남았다 = 잘렸다.
-            if (matches.size >= cap) { truncated = true; break }
-            if (System.nanoTime() > deadline) { truncated = true; break }
-            // 루프 밖에서 한 번 계산한 tokens 를 재사용한다 (문서마다 재조회하면 수천 회).
-            if (!acl.canSee(tokens, meta.id)) continue
-            val f = vaultRoot.resolve(VaultLayout.relPagePath(meta.id))
-            // exists + open 두 번 왕복하는 대신 열어보고 실패하면 넘어간다.
-            val reader = runCatching { lenientReader(f) }.getOrNull() ?: continue
-            scanned++
-            reader.useLines { lines ->
-                // forEach + return@forEach 는 그 줄만 건너뛸 뿐 파일 잔여를 계속 읽는다.
-                // for + break 라야 실제로 읽기를 멈춘다.
-                for ((i, line) in lines.withIndex()) {
-                    if (matches.size >= cap) { truncated = true; break }
-                    // 줄 단위로도 예산을 본다. 문서 경계에서만 보면 파일 하나가 통째로
-                    // 예산을 넘겨도 못 끊는다. 매 줄 시계를 읽으면 그 자체가 비용이라
-                    // 64줄마다 본다.
-                    if ((i and LINE_CHECK_MASK) == 0 && System.nanoTime() > deadline) {
-                        truncated = true; break
-                    }
-                    // 줄을 자르지 않는다. RE2 는 줄 길이에 선형이라 자를 이유가 없고,
-                    // 자르면 긴 줄(표 등) 뒤쪽의 일치를 **조용히 놓친다.**
-                    if (rx?.matcher(line)?.find() ?: line.contains(pattern, ignoreCase = true)) {
-                        matches.add(GrepMatch(meta.id, meta.title, i + 1, line.trim().take(300)))
-                    }
-                }
-            }
+        val q = GrepQuery(vaultRoot, visible, pattern, regex, cap, budgetNanos)
+        var used = engine
+        var out = used.search(q)
+        if (!out.usable) {
+            // rg 를 띄우지 못했다 — 조용히 0건을 주면 "일치 없음" 과 구별되지 않는다.
+            log.warn("{} 엔진이 동작하지 않아 {} 로 넘어갑니다", used.name, fallback.name)
+            used = fallback
+            out = used.search(q)
         }
-        return GrepResponse(pattern, scanned, matches, truncated)
+        return GrepResponse(pattern, out.scanned, out.matches, out.truncated, out.error, used.name)
     }
 
     /**
@@ -188,20 +169,6 @@ class ContentService(
         return BufferedReader(InputStreamReader(Files.newInputStream(f), dec))
     }
 
-    /**
-     * RE2 의 파싱 오류를 사용자가 고칠 수 있는 말로 바꾼다.
-     *
-     * 원문은 ``error parsing regexp: invalid escape sequence: `\1` `` 처럼 나오는데,
-     * 왜 안 되는지(엔진이 다르다)를 모르면 고칠 수가 없다.
-     */
-    private fun syntaxError(e: PatternSyntaxException): String {
-        val why = when {
-            "invalid escape sequence" in (e.message ?: "") -> "역참조(\\1)는 쓸 수 없습니다"
-            "Perl syntax" in (e.message ?: "") -> "전방탐색((?=), (?!))은 쓸 수 없습니다"
-            else -> "정규식 문법 오류"
-        }
-        return "$why — 이 서버는 ripgrep 과 같은 RE2 엔진을 씁니다. ${e.message}"
-    }
 
     companion object {
         /** 사람이 쓰는 질의가 넘을 일이 없는 선. RE2 로 바꾼 뒤로는 안전장치가 아니다. */
@@ -209,16 +176,16 @@ class ContentService(
 
         /**
          * 전체 시간 예산. **이제 막는 것은 백트래킹이 아니라 I/O 다** — RE2 로 바꾼
-         * 뒤로 폭발적 패턴이 없어졌고, 남은 비용은 파일을 읽는 시간이다(10만 문서면
-         * 27초, `DECISIONS.md` D12). 넘으면 실패가 아니라 `truncated=true` 다 —
-         * 부분 결과가 침묵보다 낫고, 클라이언트가 이미 그 플래그를 표시한다.
+         * 뒤로 폭발적 패턴이 없어졌고, 남은 비용은 파일을 읽는 시간이다. 넘으면 실패가
+         * 아니라 `truncated=true` 다 — 부분 결과가 침묵보다 낫다.
+         *
+         * **JVM 엔진은 이 예산에 거의 닿아 있다** — 13,921건에 2.44초(실측 2026-08-08).
+         * 약 17,000건에서 상시 잘림이 된다. 예산을 늘리는 것은 증상을 미루는 것이라
+         * ripgrep 엔진을 붙였다(`DECISIONS.md` D12·D20).
          */
         const val GREP_BUDGET_NANOS = 3_000_000_000L
 
         /** 클라이언트가 요청할 수 있는 최대 매치 수. 기본값 40 의 25배까지 허용한다. */
         const val MAX_LIMIT = 1_000
-
-        /** 예산 검사 간격(줄). 63 = 64줄마다 — 시계 읽기가 매칭보다 비싸지 않게. */
-        const val LINE_CHECK_MASK = 63
     }
 }

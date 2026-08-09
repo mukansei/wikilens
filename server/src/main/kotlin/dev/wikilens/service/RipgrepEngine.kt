@@ -1,0 +1,130 @@
+package dev.wikilens.service
+
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
+import dev.wikilens.api.GrepMatch
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
+import java.util.concurrent.TimeUnit
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Component
+
+/**
+ * ripgrep 프로세스로 스캔한다. 실측(D12)에서 JVM 대비 65배였다.
+ *
+ * ### 왜 필요해졌나
+ *
+ * JVM 스캔이 13,921건에 2.44초인데 예산이 3초다(실측 2026-08-08). **약 17,000건에서
+ * 닿고**, 그때부터 `truncated=true` 가 상시화돼 뒤쪽 문서는 영영 안 읽힌다 — 실패가
+ * 아니라 조용한 부분 응답이라 사용자에게는 "없다" 로 보인다.
+ *
+ * ### 파일 목록을 넘기지 않고 디렉터리를 준다
+ *
+ * ACL 을 통과한 경로만 인자로 주는 편이 정확하지만, 13,921개면 `ARG_MAX` 를 넘는다.
+ * 그래서 `mirror/pages` 를 통째로 주고 **결과를 받아서 거른다.** rg 가 못 볼 문서까지
+ * 읽는 낭비가 있지만 유출은 아니다 — 걸러낸 것은 응답에 안 실린다. 65배가 그 낭비를
+ * 덮는다.
+ *
+ * `scanned` 는 **ACL 을 통과한 문서 수**로 보고한다. rg 는 중간에 안 멈추므로 전량을
+ * 본 것이 맞고, JVM 엔진과 같은 뜻이 된다.
+ *
+ * ### 사용자 환경이 새어 들어오면 안 된다
+ *
+ * `--no-config` 가 필수다. 없으면 운영자의 `~/.ripgreprc` 가 플래그를 얹어 **같은 질의가
+ * 머신마다 다른 답**을 낸다. `--no-ignore` 도 같은 이유다 — 볼트에 `.gitignore` 가
+ * 생기면 조용히 일부가 빠진다.
+ */
+@Component
+class RipgrepEngine(private val mapper: ObjectMapper) : GrepEngine {
+
+    private val log = LoggerFactory.getLogger(javaClass)
+    override val name = "ripgrep"
+
+    /** 한 번만 확인하고 기억한다. 요청마다 프로세스를 띄울 이유가 없다. */
+    private val available: Boolean by lazy {
+        runCatching {
+            val p = ProcessBuilder("rg", "--version").redirectErrorStream(true).start()
+            val ok = p.waitFor(5, TimeUnit.SECONDS) && p.exitValue() == 0
+            if (!ok) p.destroyForcibly()
+            ok
+        }.getOrDefault(false).also {
+            if (it) log.info("ripgrep 을 찾았습니다 — 본문 스캔에 사용합니다")
+            else log.info("ripgrep 이 없습니다 — JVM 스캔을 씁니다(느리지만 동작은 같습니다)")
+        }
+    }
+
+    override fun isAvailable() = available
+
+    override fun search(q: GrepQuery): GrepOutcome {
+        val visible = q.pages.associateBy { it.id }
+        val cmd = buildList {
+            add("rg"); add("--json")
+            add("--no-config")          // 운영자의 ~/.ripgreprc 가 답을 바꾸면 안 된다
+            add("--no-ignore")          // .gitignore 가 생겨도 조용히 빠지지 않게
+            add("--no-messages")        // 읽기 실패는 JVM 경로처럼 조용히 건너뛴다
+            add("-i")                   // 대소문자 무시 — 두 판이 함께 지키는 계약이다
+            add("--glob"); add("*.md")
+            if (!q.regex) add("-F")     // 리터럴 모드
+            add("--"); add(q.pattern)
+            add(q.vaultRoot.resolve("mirror").resolve("pages").toString())
+        }
+
+        val proc = runCatching { ProcessBuilder(cmd).start() }.getOrElse {
+            log.warn("ripgrep 을 띄우지 못했습니다: {}", it.message)
+            return GrepOutcome(0, emptyList(), false, usable = false)
+        }
+
+        val matches = ArrayList<GrepMatch>()
+        var truncated = false
+        val deadline = System.nanoTime() + q.budgetNanos
+        try {
+            // stdout 을 흘려 읽는다. cap 이 차면 **바로 죽인다** — 전량을 받아놓고
+            // 자르면 rg 가 끝까지 도는 동안 기다리게 된다.
+            reader(proc.inputStream).useLines { lines ->
+                for (line in lines) {
+                    if (matches.size >= q.cap) { truncated = true; break }
+                    if (System.nanoTime() > deadline) { truncated = true; break }
+                    val m = parseMatch(line, visible) ?: continue
+                    matches.add(m)
+                }
+            }
+            val done = proc.waitFor(remainingMillis(deadline), TimeUnit.MILLISECONDS)
+            if (!done) truncated = true
+            // rg 는 일치 없음이 1, 오류가 2 다. 문법 오류를 "0건" 으로 뭉개면 안 된다.
+            if (done && proc.exitValue() >= 2) {
+                val err = reader(proc.errorStream).readText().trim()
+                return GrepOutcome(0, emptyList(), false,
+                    error = JvmGrepEngine.syntaxError(err))
+            }
+        } finally {
+            if (proc.isAlive) proc.destroyForcibly()
+        }
+        return GrepOutcome(q.pages.size, matches, truncated)
+    }
+
+    /** rg 가 낸 한 줄(JSON)을 매치로. 우리 목록에 없는 문서(=권한 없음)는 버린다. */
+    private fun parseMatch(line: String, visible: Map<String, PageRef>): GrepMatch? {
+        val node: JsonNode = runCatching { mapper.readTree(line) }.getOrNull() ?: return null
+        if (node.path("type").asText() != "match") return null
+        val data = node.path("data")
+        val path = data.path("path").path("text").asText()
+        val id = path.substringAfterLast('/').removeSuffix(".md")
+        val page = visible[id] ?: return null          // ACL 로 걸러진 문서
+        val text = data.path("lines").path("text").asText()
+        val no = data.path("line_number").asInt()
+        return GrepMatch(page.id, page.title, no, text.trim().take(JvmGrepEngine.SNIPPET))
+    }
+
+    private fun remainingMillis(deadline: Long): Long =
+        ((deadline - System.nanoTime()) / 1_000_000).coerceAtLeast(1)
+
+    /** JVM 경로와 같은 관대한 디코더 — 깨진 바이트에 죽지 않는다. */
+    private fun reader(s: java.io.InputStream): BufferedReader {
+        val dec = StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPLACE)
+            .onUnmappableCharacter(CodingErrorAction.REPLACE)
+        return BufferedReader(InputStreamReader(s, dec))
+    }
+}

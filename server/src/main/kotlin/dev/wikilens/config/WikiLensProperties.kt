@@ -42,6 +42,14 @@ data class WikiLensProperties(
      * 스스로 권한을 부여할 수 있게 된다. 자세한 근거는 [dev.wikilens.api.AdminGuard].
      */
     val adminToken: String = "",
+    /**
+     * 본문 스캔 엔진: `auto`(기본) · `jvm` · `ripgrep`.
+     *
+     * `auto` 는 rg 가 있으면 rg 다 — JVM 스캔은 13,921건에 2.44초인데 예산이 3초라
+     * **약 17,000건에서 조용한 부분 응답**이 되기 시작한다. 두 경로가 같은 답을 내는지는
+     * `GrepEngineParityTest` 가 지킨다.
+     */
+    val grepEngine: String = "auto",
     @NestedConfigurationProperty val learn: LearnProps = LearnProps(),
 ) {
     companion object {
