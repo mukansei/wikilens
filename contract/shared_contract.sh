@@ -580,6 +580,15 @@ check "빠른 문턱 판정이 이분법과 대조됨 (커버리지 축 포함)"
 check "거부된 질의는 궤적으로 관측하지 않음 (0건과는 다르다)" \
   'grep -q "if (res.error != null) return res" server/src/main/kotlin/dev/wikilens/api/Controller.kt'
 
+# 성능 측정이 실코퍼스에 매달리면 두 가지가 무너진다: 그 머신 밖에서는 검증이 안 되고
+# (테스트가 통째로 건너뛴다), 나온 값이 소프트웨어가 아니라 그 위키에 대한 사실이 된다.
+# 실제로 그렇게 적힌 상수 하나가 2배 틀린 채로 설계 결정의 근거가 돼 있었다.
+check "성능 측정이 합성 볼트로 재현됨 (실코퍼스 없이도 돈다)" \
+  '[ -f server/src/test/kotlin/dev/wikilens/SyntheticVault.kt ] \
+   && grep -q "SyntheticVault" server/src/test/kotlin/dev/wikilens/service/RipgrepBudgetTest.kt \
+   && grep -q "SyntheticVault" server/src/test/kotlin/dev/wikilens/service/GrepScaleTest.kt \
+   && ! grep -q "System.getProperty(\"user.home\")" server/src/test/kotlin/dev/wikilens/service/RipgrepBudgetTest.kt'
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."
