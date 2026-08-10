@@ -561,6 +561,21 @@ Nori 는 **영문을 깨뜨리지 않습니다** — 공백·구두점으로 자
 `--wikilens.analyzer=korean|english|standard`. 로컬판은 grep 이라 언어와 무관합니다.
 자세한 것은 [`server/README.md`](server/README.md#분석기는-색인-시점에-고른다).
 
+### 플랫폼 — macOS·Linux 입니다
+
+**Windows 는 지금 지원하지 않습니다.** 파이썬만 깔면 되는 문제가 아니라서 그렇게
+적습니다:
+
+| | 무엇이 걸리나 |
+|---|---|
+| `python3` 라는 **이름** | Windows 는 대개 `python` 또는 `py` 입니다. `.mcp.json` 의 `"command": "python3"` 과 스킬·커맨드가 그 이름을 그대로 씁니다 — **서버판 사용자도 걸립니다**(MCP 프록시가 파이썬입니다) |
+| `wikilens_cli.sh` | bash 래퍼입니다. 볼트를 만들거나 갱신하는 **모든 경로**가 여기를 지납니다 |
+| `~/.wikilens/env.sh` | 자격증명 정본이 `source` 하는 셸 스크립트입니다(그렇게 둔 이유는 `DECISIONS.md` D10) |
+| 검색 경로도 | 실제 매칭은 Claude Code 의 `Grep` 도구라 OS 와 무관하지만, 그 앞에서 `python3 vault_status.py` 로 볼트 경로를 먼저 풉니다 |
+
+**WSL 에서는 리눅스와 같습니다.** Windows 사용자는 지금 그 길을 쓰세요.
+네이티브 지원은 위 넷을 다 바꿔야 하는 일이라 [다음 작업](CLAUDE.md)에 적어뒀습니다.
+
 ---
 
 ## 설계 결정 요약
