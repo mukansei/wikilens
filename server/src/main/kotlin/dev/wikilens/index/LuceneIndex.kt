@@ -41,15 +41,10 @@ class LuceneIndex(
     private val log = LoggerFactory.getLogger(javaClass)
 
     /**
-     * 검색기·메타데이터·트리·**분석기**를 한 덩어리로 들고 있다.
-     *
-     * 예전엔 셋을 각각 `AtomicReference` 로 따로 교체했는데, 그 사이에 들어온 요청이
-     * 새 트리 + 옛 메타처럼 뒤섞인 상태를 볼 수 있었다. 하나로 묶으면 교체가 원자적이다.
-     * [dir] 를 함께 들고 있는 이유는 예전에 `DirectoryReader.open(MMapDirectory(...))` 의
-     * Directory 를 아무도 안 닫아 교체마다 누수됐기 때문이다.
-     *
-     * **분석기가 여기 있는 이유도 같다.** 색인과 분석기는 한 쌍이라 따로 교체되면
-     * 그 틈에 들어온 질의가 새 색인을 옛 분석기로(또는 그 반대로) 두드린다.
+     * 검색기·메타데이터·트리·**분석기**를 한 덩어리로. 따로 교체하면 그 틈에 들어온
+     * 요청이 새 트리 + 옛 메타처럼 **뒤섞인 상태**를 본다 — 하나로 묶으면 교체가
+     * 원자적이다. 분석기가 여기 있는 이유도 같다(색인과 한 쌍이다). [dir] 를 들고 있는
+     * 것은 안 닫으면 교체마다 누수되기 때문이다.
      */
     private class Snapshot(
         val searcher: IndexSearcher?,
@@ -70,15 +65,9 @@ class LuceneIndex(
             /**
              * 색인이 아직 없을 때의 빈 스냅샷.
              *
-             * **정적 상수로 두면 안 된다** — 상수는 [LuceneIndex.buildKind] 를 모르므로
-             * 항상 korean 이 되고, 그러면 **설정이 english 인데 색인이 없을 때 질의만
-             * korean 으로 분석된다.** 검색은 어차피 0건이라 안 보이지만 `analyze()` 가
-             * 내는 항은 학습 포스팅의 키라, 그 상태로 쌓인 궤적이 나중 것과 안 맞는다.
-             * 첫 배포에서 볼트 경로를 틀리게 준 경우가 그 상황이다.
-             *
-             * (`swap()` 이 옛 스냅샷의 분석기를 닫는 것은 문제가 아니다 — Lucene
-             * `Analyzer.close()` 는 스레드 로컬만 비우고 다음 사용에 다시 만든다.
-             * 실측으로 확인했다.)
+             * **정적 상수로 두면 안 된다** — 상수는 [LuceneIndex.buildKind] 를 모르므로 늘
+             * korean 이 되고, 그러면 설정이 english 인데 색인이 없을 때 **질의만 korean 으로
+             * 분석된다.** 검색은 어차피 0건이라 안 보이지만 그 항이 학습 포스팅의 키다.
              */
             fun empty(kind: AnalyzerKind) = Snapshot(
                 null, null, null, emptyMap(), TreeIndex.EMPTY, kind, analyzerFor(kind),
@@ -110,10 +99,8 @@ class LuceneIndex(
     val docCount: Int get() = snapshotRef.get().reader?.numDocs() ?: 0
 
     /**
-     * 전체 재구축 후 스냅샷을 원자적으로 교체한다.
-     *
-     * 제자리 갱신을 하지 않는 이유: 10k 문서 재구축이 수 초라 증분 갱신의 이득이 없고,
-     * 증분은 드리프트가 조용히 쌓이는 자리다. 재구축 중 질의는 이전 스냅샷을 계속 쓴다.
+     * 전체 재구축 후 스냅샷을 원자 교체. 제자리 갱신을 안 하는 이유는 증분이 드리프트가
+     * 조용히 쌓이는 자리이고 이득이 없어서다. 재구축 중 질의는 이전 스냅샷을 쓴다.
      */
     fun rebuild(pages: Collection<IndexedPage>) {
         val started = System.nanoTime()
@@ -159,25 +146,17 @@ class LuceneIndex(
         for (t in p.aclTokens) add(StringField(Fields.ACL, t, Field.Store.NO))
     }
 
-    /**
-     * 새 스냅샷을 열어 원자 교체하고 이전 것을 닫는다.
-     *
-     * [meta]/[tree] 를 안 주면(기동 시 기존 색인 열기) 현재 값을 유지한다 — 그 경우
-     * 메타·트리는 `/admin/reindex` 가 채운다.
-     */
+    /** [meta]/[tree] 를 안 주면(기동 시 기존 색인 열기) 현재 값을 유지한다. */
     private fun swap(meta: Map<String, PageMeta>? = null, tree: TreeIndex? = null) {
         val d = MMapDirectory(dir)
         val reader = runCatching { DirectoryReader.open(d) }
             .onFailure { runCatching { d.close() } }   // 열기 실패 시 Directory 를 흘리지 않는다
             .getOrThrow()
-        // **디스크가 정본이다.** 색인이 어떤 분석기로 지어졌는지는 커밋 데이터에 적혀
-        // 있으므로, 설정이 아니라 그것을 따라간다. 기록이 없으면(이 기능 이전 색인)
-        // 설정을 쓴다 — 그때는 대조할 근거가 없다.
+        // **디스크가 정본이다** — 어떤 분석기로 지었는지는 커밋 데이터에 있으므로 설정이
+        // 아니라 그것을 따라간다. 기록이 없으면 설정이 아니라 [LEGACY_KIND] 다: 여기 닿은
+        // 것은 색인이 **있는데** 기록만 없다는 뜻이고 그건 기록 이전 버전이 지은 것뿐이다.
+        // 설정을 쓰면 english 로 띄운 순간 옛 korean 색인을 english 로 두드린다.
         val recorded = reader.indexCommit.userData[ANALYZER_KEY]
-        // 기록이 없으면 **설정이 아니라 [LEGACY_KIND]** 다. 이 줄에 닿았다는 것은
-        // 색인이 **있는데** 기록만 없다는 뜻이고(없으면 위에서 예외가 난다), 그건 기록을
-        // 남기기 전 버전이 지은 것뿐이다 — 그때는 분석기가 korean 하나였다.
-        // 설정을 쓰면 english 로 띄운 순간 옛 korean 색인을 english 로 두드리게 된다.
         val kind = recorded?.let { runCatching { AnalyzerKind.of(it) }.getOrNull() } ?: LEGACY_KIND
         val cur = snapshotRef.get()
         val old = snapshotRef.getAndSet(
@@ -201,18 +180,14 @@ class LuceneIndex(
     }
 
     /**
-     * 설정과 디스크가 다르면 알린다. **경고일 뿐 고장이 아니다** — 질의는 디스크가
-     * 지어진 분석기를 쓰므로 검색은 정상 동작한다.
-     *
-     * 예전에는 여기서 ERROR 를 찍고 그대로 **설정된** 분석기로 질의했다. 색인에 답이
-     * 적혀 있는데 그것을 안 쓰고 어긋남을 재고만 있었던 셈이라, 재색인 전까지 검색이
-     * 조용히 0건이었다. 지금은 그 상태가 성립하지 않는다.
+     * 설정과 디스크가 다르면 알린다. **경고일 뿐 고장이 아니다** — 질의는 디스크가 지어진
+     * 분석기를 쓰므로 검색은 정상이다.
      */
     private fun reportAnalyzer() {
         val built = builtWith()
         if (built == null) {
-            // 색인이 없으면 `activeKind` 가 설정과 같아 알릴 것이 없다. 다르다면
-            // **기록 이전 색인**이라는 뜻이고, 그건 재색인 전까지 조용히 어긋나는 자리다.
+            // 색인이 없으면 `activeKind` 가 설정과 같다. 다르면 **기록 이전 색인**이고,
+            // 그건 재색인 전까지 조용히 어긋나는 자리다.
             if (activeKind != buildKind) {
                 log.warn(
                     "분석기 기록이 없는 색인입니다(이 기능 이전에 지어진 것). '{}' 로 지어졌다고 " +
@@ -238,12 +213,10 @@ class LuceneIndex(
     val activeKind: AnalyzerKind get() = snapshotRef.get().kind
 
     /**
-     * 검색. [aclTokens] 는 요청자의 권한 토큰(그룹, 사용자 ID, 공개 마커).
-     *
-     * ACL 필터는 **선택이 아니라 필수 절**이다. 빈 목록이면 결과가 비어야 한다 —
-     * 실수로 전체가 노출되는 것보다 아무것도 안 나오는 편이 낫다.
+     * 항이 필요 없을 때의 [analyzeAndSearch]. **테스트 전용**이다 — 프로덕션 경로는
+     * 항과 결과를 한 스냅샷에서 함께 받아야 한다(아래 참고).
      */
-    fun search(queryText: String, aclTokens: Collection<String>, limit: Int): List<Scored> =
+    internal fun search(queryText: String, aclTokens: Collection<String>, limit: Int): List<Scored> =
         analyzeAndSearch(queryText, aclTokens, limit).hits
 
     /**
@@ -253,8 +226,10 @@ class LuceneIndex(
      * 맞게 나오지만 [Analyzed.terms] 는 옛 분석기 것이고, **그 항이 학습 포스팅의 키**다 —
      * 같은 질의가 재색인 순간에만 다른 키로 기록돼 카운트가 갈린다(조용히 실패하는
      * 것들 2번과 같은 형태). 창이 좁아서(재색인 몇 초) 눈에 안 띄는 종류다.
-     *
      * 스냅샷을 한 번만 읽으면 그 상태가 성립하지 않는다.
+     *
+     * [aclTokens] 필터는 **선택이 아니라 필수 절**이다. 빈 목록이면 결과가 비어야 한다 —
+     * 실수로 전체가 노출되는 것보다 아무것도 안 나오는 편이 낫다.
      */
     fun analyzeAndSearch(queryText: String, aclTokens: Collection<String>, limit: Int): Analyzed {
         val snap = snapshotRef.get()
@@ -278,17 +253,11 @@ class LuceneIndex(
         })
     }
 
-    /**
-     * 메타데이터 캐시 조회. 스냅샷의 일부라 색인 재구축 시 함께 교체된다.
-     * ContentService 가 제목을 얻으려고 Lucene 을 매번 조회하지 않게 한다.
-     */
+    /** 메타데이터 캐시. 스냅샷의 일부라 재구축 시 함께 교체된다. */
     fun metaOf(pageId: String): PageMeta? = snapshotRef.get().meta[pageId]
     fun allMeta(): Collection<PageMeta> = snapshotRef.get().meta.values
 
-    /**
-     * 계층 렌더링. 실제 로직은 [TreeRenderer] 에 있다 — 순수 자료구조라
-     * Lucene 없이 단위 테스트할 수 있어야 해서 분리했다.
-     */
+    /** 계층 렌더링. 로직은 [TreeRenderer] 에 있다 — Lucene 없이 테스트할 수 있어야 한다. */
     fun renderTree(canSee: (String) -> Boolean, rootId: String? = null, maxDepth: Int = 0): RenderedTree {
         val snap = snapshotRef.get()
         return TreeRenderer(snap.tree, snap.meta).render(canSee, rootId, maxDepth)
@@ -314,10 +283,8 @@ class LuceneIndex(
         org.apache.lucene.queryparser.classic.QueryParserBase.escape(s)
 
     /**
-     * 서버가 질의를 토큰화한다. 클라이언트는 원문만 보낸다.
-     *
-     * 이렇게 하면 토크나이저 정본이 하나가 된다. 양쪽이 각자 토큰화하면
-     * 규칙이 달라졌을 때 에러 없이 조용히 0건이 되는데, 실제로 겪은 버그다.
+     * 서버가 질의를 토큰화한다 — 클라이언트는 원문만 보낸다. 양쪽이 각자 토큰화하면
+     * 규칙이 갈렸을 때 **에러 없이 조용히 0건**이 된다(실제로 겪었다).
      */
     fun analyze(text: String): List<String> = tokenize(snapshotRef.get().analyzer, text)
 
@@ -343,11 +310,8 @@ class LuceneIndex(
         const val ANALYZER_KEY = "wikilens.analyzer"
 
         /**
-         * 기록이 없는 색인이 지어졌을 분석기.
-         *
-         * 이 기록을 남기기 전 버전은 `KoreanAnalyzer` 를 하드코딩했으므로, 기록 없는
-         * 색인은 전부 korean 이다. 재색인 한 번이면 기록이 생겨 이 값은 안 쓰인다 —
-         * 마이그레이션 전용이다.
+         * 기록 없는 색인이 지어졌을 분석기. 기록 이전 버전은 `KoreanAnalyzer` 하드코딩이라
+         * 전부 korean 이다. 재색인 한 번이면 안 쓰인다 — 마이그레이션 전용.
          */
         val LEGACY_KIND = AnalyzerKind.KOREAN
     }

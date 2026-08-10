@@ -15,17 +15,6 @@ object Reliability {
     const val PRIOR_FLOOR = 0.05
     const val PRIOR_CEIL = 0.85
 
-    /** 참고용. 실제 게이트에는 [ebLower]를 쓴다. */
-    fun wilsonLower(hits: Int, misses: Int, z: Double = 1.96): Double {
-        val n = hits + misses
-        if (n == 0) return 0.0
-        val p = hits.toDouble() / n
-        val z2 = z * z
-        val centre = p + z2 / (2 * n)
-        val margin = z * Math.sqrt((p * (1 - p) + z2 / (4 * n)) / n)
-        return ((centre - margin) / (1 + z2 / n)).coerceIn(0.0, 1.0)
-    }
-
     /**
      * 검색 점수를 사전분포로 쓰는 Beta-Binomial 사후 하한.
      *

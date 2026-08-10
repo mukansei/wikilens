@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import layout
 from .convert import parse, render_page_file
-from .models import AnchorEntry, StructureSignature, canonical_json, jsonl_line
+from .models import AnchorEntry, StructureSignature, canonical_json
 
 
 @dataclass
@@ -172,7 +172,8 @@ def _alias_terms(entry: AnchorEntry) -> list[str]:
 
 def _write_anchors(root: Path, entries: list[AnchorEntry]) -> None:
     p = layout.ensure_parent(layout.anchors_path(root))
-    p.write_text("".join(jsonl_line(e.to_dict()) for e in entries), encoding="utf-8")
+    # JSONL 한 줄도 같은 결정적 직렬화를 쓴다 — 규칙이 갈리면 멱등성이 깨진다.
+    p.write_text("".join(canonical_json(e.to_dict()) for e in entries), encoding="utf-8")
 
 
 def _write_aliases(
