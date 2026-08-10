@@ -33,15 +33,34 @@ class SearchService(
     companion object {
         private const val RRF_K = 60.0
         private const val LEARNED_WEIGHT = 1.6
+
+        /**
+         * 클라이언트가 요구할 수 있는 최대 결과 수. `grep` 이 같은 이유로 죄는 것과
+         * 짝이다 — 거기는 응답 크기 때문이고 **여기는 궤적 로그 때문**이다.
+         */
+        const val MAX_LIMIT = 100
     }
 
     fun search(req: SearchRequest): SearchResponse {
+        // **상한이 없으면 셋이 깨진다.** 전부 실측으로 확인했다:
+        //
+        //   - `limit <= 0` → Lucene 이 예외를 던져 **HTTP 500**. 버그 있는 클라이언트
+        //     하나면 난다.
+        //   - 큰 값 → `limit * 3` 이 오버플로우해 음수가 되고 역시 500
+        //     (실측: `limit=715827883`).
+        //   - 그리고 이게 제일 나쁘다 — **서빙한 힌트는 궤적 로그에 `served` 로 영구히
+        //     남는다.** 로그는 append-only 이고 유일한 복구 불가 자산이라, 한 요청이
+        //     수천 개를 적어 넣을 수 있으면 안 된다.
+        //
+        // Lucene 자체는 `maxDoc` 으로 죄므로 메모리는 안 터진다(실측: limit 300만이
+        // 3,941건 · 636KB · 268ms). 그래서 이 상한은 메모리가 아니라 위 셋을 위한 것이다.
+        val limit = req.limit.coerceIn(1, MAX_LIMIT)
         val tokens = acl.tokensFor(req.userKey)
 
         // **항과 검색을 한 번에 받는다.** 따로 부르면 그 사이 재색인이 끝났을 때
         // 항은 옛 분석기 것이고 결과는 새 색인 것이 된다 — 그 항이 학습 포스팅의
         // 키라서, 같은 질의가 그 순간에만 다른 키로 기록된다.
-        val analyzed = index.analyzeAndSearch(req.query, tokens, req.limit * 3)
+        val analyzed = index.analyzeAndSearch(req.query, tokens, limit * 3)
         val terms = analyzed.terms
 
         // 권한 토큰이 없으면 어휘 결과도 힌트도 내지 않는다.
@@ -58,7 +77,7 @@ class SearchService(
         // **권한 필터를 학습 레이어 안으로 넣어 넘긴다.** 여기서 `take` 뒤에 거르면
         // 권한이 좁은 사용자는 상위 후보가 전부 안 보일 때 힌트가 통째로 0이 된다.
         // 토큰은 위에서 이미 구했다 — 페이지마다 다시 조회하지 않는다.
-        val hints = store.hints(terms, priors, req.limit) { pid -> acl.canSee(tokens, pid) }
+        val hints = store.hints(terms, priors, limit) { pid -> acl.canSee(tokens, pid) }
 
         data class Acc(var score: Double, var source: String, var rel: Double?)
         val acc = LinkedHashMap<String, Acc>()
@@ -98,7 +117,7 @@ class SearchService(
                 }
                 SearchHit(pid, title, space, a.score, a.source, a.rel)
             }
-            .take(req.limit)
+            .take(limit)
 
         return SearchResponse(req.query, terms, lexical.size, hints.size, hits)
     }

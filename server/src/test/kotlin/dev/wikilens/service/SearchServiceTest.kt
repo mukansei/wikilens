@@ -131,4 +131,34 @@ class SearchServiceTest {
         val res = svc.search(SearchRequest(query = "커피", userKey = user, limit = 8))
         assertTrue(res.hits.none { it.pageId == "9" }, "권한 없는 문서가 학습 힌트로 새어 나왔다")
     }
+
+    /**
+     * `limit` 은 클라이언트가 정한다. **상한이 없으면 셋이 깨진다** — 실서버로 확인했다:
+     * `limit<=0` 은 Lucene 예외로 500, 큰 값은 `limit*3` 오버플로우로 500, 그리고
+     * 서빙한 힌트가 궤적 로그에 `served` 로 **영구히** 남는다(append-only 이고 유일한
+     * 복구 불가 자산이다). `grep` 은 같은 이유로 이미 죄고 있었는데 여기만 안 죄었다.
+     */
+    @Test
+    fun `limit 이 0 이하여도 죽지 않는다`() {
+        load(page("1", "배포 가이드", "배포 절차"))
+        val res = svc.search(SearchRequest(query = "배포", userKey = user, limit = 0))
+        assertTrue(res.hits.size <= 1)
+    }
+
+    @Test
+    fun `limit 이 커도 곱셈이 넘치지 않는다`() {
+        load(page("1", "배포 가이드", "배포 절차"))
+        // 715_827_883 * 3 은 Int 를 넘어 음수가 된다 — 실서버에서 500 이었다.
+        val res = svc.search(SearchRequest(query = "배포", userKey = user, limit = 715_827_883))
+        assertTrue(res.hits.isNotEmpty())
+    }
+
+    @Test
+    fun `limit 은 상한을 넘지 않는다`() {
+        val pages = (1..150).map { page("$it", "배포 문서 $it", "배포 절차 $it") }
+        load(*pages.toTypedArray())
+        val res = svc.search(SearchRequest(query = "배포", userKey = user, limit = 10_000))
+        assertTrue(res.hits.size <= SearchService.MAX_LIMIT,
+                   "상한을 넘었다: ${res.hits.size}")
+    }
 }

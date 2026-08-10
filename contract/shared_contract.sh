@@ -464,7 +464,7 @@ check "ACL 시행이 꺼진 것이 기동·stats·--status 세 곳에서 보임"
 check "학습 힌트를 자르기 전에 권한으로 거름 (안 그러면 좁은 권한은 힌트가 0)" \
   'grep -q "visible: (String) -> Boolean" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
    && grep -q "if (!visible(pid))" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
-   && grep -q "store.hints(terms, priors, req.limit) { pid -> acl.canSee(tokens, pid) }" server/src/main/kotlin/dev/wikilens/service/SearchService.kt'
+   && grep -qE "store\.hints\(.*\) \{ pid -> acl\.canSee\(tokens, pid\) \}" server/src/main/kotlin/dev/wikilens/service/SearchService.kt'
 
 # 궤적에 남기는 것은 권한 **범위**(토큰 해시)이지 신원이 아니다. userKey 가 들어가면
 # "누가 무엇을 검색했나" 가 영구 기록으로 남는데 그건 이 도구가 지금 안 하는 일이고,
@@ -534,6 +534,13 @@ check "어느 grep 엔진인지 stats 와 --status 에 드러남" \
   'grep -q "val engineName" server/src/main/kotlin/dev/wikilens/service/ContentService.kt \
    && grep -q "\"grepEngine\" to content.engineName" server/src/main/kotlin/dev/wikilens/api/Controller.kt \
    && grep -q "GREP_ENGINE=" plugin/client/mcp/wikilens_mcp.py'
+
+# grep 은 죄고 있었는데 search 만 안 죄고 있었다. 500 두 경로(0 이하 · 곱셈 오버플로우)
+# 보다 나쁜 것은 **서빙한 힌트가 궤적 로그에 영구히 남는다**는 것이다 — append-only 이고
+# 유일한 복구 불가 자산이라 한 요청이 수천 개를 적어 넣을 수 있으면 안 된다.
+check "클라이언트가 주는 limit 을 두 경로 모두 상한으로 죔 (search·grep)" \
+  'grep -q "req.limit.coerceIn(1, MAX_LIMIT)" server/src/main/kotlin/dev/wikilens/service/SearchService.kt \
+   && grep -q "limit.coerceIn(1, MAX_LIMIT)" server/src/main/kotlin/dev/wikilens/service/ContentService.kt'
 
 echo
 if [ "$fail" -eq 0 ]; then
