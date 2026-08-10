@@ -598,6 +598,13 @@ check "토큰이 안 겹치는 상태가 stats 와 --status 에 드러남" \
    && grep -q "\"aclTokenOverlap\" to acl.tokenOverlap()" server/src/main/kotlin/dev/wikilens/api/Controller.kt \
    && grep -q "aclTokenOverlap" plugin/client/mcp/wikilens_mcp.py'
 
+# Windows 는 인터프리터 이름이 python·py 라 python3 를 박으면 서버판 사용자가 전혀 못
+# 쓴다. 그리고 `${VAR}` 를 **기본값 없이** 쓰면 미설정일 때 리터럴 문자열이 전달돼
+# 죽는다(조용히 실패 25번) — 둘을 함께 검사한다.
+check "MCP 인터프리터가 이름 고정이 아니고 기본값을 가짐 (Windows)" \
+  'grep -q "WIKILENS_PYTHON:-python3" plugin/client/.mcp.json \
+   && ! grep -qE "\"command\": \"python3?\"" plugin/client/.mcp.json'
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."
