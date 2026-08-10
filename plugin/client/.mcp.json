@@ -5,7 +5,7 @@
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/mcp/wikilens_mcp.py"
       ],
-      "_comment": "command 에 기본값을 반드시 붙인다. Windows 는 인터프리터 이름이 python 또는 py 라 python3 를 박으면 서버판 사용자가 Windows 에서 전혀 못 쓴다 — 그쪽은 WIKILENS_PYTHON=python 을 설정하면 된다. 그리고 `${VAR}` 를 **기본값 없이** 쓰면 미설정일 때 그 문자열이 리터럴로 전달된다(전에 WIKILENS_SERVER 를 env 로 넘기다 'unknown url type' 으로 죽었다). `${VAR:-기본값}` 은 그 문제가 없다. 서버 주소·식별자는 여전히 안 넘긴다 — 프록시가 os.environ 과 config.json 에서 직접 읽는다."
+      "_comment": "command 에 기본값을 반드시 붙인다. Windows 는 인터프리터 이름이 python 또는 py 라 python3 를 박으면 서버판 사용자가 Windows 에서 전혀 못 쓴다 — 그쪽은 WIKILENS_PYTHON=python 을 설정하면 된다. 그리고 `${VAR}` 를 **기본값 없이** 쓰면 미설정일 때 그 문자열이 리터럴로 전달된다(전에 WIKILENS_SERVER 를 env 로 넘기다 'unknown url type' 으로 죽었다). `${VAR:-기본값}` 은 그 문제가 없다. 서버 주소·식별자는 여전히 안 넘긴다 — 프록시가 os.environ 과 config.json 에서 직접 읽는다. 확장 문법 출처: https://code.claude.com/docs/en/mcp"
     }
   }
 }

@@ -461,11 +461,12 @@ grep 엔진 RE2 전환(D12), 두 판 우선순위(D13), 분석기 색인 시점 
 6. **Windows 네이티브 — 서버판 사용자는 열었다(2026-08-10). 볼트를 *만드는* 쪽이 남았다.**
 
    **결정적 사실:** Claude Code 는 Git for Windows 가 있으면 Git Bash 로 Bash 도구를
-   쓰고, **없으면 PowerShell 도구를 쓴다**(공식 문서). 즉 **Windows 에 Bash 가 있다고
-   가정할 수 없다.** 셸에 기대는 설계는 그만큼 Windows 를 잘라낸다.
+   쓰고, **없으면 PowerShell 도구를 쓴다** — 출처는 https://code.claude.com/docs/en/setup
+   ("Set up on Windows" 절). 즉 **Windows 에 Bash 가 있다고 가정할 수 없다.** 셸에 기대는 설계는 그만큼 Windows 를 잘라낸다.
 
    **연 것:** `.mcp.json` 의 `command` 를 `${WIKILENS_PYTHON:-python3}` 로 바꿨다.
-   `.mcp.json` 은 `${VAR:-기본값}` 확장을 지원한다 — **기본값이 있어야 한다**는 것이
+   `.mcp.json` 은 `${VAR:-기본값}` 확장을 지원한다(https://code.claude.com/docs/en/mcp 의
+   "Environment variable expansion in `.mcp.json`") — **기본값이 있어야 한다**는 것이
    요점이다(없이 쓰면 미설정 시 리터럴 문자열이 되어 죽는다, 조용히 실패 25번).
    프록시는 순수 파이썬이라(`subprocess`·POSIX API 없음) 셸 없이 돈다.
 

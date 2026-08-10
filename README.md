@@ -570,7 +570,7 @@ Nori 는 **영문을 깨뜨리지 않습니다** — 공백·구두점으로 자
 | 로컬판 | 됩니다 | **Git for Windows** 가 있으면 됩니다 |
 
 Claude Code 는 Git for Windows 가 있으면 **Git Bash 로 Bash 도구**를 쓰고, 없으면
-PowerShell 도구를 씁니다. 볼트를 *만드는* 경로(`wikilens_cli.sh` 래퍼, 자격증명
+PowerShell 도구를 씁니다(https://code.claude.com/docs/en/setup). 볼트를 *만드는* 경로(`wikilens_cli.sh` 래퍼, 자격증명
 `~/.wikilens/env.sh`)가 셸 스크립트라, **Bash 도구가 있어야 로컬판과 서버 운영이
 됩니다.** 검색만 하는 서버판 사용자는 해당 없습니다.
 
@@ -603,8 +603,8 @@ setx WIKILENS_PYTHON python
   실질적으로 걸리지 않습니다.** 공용 PC 에서는 그 점을 감안하세요.
 
 > **Windows 에서 실제로 돌려본 적은 없습니다.** 위는 코드가 무엇을 요구하는지와
-> Claude Code 공식 문서에서 온 것이지 실행 확인이 아닙니다 — 이 저장소의 다른 검증과
-> 같은 급으로 읽지 마세요.
+> Claude Code 문서(https://code.claude.com/docs/en/setup)에서 온 것이지
+> 실행 확인이 아닙니다 — 이 저장소의 다른 검증과 같은 급으로 읽지 마세요.
 
 ---
 

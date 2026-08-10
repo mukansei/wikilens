@@ -30,7 +30,8 @@ setx WIKILENS_PYTHON python      # 또는 py
 설정 후 Claude Code 를 재시작하세요. `/plugin` 목록에서 `wiki` 서버가 연결됐는지
 확인하고, 안 되면 `python --version` 으로 그 이름이 맞는지 먼저 보세요.
 
-**진단 명령은 셸에 따라 형태가 다릅니다.** Git for Windows 가 있으면 Bash 도구를 쓰고
+**진단 명령은 셸에 따라 형태가 다릅니다**(https://code.claude.com/docs/en/setup).
+Git for Windows 가 있으면 Bash 도구를 쓰고
 (`python3 "${CLAUDE_PLUGIN_ROOT}/..."`), 없으면 PowerShell 도구를 씁니다
 (`python "$env:CLAUDE_PLUGIN_ROOT\..."`). 변수 문법이 다르니 그대로 복사하지 마세요.
 
