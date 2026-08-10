@@ -14,7 +14,8 @@ import kotlin.test.assertEquals
  * (`plugin/client/mcp/wikilens_mcp.py`). 둘은 문자열로만 이어져 있어 한쪽만 바꾸면
  * **컴파일도 테스트도 통과하는데 런타임에 빈 값**이 된다.
  *
- * 예전에는 그 사실이 `api/Dto.kt` 주석에만 있었다. 실측으로 확인했다 —
+ * 예전에는 그 사실이 선언 없는 `api/Dto.kt` 주석에만 있었다(그 파일은 지웠다).
+ * 실측으로 확인했다 —
  * `ReadResponse.markdown` 을 `body` 로 바꿨더니 Kotlin 테스트가 이름 참조로 걸리기는
  * 했지만 **그건 Kotlin API 를 잡은 것이지 와이어 계약이 아니다.** 이름을 바꾸는 사람은
  * 테스트도 같이 고칠 텐데, 그때 아무도 "프록시가 깨진다" 고 말해주지 않는다. 프록시
