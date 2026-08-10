@@ -56,6 +56,20 @@ class ContentService(
         "ripgrep" -> ripgrep
         else -> if (ripgrep.isAvailable()) ripgrep else fallback
     }
+    /**
+     * 어느 엔진으로 정해졌는지. **밖에서 보여야 한다.**
+     *
+     * 응답의 `engine` 은 grep 을 한 번 던져야 보이고 기동 로그는 콘솔로만 나간다 —
+     * 로그를 못 보는 운영자에게는 닿지 않는다. `/api/stats` 와 `--status` 가 이것을 낸다.
+     */
+    val engineName: String get() = engine.name
+
+    /**
+     * 그 엔진이 지금 쓸 수 있나. **`grep-engine=ripgrep` 을 명시했는데 rg 가 없으면
+     * 매 요청이 폴백**이고, 동작은 하므로 겉으로는 정상이다(로그의 WARN 뿐이다).
+     */
+    val engineUsable: Boolean get() = engine.isAvailable()
+
     private val log = LoggerFactory.getLogger(ContentService::class.java)
 
 

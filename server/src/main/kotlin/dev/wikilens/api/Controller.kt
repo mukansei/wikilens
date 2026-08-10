@@ -122,6 +122,10 @@ class Controller(
             // 기동 적재가 건너뛰어진 경우다. 그전에는 기동 로그를 뒤져야만 알 수 있었다.
             "analyzer" to index.activeKind.key,          // 질의에 실제로 쓰이는 것 (= 색인 기록)
             "analyzerConfigured" to index.buildKind.key, // 이 프로세스의 설정
+            // 본문 스캔 경로가 둘이라 어느 쪽인지가 답의 근거가 된다. 그전에는
+            // 기동 로그(콘솔 전용)를 뒤지거나 grep 을 한 번 던져야만 알 수 있었다.
+            "grepEngine" to content.engineName,
+            "grepEngineUsable" to content.engineUsable,
             // 궤적 로그 상태. **append-only 라 줄지 않는다** — 크기와 재생 시간이
             // 조용히 늘어나는 자리이고, 그 둘이 압축을 설계할 시점을 알려준다.
             "trajectoryLog" to log.status(),

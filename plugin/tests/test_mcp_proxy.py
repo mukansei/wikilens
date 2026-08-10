@@ -21,6 +21,9 @@ PORT = 8899
 received: list[tuple[str, dict]] = []
 
 
+#: 가짜 서버가 낼 grep 엔진 상태 (이름, 쓸 수 있나). 테스트가 도중에 바꾼다.
+STATS_ENGINE = ["ripgrep", True]
+
 class Fake(BaseHTTPRequestHandler):
     def log_message(self, *a):  # 조용히
         pass
@@ -38,7 +41,9 @@ class Fake(BaseHTTPRequestHandler):
         if self.path == "/api/health":
             self._json({"ok": True})
         elif self.path == "/api/stats":
-            self._json({"indexedDocs": 2378, "aclUsers": 3})
+            self._json({"indexedDocs": 2378, "aclUsers": 3,
+                        "grepEngine": STATS_ENGINE[0],
+                        "grepEngineUsable": STATS_ENGINE[1]})
         else:
             self.send_response(404); self.end_headers()
 
@@ -292,6 +297,17 @@ def main() -> int:
                             capture_output=True, text=True, env=clean)
         check("설정 출처를 밝힘 (env/config/default 구분)", "(config)" in st.stdout, st.stdout[:120])
         check("서버 도달 여부 보고", "REACHABLE=yes" in st.stdout, st.stdout[:120])
+        # 본문 스캔 경로가 둘이라 어느 쪽인지가 답의 근거가 된다. 기동 로그는 콘솔
+        # 전용이고 응답의 engine 은 grep 을 던져야 보여서, 여기가 유일하게 닿는 자리다.
+        check("어느 grep 엔진인지 보고", "GREP_ENGINE=ripgrep" in st.stdout, st.stdout[:200])
+
+        # 명시했는데 못 쓰면 매 요청이 폴백이다 — 동작은 하므로 겉으로는 정상이다.
+        STATS_ENGINE[:] = ["ripgrep", False]
+        st_e = subprocess.run([sys.executable, str(PROXY), "--status"],
+                              capture_output=True, text=True, env=clean)
+        check("쓸 수 없는 엔진을 짚음", "쓸 수 없습니다" in st_e.stdout, st_e.stdout[:300])
+        check("그 경우 종료코드가 0 이 아님", st_e.returncode != 0, str(st_e.returncode))
+        STATS_ENGINE[:] = ["ripgrep", True]
 
         # 설정한 적이 없는 상태는 출처가 default 로 드러나야 한다. (도달 여부는
         # 기본 포트에 무엇이 떠 있느냐에 달려 있으므로 여기서 단정하지 않는다 —
