@@ -159,4 +159,36 @@ class LearnLayerTest {
         log.forEach { b.replay(it) }
         assertEquals(before, b.hints(listOf("온보딩", "문서"), mapOf("ONB" to 0.75)))
     }
+
+    /**
+     * **`pWrong` 은 종류를 가리지 않는다.**
+     *
+     * 힌트는 `Gate` 분류와 무관하게 서빙된다 — `hints()` 는 항만 받는다. 그러니 거부된
+     * 사실도 종류와 무관하게 세야 "서빙한 것 중 틀린 비율" 이 된다. 예전에는 이 집계가
+     * `if (!kind.cacheable) return` **뒤에** 있어서 캐시 가능한 질의만 셌다.
+     *
+     * UNKNOWN 이 통째로 빠지는 게 문제였다 — 마커에 안 걸리는 자연어 질의가 전부
+     * 거기로 떨어지고(조용히 실패 7번), 하필 LOCALIZATION 에서 배운 간선을 다른 종류의
+     * 질의에 서빙하는 경우라 **가장 자주 틀릴 만한 쪽**이다. 즉 과소 보고 방향이었다.
+     *
+     * 같은 궤적을 종류만 바꿔 넣어 확인한다. 간선을 만드는지(`postings`)는 그대로
+     * 종류를 따른다 — 그건 `Gate` 의 일이고 여기서 바꾸는 것이 아니다.
+     */
+    @Test
+    fun `서빙 거부는 캐시 불가 질의에서도 세어진다`() {
+        for (kind in QueryKind.entries) {
+            val store = TrajectoryStore({ })
+            store.replay(
+                Trajectory(
+                    ts = 1, session = "s", keywords = listOf("배포"), kind = kind,
+                    reads = emptyList(), dest = "", success = false,
+                    served = listOf("A", "B"),
+                ),
+            )
+            val st = store.stats()
+            assertEquals(2, st["served"], "$kind 에서 서빙이 안 세어졌다")
+            assertEquals(2, st["rejected"], "$kind 에서 거부가 안 세어졌다")
+            assertEquals(1.0, st["pWrong"], "$kind 의 pWrong")
+        }
+    }
 }

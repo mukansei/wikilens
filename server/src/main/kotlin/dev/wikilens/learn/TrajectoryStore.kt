@@ -210,12 +210,24 @@ class TrajectoryStore(
             t.reads.isEmpty() && t.served.isNotEmpty() -> abandonedCount.incrementAndGet()
             else -> trajMisses.incrementAndGet()
         }
-        if (!t.kind.cacheable) return   // 경로 의존 질의는 간선을 만들지 않는다
-
         // 서빙했는데 **끝내 안 읽힌** 힌트 = 틀린 힌트. dest 와 겹치지 않게 뺀다.
+        //
+        // **간선을 만들지 않는 질의도 여기서 센다.** 힌트는 `Gate` 분류와 무관하게
+        // 서빙된다(`hints()` 는 항만 받는다) — 그러니 그 힌트가 거부된 사실도 세야
+        // `pWrong` 이 "서빙한 것 중 틀린 비율" 이 된다. 예전에는 아래 `return` 뒤에
+        // 있어서 **캐시 가능한 질의만** 셌다. 그러면 UNKNOWN 이 통째로 빠지는데,
+        // 마커에 안 걸리는 자연어 질의가 전부 거기로 떨어진다(조용히 실패 7번) —
+        // 하필 힌트가 가장 자주 틀릴 만한 쪽이라 **과소 보고 방향**이었다.
+        //
+        // 실측으로 확인했다: 같은 궤적을 종류만 바꿔 넣으면 LOCALIZATION 은
+        // `served=2 rejected=2 pWrong=1.0`, 나머지 셋은 전부 `served=0 pWrong=null`.
+        // 그런데 `abandonedWithHints` 는 넷 다 1 이었다 — 한 궤적을 두고 한 카운터는
+        // 힌트를 보는데 다른 카운터는 못 보고 있었다.
         val rejected = t.served.toSet() - t.reads.toSet()
         servedCount.addAndGet(t.served.size)
         rejectedCount.addAndGet(rejected.size)
+
+        if (!t.kind.cacheable) return   // 경로 의존 질의는 간선을 만들지 않는다
 
         // 읽었지만 답이 아니었던 것들. `dest = reads.last()` 라는 이 모델의 전제
         // ("탐색은 성공에서 멈춘다")를 그대로 따르면, 앞서 읽은 것들은 **열어보고
