@@ -528,6 +528,13 @@ check "acl.json 에 없는 페이지가 공개로 바뀌지 않음 (Python 의 �
    && grep -q "emptyList<String>().also { unresolved++ }" server/src/main/kotlin/dev/wikilens/vault/VaultReader.kt \
    && grep -q "unresolved" cli/wikilens/acl.py'
 
+# 본문 스캔 경로가 둘이다. 어느 쪽으로 처리됐는지가 밖에서 안 보이면 답이 왜 다른지
+# 물을 수도 없다 — 기동 로그는 콘솔 전용이라 로그를 못 보는 운영자에게 안 닿는다.
+check "어느 grep 엔진인지 stats 와 --status 에 드러남" \
+  'grep -q "val engineName" server/src/main/kotlin/dev/wikilens/service/ContentService.kt \
+   && grep -q "\"grepEngine\" to content.engineName" server/src/main/kotlin/dev/wikilens/api/Controller.kt \
+   && grep -q "GREP_ENGINE=" plugin/client/mcp/wikilens_mcp.py'
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."

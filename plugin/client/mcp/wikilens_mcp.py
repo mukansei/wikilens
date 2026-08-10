@@ -168,6 +168,20 @@ def status() -> int:
         elif built:
             print(f"ANALYZER={built}")
 
+        # 본문 스캔 경로가 둘(JVM·ripgrep)이라 같은 질의가 어느 쪽으로 처리됐는지가
+        # 답의 근거가 된다. 기동 로그는 콘솔로만 나가고 응답의 `engine` 은 grep 을
+        # 던져야 보이므로, 여기가 로그를 못 보는 사람에게 닿는 유일한 자리다.
+        eng = s.get("grepEngine")
+        if eng:
+            print(f"GREP_ENGINE={eng}")
+        # 명시했는데 못 쓰는 상태. 동작은 하므로(매 요청 폴백) 겉으로는 정상이다.
+        if eng and s.get("grepEngineUsable") is False:
+            print(f"\n'{eng}' 로 설정돼 있는데 이 머신에서 쓸 수 없습니다 —"
+                  " 매 요청이 JVM 스캔으로 넘어갑니다.")
+            print("  동작은 하지만 큰 코퍼스에서 grep 이 잘립니다. 운영자가 ripgrep 을"
+                  " 설치하거나 wikilens.grep-engine 을 고쳐야 합니다.")
+            ok = False
+
         # 서버에 기동 훅이 없다. Lucene 색인은 디스크에 남아 재기동 후에도 검색되는데
         # ACL 페이지 맵은 메모리라 비어서 뜬다 — **검색은 되고 read 는 전부 404** 인
         # 상태다. 겉으로는 전부 초록이라 이 조합을 짚어주지 않으면 못 찾는다
