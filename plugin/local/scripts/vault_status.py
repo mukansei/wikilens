@@ -395,6 +395,15 @@ def main(argv: list[str]) -> int:
         print(resolve_vault(cfg))
         return 0
 
+    # 래퍼가 `$HOME/.wikilens/env.sh` 를 직접 조립하지 않게 한다. 셸의 `$HOME` 과
+    # 파이썬의 `Path.home()` 은 **같은 자리가 아닐 수 있다** — Windows 에서 파이썬은
+    # `USERPROFILE` 을 보는데 Git Bash 의 `HOME` 은 회사 환경에서 홈 드라이브(H:)로
+    # 잡혀 있는 경우가 있다. 그러면 래퍼는 한 파일을 소싱하고 CLI 는 다른 파일을 읽는다.
+    # macOS JDK 의 `user.home` vs `HOME` 과 같은 실패다(CLAUDE.md 조용히 실패 20번).
+    if "--env-path" in argv:
+        print(ENV_PATH)
+        return 0
+
     vault = resolve_vault(cfg)
     info = inspect(vault)
     info["cli"] = find_cli(cfg)

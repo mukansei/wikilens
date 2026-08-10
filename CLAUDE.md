@@ -469,9 +469,15 @@ grep 엔진 RE2 전환(D12), 두 판 우선순위(D13), 분석기 색인 시점 
    요점이다(없이 쓰면 미설정 시 리터럴 문자열이 되어 죽는다, 조용히 실패 25번).
    프록시는 순수 파이썬이라(`subprocess`·POSIX API 없음) 셸 없이 돈다.
 
-   **남은 것:** 볼트를 만드는 경로다 — `wikilens_cli.sh`(bash 래퍼)와 자격증명
-   `~/.wikilens/env.sh`(source 하는 셸 스크립트, D10). 둘을 파이썬으로 옮기면 Windows
-   에서 로컬판·운영자 경로도 열린다. D10 이 셸을 고른 근거("자기 터미널에서 source 해
+   **Git Bash 를 전제하면 볼트 경로도 연다(그 전제에서 걸리는 것 넷을 고쳤다):**
+   `.gitattributes` 로 `.sh` 를 LF 고정(autocrlf 기본값이 `true` 라 CRLF 로 받으면
+   bash 가 첫 줄에서 죽는다), 래퍼가 `python3 → python → py -3` 을 찾고, **자격증명
+   경로를 조립하지 않고 `vault_status.py --env-path` 로 물어본다**(셸의 `$HOME` 과
+   파이썬의 `Path.home()`=`USERPROFILE` 이 갈릴 수 있다 — 20번과 같은 실패다).
+   넷째는 못 고친다: `chmod 600` 이 NTFS 에서 실질적으로 안 걸린다(문서에 적었다).
+
+   **남은 것:** Git for Windows 없이(PowerShell 도구만) 볼트를 만드는 경로. 래퍼와
+   `env.sh` 를 파이썬으로 옮겨야 한다. D10 이 셸을 고른 근거("자기 터미널에서 source 해
    재사용")를 함께 다시 볼 것.
 
    **그리고 이 항목 전체가 미검증이다** — 이 머신에 Windows 가 없다. 코드가 무엇을

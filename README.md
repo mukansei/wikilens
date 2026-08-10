@@ -563,24 +563,48 @@ Nori 는 **영문을 깨뜨리지 않습니다** — 공백·구두점으로 자
 
 ### 플랫폼
 
-| | macOS · Linux · WSL | Windows 네이티브 |
+| | macOS · Linux · WSL | Windows |
 |---|---|---|
 | **서버판 사용자**(검색만) | 됩니다 | **됩니다** — 프록시가 순수 파이썬이라 셸이 필요 없습니다 |
-| 서버 운영(sync·acl) | 됩니다 | Git for Windows 또는 WSL 필요 |
-| 로컬판 | 됩니다 | Git for Windows 또는 WSL 필요 |
+| 서버 운영(sync·acl) | 됩니다 | **Git for Windows** 가 있으면 됩니다 |
+| 로컬판 | 됩니다 | **Git for Windows** 가 있으면 됩니다 |
 
-**Windows 에서 인터프리터 이름이 다릅니다.** macOS·리눅스는 `python3`, Windows 는
-대개 `python`·`py` 입니다. MCP 설정은 `${WIKILENS_PYTHON:-python3}` 이라 기본값으로
-돌고, 이름이 다르면 `setx WIKILENS_PYTHON python` 하나로 바꿉니다.
+Claude Code 는 Git for Windows 가 있으면 **Git Bash 로 Bash 도구**를 쓰고, 없으면
+PowerShell 도구를 씁니다. 볼트를 *만드는* 경로(`wikilens_cli.sh` 래퍼, 자격증명
+`~/.wikilens/env.sh`)가 셸 스크립트라, **Bash 도구가 있어야 로컬판과 서버 운영이
+됩니다.** 검색만 하는 서버판 사용자는 해당 없습니다.
 
-**셸이 필요한 자리는 볼트를 *만드는* 쪽뿐입니다** — `wikilens_cli.sh` 래퍼와 자격증명
-`~/.wikilens/env.sh` 가 셸 스크립트입니다(그렇게 둔 이유는 `DECISIONS.md` D10).
-Claude Code 는 Git for Windows 가 있으면 Git Bash 로 Bash 도구를 쓰고, 없으면
-PowerShell 도구를 씁니다 — **후자에서는 볼트를 만들 수 없습니다.**
-그 둘을 파이썬으로 옮기는 것이 [다음 작업](CLAUDE.md) 6번입니다.
+#### Windows 준비 (Git for Windows 있는 경우)
 
-> **Windows 에서 실제로 돌려본 적은 없습니다.** 위는 코드가 무엇을 요구하는지에서
-> 온 것이지 실행 확인이 아닙니다 — 이 저장소의 다른 검증과 같은 급으로 읽지 마세요.
+```powershell
+# 1. Git for Windows — Claude Code 가 Bash 도구를 쓰게 해줍니다
+winget install Git.Git
+
+# 2. 파이썬 — 이름을 확인해 두세요 (python / python3 / py 중 무엇인지)
+winget install Python.Python.3.12
+python --version
+
+# 3. MCP 프록시의 인터프리터 이름 (서버판만. `python3` 로 안 뜰 때)
+setx WIKILENS_PYTHON python
+```
+
+설정 후 **Claude Code 를 재시작**하세요. 이후는 macOS·리눅스와 같습니다 —
+래퍼가 `python3 → python → py -3` 순으로 알아서 찾습니다.
+
+**알아둘 것 셋:**
+
+- **줄바꿈.** `.gitattributes` 가 `.sh` 를 LF 로 고정합니다. 그전에 clone 한 저장소가
+  있다면 `git rm --cached -r . && git reset --hard` 로 한 번 정규화하세요 —
+  CRLF 로 받은 셸 스크립트는 `$'\r': command not found` 로 죽습니다.
+- **홈 디렉터리.** 래퍼는 `~/.wikilens/env.sh` 를 직접 조립하지 않고 파이썬에게
+  물어봅니다. Git Bash 의 `$HOME` 과 파이썬의 `Path.home()`(=`USERPROFILE`)이 다를 수
+  있어서입니다 — 회사 환경에서 홈 드라이브를 따로 잡아두면 실제로 갈립니다.
+- **파일 권한.** `env.sh` 는 토큰이 들어 `600` 으로 만들지만, **NTFS 에서는 그 제한이
+  실질적으로 걸리지 않습니다.** 공용 PC 에서는 그 점을 감안하세요.
+
+> **Windows 에서 실제로 돌려본 적은 없습니다.** 위는 코드가 무엇을 요구하는지와
+> Claude Code 공식 문서에서 온 것이지 실행 확인이 아닙니다 — 이 저장소의 다른 검증과
+> 같은 급으로 읽지 마세요.
 
 ---
 
