@@ -387,11 +387,12 @@ check "ripgrep 이 사용자 환경을 안 받고 대소문자를 무시함 (--n
 # 권한을 아무리 정확히 수집해도 이게 열려 있으면 의미가 없다. 기본이 "열림" 이면
 # 조용히 열린 채 배포되므로 **잠김이 기본**이어야 하고, 거부는 404 여야 한다(403 은
 # 엔드포인트의 존재를 알린다 — `read` 와 같은 규칙).
-check "관리 API 가 기본 잠김이고 세 엔드포인트 모두 통과 검사를 거침" \
+check "관리 API 가 기본 잠김이고 경로로 잠김 (엔드포인트마다 세지 않는다)" \
   'grep -q "val adminToken: String = \"\"" server/src/main/kotlin/dev/wikilens/config/WikiLensProperties.kt \
    && grep -q "^  admin-token: \"\"$" server/src/main/resources/application.yml \
-   && [ "$(grep -c "guard.check(req)" server/src/main/kotlin/dev/wikilens/api/Controller.kt)" = "3" ] \
-   && [ "$(grep -c "@PostMapping(\"/admin" server/src/main/kotlin/dev/wikilens/api/Controller.kt)" = "3" ]'
+   && grep -q "ADMIN_PATHS = \"/api/admin/\*\*\"" server/src/main/kotlin/dev/wikilens/api/AdminGuardConfig.kt \
+   && grep -q "addInterceptor(guard).addPathPatterns(ADMIN_PATHS)" server/src/main/kotlin/dev/wikilens/api/AdminGuardConfig.kt \
+   && ! grep -rq "guard.check" server/src/main/kotlin/dev/wikilens/api/Controller.kt'
 
 # `mirror/acl/acl.json` 은 CLI 가 쓰고 Kotlin 이 읽는 **파일로만 이어진 계약**이다.
 # 갈리면 서버가 파일을 못 읽어 전 페이지가 `@public` 폴백이 된다 — 조용한 과다 노출.

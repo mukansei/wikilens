@@ -71,6 +71,7 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 | grep 엔진은 ACL 을 모름 | `ContentService` 가 걸러 넘김 | 한쪽이 조용히 더 보여줌 |
 | 권한 없음은 **404** (403 아님) | `Controller.read` | 문서 존재가 유출됨 |
 | 관리 API 기본이 **잠김** | `WikiLensProperties.adminToken` ↔ `application.yml` | 조용히 열린 채 배포됨 |
+| 관리 API 는 **경로로** 잠김 | `AdminGuardConfig.ADMIN_PATHS` | 새 엔드포인트가 열린 채 추가됨 |
 | ACL 파일 경로·형식 | `cli/wikilens/acl.py` ↔ `VaultReader.readAcl` | 전 페이지가 `@public` 폴백 |
 | ACL 조회 실패는 **옛 값 유지** | `acl.py` `collect` | 못 읽은 페이지가 공개로 |
 | 상속은 **못 읽은 조상에서 멈춤** | `acl.py` `collect` | 잠긴 부모 밑이 `@space` 로 |
