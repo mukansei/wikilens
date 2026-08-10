@@ -45,9 +45,10 @@ data class WikiLensProperties(
     /**
      * 본문 스캔 엔진: `auto`(기본) · `jvm` · `ripgrep`.
      *
-     * `auto` 는 rg 가 있으면 rg 다 — JVM 스캔은 13,921건에 2.44초인데 예산이 3초라
-     * **약 17,000건에서 조용한 부분 응답**이 되기 시작한다. 두 경로가 같은 답을 내는지는
-     * `GrepEngineParityTest` 가 지킨다.
+     * `auto` 는 rg 가 있으면 rg 다 — 문서당 스캔 비용이 약 3.3배 싸서 예산에 닿는
+     * 지점을 그만큼 뒤로 민다. 한계를 "몇 건" 으로 적지 않는 이유와 다시 재는 법은
+     * `ContentService.GREP_BUDGET_NANOS` 와 `GrepScaleTest` 에 있다.
+     * 두 경로가 같은 답을 내는지는 `GrepEngineParityTest` 가 지킨다.
      */
     val grepEngine: String = "auto",
     @NestedConfigurationProperty val learn: LearnProps = LearnProps(),
