@@ -118,6 +118,12 @@ def _cmd_acl(args) -> int:
         print(f"  {t}")
     if len(rep.tokens) > 20:
         print(f"  ... 외 {len(rep.tokens)-20}종")
+    if not rep.wrote:
+        # 배운 게 없으면 옛 파일을 그대로 둔다. 429 가 쏟아지는 상황이 대표적이다 —
+        # `_get` 이 다섯 번까지 물러서며 재시도하는데도 전부 실패했다는 뜻이다.
+        print(f"\n조회가 **전부** 실패해 acl.json 을 쓰지 않았습니다 (옛 파일 유지).")
+        print("  서버가 속도 제한 중이거나 토큰이 만료됐을 수 있습니다.")
+        return 1
     if rep.failed:
         # **공개로 바뀌지 않는다** — 실패분은 이전 값을 유지한다. 다만 새 페이지는
         # 아예 빠지므로 서버가 그 페이지를 못 보게 된다(fail-closed).

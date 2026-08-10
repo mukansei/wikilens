@@ -56,6 +56,8 @@ class AclReport:
     failed: int = 0
     #: 자신은 읽었지만 **조상을 못 읽어** 권한을 확정하지 못한 페이지
     unresolved: int = 0
+    #: acl.json 을 실제로 썼는가. 전부 실패하면 안 쓴다 — 옛 파일이 그대로 남는다.
+    wrote: bool = True
     elapsed_s: float = 0.0
     tokens: set[str] = field(default_factory=set)
 
@@ -165,6 +167,17 @@ def collect(root: Path, client, verbose: bool = False, sleep_s: float = 0.0) -> 
             rep.restricted += 1
         result[pid] = tokens
         rep.tokens.update(tokens)
+
+    # **전부 실패했으면 쓰지 않는다.** 배운 게 없는데 파일을 덮으면 그 결과는
+    # "권한을 수집했는데 아무 페이지도 없다" 가 되고, 서버는 그것을 **전 페이지가
+    # 아무에게도 안 보임**으로 읽는다(fail-closed 라 맞는 해석이다). 볼트를 못 읽은
+    # 재기동이 멀쩡한 색인을 지우던 것과 같은 자리다 — 못 읽은 것과 없는 것은 다르다.
+    #
+    # 부분 실패는 그대로 진행한다. 그건 설계된 완만한 열화다(옛 값 유지 · 새 페이지 생략).
+    if pages and rep.failed >= len(pages):
+        rep.elapsed_s = time.time() - started
+        rep.wrote = False
+        return rep
 
     tmp = out_path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(result, ensure_ascii=False, indent=0, sort_keys=True),

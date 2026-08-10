@@ -542,6 +542,15 @@ check "클라이언트가 주는 limit 을 두 경로 모두 상한으로 죔 (s
   'grep -q "req.limit.coerceIn(1, MAX_LIMIT)" server/src/main/kotlin/dev/wikilens/service/SearchService.kt \
    && grep -q "limit.coerceIn(1, MAX_LIMIT)" server/src/main/kotlin/dev/wikilens/service/ContentService.kt'
 
+# `acl` 은 페이지마다 낱개 조회를 해서 이 프로젝트에서 API 를 가장 세게 쓴다. 429 를
+# 못 견디면 곧 "조회 실패" 이고, 전부 실패한 결과를 쓰면 서버가 그것을 **전 페이지
+# 비공개**로 읽는다 — 못 읽은 것과 없는 것은 다르다.
+check "429 백오프가 모든 GET 에 걸리고, 전부 실패하면 acl.json 을 안 씀" \
+  'grep -q "if r.status_code != 429:" cli/wikilens/sync.py \
+   && ! grep -q "if r.status_code == 429:" cli/wikilens/sync.py \
+   && grep -q "rep.failed >= len(pages)" cli/wikilens/acl.py \
+   && grep -q "rep.wrote" cli/wikilens/cli.py'
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."
