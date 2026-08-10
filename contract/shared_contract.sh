@@ -566,6 +566,14 @@ check "게이트의 종류 분포가 stats 와 --status 에 드러남" \
   'grep -q "\"byKind\" to QueryKind.entries" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
    && grep -q "QUERY_KINDS=" plugin/client/mcp/wikilens_mcp.py'
 
+# 문턱 판정을 cdf 1회로 바꿨다(실측 5~18배). 빠른 길과 정확한 길이 어긋나면 **서빙 여부가
+# 조용히 달라진다** — 검색은 정상으로 보이고 힌트만 다르게 나온다. 커버리지 축이 특히
+# 중요하다: 실제 판정은 `ebLower * c >= 문턱` 이라 페이지별 문턱이 `문턱 / c` 다.
+check "빠른 문턱 판정이 이분법과 대조됨 (커버리지 축 포함)" \
+  'grep -q "fun meetsThreshold" server/src/main/kotlin/dev/wikilens/learn/Reliability.kt \
+   && grep -q "Reliability.meetsThreshold" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
+   && grep -q "for (c in listOf" server/src/test/kotlin/dev/wikilens/learn/ReliabilityThresholdTest.kt'
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."
