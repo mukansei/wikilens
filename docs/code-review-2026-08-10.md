@@ -262,3 +262,250 @@ ACL 클래스가 내부 상태 참조를 내주는 것은 이 저장소의 나�
   임계 판정만 바꾸고 **통과한 후보의 최종 `reliability` 값은 기존 `ebLower` 로 구할 것.**
 - `§6` 1번(`byKind`)을 넣을 때 `stats()` 의 `sinceStart` 안에 넣지 마세요. 그건 재생
   불가능한 값들의 자리이고, `kind` 는 로그에 있어 **재생되는 누적값**입니다.
+
+---
+---
+
+# 후속: 96a551a → f592443 (23커밋) 분석
+
+**작성 2026-08-10 (같은 날 저녁) · 대상 `f592443`**
+
+위 리포트를 받은 다른 세션이 23개 커밋을 쌓았습니다. 그 결과를 검토하고, 새로 찾은
+결함 둘을 고친 기록입니다. 아래 판정의 근거가 된 실행:
+
+- `./check.sh` → 넷 모두 통과 (계약 **68 → 79개**, MCP 54 → 63건, pytest 170)
+- `SearchServiceTest` 를 두 가지로 변형해 실행 (§B)
+- Docker 런타임 단계를 떼어 재현 + 실제 `docker compose up` (§A)
+
+## 1. 위 리포트 6항목의 처리
+
+| | 항목 | 결과 |
+|---|---|---|
+| 1 | `byKind` 분포 | 구현. `sinceStart` **밖**에 배치 — 인수인계 메모의 구분을 지켰습니다 |
+| 2 | `query`·`sessionId` 상한 | 구현. 제안 이상 — `MAX_QUERY=500`(자르지 않고 **거부**), `MAX_SESSION_ID=128`(자르면 두 세션이 합쳐지므로 **버림**), `MAX_KEYWORDS=32`, `droppedSessions` 계측 |
+| 3 | `hints()` cdf 1회 | 구현. **제안보다 정확함** — 아래 |
+| 4 | 실사용 궤적 수집 | 미착수 (예정대로) |
+| 5 | `activeSessions` 상한 | 구현. 맵이 차면 **새 세션만** 거절, 기존 세션은 계속 관측 |
+| 6 | `cli/build` 삭제 · `relPath` 지연 | 전자 완료. **후자는 넣었다가 되돌림** — 아래 |
+
+**3번이 제안보다 정확한 지점.** 리포트는 `ebLower >= threshold` 를 `betaCdf` 비교로
+바꾸라고만 적었는데, 실제 판정은 `rel = ebLower × c >= serveThreshold`(c = 커버리지)라
+**페이지마다 문턱이 `serveThreshold / c`** 다. 구현은 그것을 반영하고 `threshold >= 1.0`
+경계(항을 일부만 덮은 후보)까지 처리했다 — 제안대로 짰으면 커버리지가 조용히 무시됐다.
+수치도 리포트의 23.6배는 `ebLower` **단가**였고 구현 쪽 5.4~17.6배는 `hints()` **전체**다.
+후자가 실제로 얻는 값이므로 **구현 쪽 수치가 맞다.**
+
+**6번을 되돌린 것도 옳다.** `relPath` 는 문서당 최대 한 번 읽히는데 `by lazy` 는
+인스턴스마다 홀더와 락을 만든다. 순서를 뒤집어 재니 lazy 가 오히려 느렸다
+(0.56~0.66 vs 0.42~0.48ms). **리포트 ⑦은 근거 없는 제안이었다.**
+
+## 2. 그쪽이 스스로 찾은 것
+
+- **`Gate` 의 ㄹ 불규칙** — `어떻게 흐르` 만 있어서 실제로 치는 말인 "어떻게 흘러가나"가
+  TRACING 을 놓치고 길이 폴백으로 LOCALIZATION 이 됐다. 경로 의존 질의가 **간선을
+  만드는 쪽으로** 새는 거라 방향이 나쁘다. 위 리포트는 마커 목록을 읽고도 못 봤다.
+- **자기가 방금 넣은 것의 2차 결함** — 질의 거부를 넣었더니 `Controller` 가 거부된
+  질의도 그대로 `onQuery` 했다. 검색이 안 돌았는데 세션이 생기고 `sinceStart` 가
+  클라이언트 오류로 오염되는 상태. "결과 0건과는 다르다"는 구분까지 붙였다.
+- **D20 인과 오류** — ACL 고정비는 전체의 0.18% 라 비를 안 바꾼다. 진짜 원인은 워밍 유무.
+- **와이어 포맷 계약** (`contract/wire-format.json` + `WireFormatTest`) — `Dto.kt` 주석에
+  있던 사실을 실행되는 가드로 옮겼고, 정본을 넣자마자 불일치를 하나 잡았다.
+- **`GrepScaleTest` + `SyntheticVault`** — 성능 측정을 실코퍼스에서 떼어내며 기록된
+  상수가 2배 틀린 것을 찾았다.
+
+## 3. 새로 찾은 결함 둘 — 고쳤음
+
+### A. `docker compose up` 이 기동하지 못했다 【실측 · 고침】
+
+`server/Dockerfile` 이 `USER wikilens`(uid 10001)로 도는데 `/state`·`/index` 를 이미지에
+만들지 않았고, `compose.yml` 은 그 경로에 named volume 을 붙인다. Docker 는 **이미지에
+없는 경로**의 새 볼륨을 `root:root 0755` 로 만든다. 2단계를 그대로 떼어 재현:
+
+```
+uid=10001(wikilens) gid=10001(wikilens)
+drwxr-xr-x 2 root root /index
+drwxr-xr-x 2 root root /state
+touch: cannot touch '/state/.lock': Permission denied
+```
+
+`/state/.lock` 이 `StateDirLock` 의 첫 쓰기다. 거기서 나는 것은 `AccessDeniedException`
+이라 `OverlappingFileLockException` catch 를 안 지나가고, `StateDirLockFailureAnalyzer`
+도 `AlreadyRunning` 만 다루므로 **만들어 둔 진단 대신 생 스택트레이스**가 난다.
+
+**왜 그쪽 검증("재빌드 후 끝까지 재확인 … health = healthy")이 통과했나** — Docker
+Desktop for Mac 은 **bind mount 만 권한을 재매핑**한다. `docker run` + bind mount 로는
+안 걸리고 `docker compose up`(named volume)에서 걸린다. Linux 호스트는 둘 다 걸린다.
+
+**고친 것:** `USER` 앞에 한 줄.
+
+```dockerfile
+RUN mkdir -p /vault /state /index \
+ && chown wikilens:wikilens /vault /state /index
+```
+
+새 named volume 이 이미지 쪽 디렉터리의 소유권을 물려받는다. **실제 `compose up` 으로
+확인**: `/state/.lock` 이 `wikilens wikilens` 소유로 생성, `/api/health` 200,
+`/api/stats` 정상(`byKind` 노출 확인).
+
+계약을 하나 더했다 — `chown` 이 있는지와 그것이 `USER` **앞**인지 둘 다 본다(뒤면
+비루트라 chown 이 못 돈다). 두 방향 모두 되돌려 빨개지는 것을 확인했다.
+
+### B. "삭제된 페이지" 재현이 프로덕션 상태가 아니었다 【실측 · 기록 정정】
+
+`a6df831` 이 `hints()` 의 술어에 존재 조건(`index.metaOf(pid) != null`)을 더하며
+*"위키에서 문서를 지우면 그 간선이 살아있는 것을 밀어낸다"* 를 실측과 함께 적었다.
+
+가드 자체는 옳고, 되돌리면 테스트가 실제로 빨개진다:
+
+```
+A) 존재 가드 제거 → SearchServiceTest > … FAILED
+```
+
+그런데 **그 상태를 만드는 것은 테스트 헬퍼다.** `load` 는 `acl.putPage`(추가 전용)를
+쓰는데 프로덕션의 `VaultReader.read` 는 `acl.replacePages` 를 부르고 그것이 `retainAll`
+로 사라진 페이지를 지운다 — **삭제 방향은 권한 술어가 이미 거른다.** 헬퍼를 프로덕션과
+같게 바꾸고 가드를 뺀 채 돌리면:
+
+```
+B) load 를 replacePages 로 + 가드 제거 → BUILD SUCCESSFUL
+```
+
+원인은 헬퍼의 KDoc 이 낡은 것이었다 — *"프로덕션에서 `VaultReader.read()` 가
+`acl.putPage()` 를 하고"* 라고 적혀 있는데 `replacePages` 도입 때 사실이 아니게 됐고,
+그 문장이 재현을 프로덕션처럼 보이게 만들었다.
+
+**가드는 남겼다** (스냅샷 맵 조회 한 번이라 사실상 공짜이고, 같은 술어를 자리만 바꿔
+세 번 놓친 이력이 있다). 고친 것은 **기록**이다:
+
+- `SearchService` 의 필터 주석 — "고친 버그" 가 아니라 **아직 안 일어난 것을 막는 것**
+- `SearchServiceTest.load` KDoc — 프로덕션과 다르다는 사실과 **왜 일부러 그렇게 두는지**
+- 테스트 이름 — `삭제된 페이지의…` → `갈린 상태에서도 색인에 없는 간선이 슬롯을 먹지 않는다`
+- `DECISIONS.md` D16 말미에 정정
+
+프로덕션에서 두 맵이 갈리는 자리는 `IndexingService.reload()` 의
+`replacePages`(볼트 읽기 안) → `rebuild`(그 뒤) 사이 창 하나뿐이다.
+
+**교훈은 "가드가 있다는 사실은 증거가 아니다" 의 한 단계 안쪽이다.** 되돌려 빨개지는
+것을 확인했고 그것은 옳았지만, 그것이 증명하는 것은 **가드가 배선됐다**는 사실이지
+**그 상태가 일어난다**는 사실이 아니다. 재현 장치가 프로덕션과 다른 API 를 쓰면
+빨간불은 자기 자신을 가리킨다 — 재현을 만들 때 **프로덕션이 부르는 것과 같은 함수를
+부르는지** 먼저 볼 것.
+
+## 4. 이번에 바꾼 파일
+
+```
+server/Dockerfile                        A 수정 + 근거
+contract/shared_contract.sh              계약 1개 추가 (79개)
+server/.../service/SearchService.kt      B 주석 정정
+server/.../service/SearchServiceTest.kt  B 헬퍼 KDoc · 테스트 이름·주석
+DECISIONS.md                             D16 말미에 B 정정
+```
+
+`./check.sh` 통과 — 계약 79 · pytest 170 · MCP 63 · JUnit(4 executed).
+커밋은 하지 않았다.
+
+## 5. 다음 세션에
+
+- 위 리포트 `§6` 의 **4번(실사용 궤적 수집)이 유일하게 남은 큰 항목**이다. 1번(`byKind`)이
+  들어갔으니 이제 해석할 수 있다 — UNKNOWN 비율이 5% 미만이면 게이트는 항등함수다.
+- Docker 는 **Linux 호스트에서 한 번 돌려볼 것.** 이번 확인은 전부 Docker Desktop for
+  Mac 이고, bind mount 권한 재매핑이라는 플랫폼 차이가 실제로 판정을 뒤집었다.
+- `StateDirLockFailureAnalyzer` 가 `AlreadyRunning` 만 다룬다. 상태 디렉터리에 못 쓰는
+  경우(`AccessDeniedException`)도 같은 자리에서 사람 말로 안내할 수 있다 — A 를 고쳐서
+  당장 급하지는 않지만, 마운트를 손으로 주는 배포에서 같은 모양으로 다시 난다.
+
+---
+---
+
+# 후속 2: 군더더기 걷어내기 (주석 압축 + 죽은 코드 제거)
+
+**작성 2026-08-11 · `f592443` 기준 · `./check.sh` 통과(계약 79 · pytest 170 · MCP 63 · JUnit)**
+
+## 왜
+
+Kotlin main 이 **코드 1,839줄에 주석 1,524줄(45%)** 이었다. 이 밀도는 사고가 아니라
+규율의 결과다 — 이 저장소는 주석을 회귀 방지 장치로 쓴다. 그런데 그 규율이 **주석
+하나씩** 적용됐지 저장소 전체로 적용된 적이 없어서 세 가지가 쌓였다: 한 KDoc 안에서의
+되풀이, 세션 시점 서술("방금"·"어제"), 그리고 증명 가능한 죽은 것.
+
+**문서와의 문자 그대로 중복은 5% 뿐이었다** — 부피의 원인은 중복이 아니라 부연이다.
+그래서 "CLAUDE.md 에 있으니 지운다" 는 접근은 애초에 성립하지 않았다.
+
+## 원칙
+
+> **이 문장이 없으면 누군가 이 코드를 되돌리거나 잘못 고칠까?**
+
+**예 → 남긴다**(수치, 되돌림의 결과, 측정 조건, 기각된 대안).
+**아니오 → 지운다**(정황, 되풀이, 코드를 그대로 옮긴 줄).
+그리고 **무시간형으로** 쓴다 — 누가 언제 했는지는 `git log` 가 안다.
+
+## 결과
+
+| | 전 | 후 |
+|---|---|---|
+| Kotlin main 주석 | 1,524줄 (45%) | **1,147줄 (39%)** |
+| Python 주석 | 812줄 (27%) | 787줄 (26%) |
+| 전체 diff | | 35파일 · +690 / −914 |
+
+## 작업 1 — 증명 가능한 제거
+
+| 대상 | 근거 |
+|---|---|
+| `WikiLensProperties` 의 `LuceneIndex.checkAnalyzerMatches` 참조 | **그 함수가 없다**(실제는 `reportAnalyzer`) |
+| `Reliability.wilsonLower` 삭제 | main·test 통틀어 호출처 0 |
+| `VaultText` 신설, `lenientReader` 통합 | 같은 디코더가 **세 벌**이었다 — `ContentService`·`JvmGrepEngine`(동일 본문) + `RipgrepEngine`(스트림판) |
+| `SearchService` 융합 루프의 `acl.canSee(req.userKey, …)` 삭제 | `hints()` 가 이미 **정의상 더 강한 술어**를 적용 — 발동할 수 없는 분기 |
+| `LearnProps.sweepIntervalMillis` 삭제 | `@Scheduled` 가 프로퍼티 문자열로 받아 이 필드는 안 읽힌다 |
+| `models.jsonl_line` 인라인 | `canonical_json` 을 그대로 부르는 별칭, 호출 1곳 |
+| `LuceneIndex.search()` → `internal` | 테스트에서만 호출 |
+| `UserConfig` 의 고아 KDoc | `defaultHome()` 설명이 `homeOverride` 앞에 붙어 KDoc 두 개가 겹쳐 있었다 |
+
+**ACL 검사를 지운 것이 가장 놀라워 보이는 변경**이라, 왜 안전한지를 술어가 사는 자리에
+남겼다 — `canSee(userKey, p)` 는 정의상 `canSee(tokensFor(userKey), p)` 이므로
+`hints()` 의 술어에 포함된다. "옮기거나 지우지 말 것" 도 함께 적었다.
+
+**`layout.py` 의 `SHARD_DEPTH` 는 건드리지 않았다** — `SHARD_DEPTH=1` 이라 루프가 한 번만
+돌지만 계약이 그 문자열을 세 파일에서 함께 검사한다.
+
+## 작업 2 — 주석 압축
+
+밀도순이되 `learn/`·`acl/` 을 먼저 했다(되돌리면 안 되는 것이 가장 많은 곳에서 판정
+기준을 먼저 벼려야 한다). 지운 것을 유형별로:
+
+- **되풀이** — 한 KDoc 이 같은 말을 두세 번. `AclRegistry` 의 시행 스위치 근거가 클래스
+  KDoc·`tokensFor`·`application.yml` 셋에 있었다(→ 클래스 KDoc 한 벌 + 한 줄 참조).
+- **정황** — "그동안은 운영자가 재색인을 부르는 것으로 우연히 가려져 있었다" 류.
+  무엇이 터졌는지는 남기고 그때의 사정은 지웠다.
+- **코드 복창** — `// 맵을 갈아끼운다` 바로 아래 `replacePages(...)` 같은 줄.
+- **세션 시점** — "방금 넣은"·"한때" 를 무시간형으로. 30건 → 0건.
+
+## 지운 수치 감사 — 둘을 되살렸다
+
+주석 816줄을 지웠으므로 **수치가 사라졌는지 기계로 감사**했다(지워진 줄의 측정값이
+새 텍스트에 남아 있는지 대조). 21개가 걸렸고 각각을 원칙으로 판정해 **둘을 복원**했다:
+
+- **`layout.py` 의 나열 컬럼**(0.1ms → 25.3ms) — 요약문에 "직접 열기" 수치만 남겼는데,
+  **"샤딩의 이유는 나열하는 쪽" 이라는 결론을 지탱하는 것은 나열 컬럼**이다. 표를 되살렸다.
+- **기동 전체 재구축의 근거와 비용**(2,377건 6.7초) — "ACL 만 채우지 않고 왜 전체
+  재구축인가" 는 되돌릴 수 있는 설계 결정이다.
+
+나머지 19개는 유지 판정: 파생값(1.3% = 465쌍 중 6쌍), 더 강한 형태로 대체된 것
+(`2,377건 → 24개, 10만 → 1,000개` 대신 `N/100` 공식), 그리고 **저장소가 이미 스스로
+철회한 코퍼스 상수**(`2,383 문서 0.64초`·`10만이면 27초` — `GREP_BUDGET_NANOS` 가
+문서당 비용 모델로 대체했다).
+
+## 딸려온 것
+
+`plugin/local/scripts/vault_status.py` 를 고치자 **계약 하나가 깨졌다** — "설치된
+플러그인이 소스와 같은 내용". 설치는 버전별 캐시로 복사되므로 소스만 고치면 설치본이
+조용히 구버전으로 돈다(조용히 실패 11번). 규율대로 **패치 버전을 올렸다**
+(`wikilens-local` 0.17.0 → 0.17.1, `plugin.json` 과 `marketplace.json` 함께).
+
+## 남긴 것과 그 이유
+
+주석 비율이 여전히 높은 파일들은 **문서가 본체인 파일**이다 — `AnalyzerKind`(65%)는
+분석기 셋의 선택 근거가 곧 내용이고, `WikiLensProperties`(61%)는 설정 필드의 계약이
+곧 내용이다. 원칙이 남기라고 하면 남겼다.
+
+애매하면 남기는 쪽을 택했다. 이 저장소에서 **잘못 지운 주석의 비용이 잘못 남긴 주석의
+비용보다 크다** — 전자는 조용히 되돌려지고 후자는 그냥 길 뿐이다.
