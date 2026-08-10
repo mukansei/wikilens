@@ -39,6 +39,16 @@ class SearchService(
          * 짝이다 — 거기는 응답 크기 때문이고 **여기는 궤적 로그 때문**이다.
          */
         const val MAX_LIMIT = 100
+
+        /**
+         * 질의 길이 상한. `grep` 의 `MAX_PATTERN` 과 같은 자리다 — 거기만 있고 여기
+         * 없던 것이 **같은 판단의 비대칭**이었다.
+         *
+         * 분석된 항이 `Trajectory.keywords` 로 궤적 로그에 들어간다. 로그는 append-only
+         * 이고 유일한 복구 불가 자산이라, 한 요청이 무한정 적어 넣을 수 있으면 안 된다.
+         * 자연어 질의는 이 근처에도 안 온다.
+         */
+        const val MAX_QUERY = 500
     }
 
     fun search(req: SearchRequest): SearchResponse {
@@ -55,6 +65,12 @@ class SearchService(
         // Lucene 자체는 `maxDoc` 으로 죄므로 메모리는 안 터진다(실측: limit 300만이
         // 3,941건 · 636KB · 268ms). 그래서 이 상한은 메모리가 아니라 위 셋을 위한 것이다.
         val limit = req.limit.coerceIn(1, MAX_LIMIT)
+        // 자르지 않고 거부한다 — 자르면 사용자가 친 것과 다른 질의의 답을 주면서
+        // 그 사실을 안 알린다. `grep` 이 패턴에 대해 하는 것과 같다.
+        if (req.query.length > MAX_QUERY) {
+            return SearchResponse(req.query.take(MAX_QUERY), emptyList(), 0, 0, emptyList(),
+                                  error = "질의가 너무 깁니다 (최대 $MAX_QUERY 자)")
+        }
         val tokens = acl.tokensFor(req.userKey)
 
         // **항과 검색을 한 번에 받는다.** 따로 부르면 그 사이 재색인이 끝났을 때

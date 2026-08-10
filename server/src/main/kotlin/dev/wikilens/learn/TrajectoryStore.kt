@@ -12,6 +12,20 @@ class TrajectoryStore(
 ) {
     private val sessions = ConcurrentHashMap<String, Session>()
 
+    companion object {
+        /** `sessionId` 길이 상한. MCP 프록시가 만드는 것은 30자 안쪽이다. */
+        const val MAX_SESSION_ID = 128
+
+        /**
+         * 동시에 살아 있는 세션 수 상한. 유휴 30분 뒤에야 거둬지므로 그 사이의
+         * 요청량만큼 쌓인다 — 인증이 없는 경로라 상한이 필요하다.
+         */
+        const val MAX_SESSIONS = 10_000
+
+        /** 한 질의에서 로그로 흘려보낼 항 수 상한. 자연어 질의는 여기 근처에도 안 온다. */
+        const val MAX_KEYWORDS = 32
+    }
+
     /**
      * 항 단위 포스팅: term -> pageId -> intArrayOf(hits, misses)
      *
@@ -48,6 +62,26 @@ class TrajectoryStore(
 
     /** 시작된 세션 수. `queries / sessions` 가 세션당 질의 수다. */
     private val sessionCount = AtomicInteger()
+
+    /**
+     * 종류별 궤적 수. **게이트가 실제로 무엇을 거르는지 밖에서 볼 방법이 없었다.**
+     *
+     * `LOCALIZATION 만 간선 생성` 은 계약으로 잠긴 항목인데, 마커가 넓고 8토큰 이하는
+     * 전부 LOCALIZATION 이라 실질적으로 거의 모든 한국어 질의가 `cacheable` 로 떨어질
+     * 수 있다. UNKNOWN 이 몇 %인지 모르면 **게이트가 항등함수인지 아닌지도 모른다.**
+     *
+     * `kind` 는 로그에 있으므로 재생되는 누적값이다 — `sinceStart` 에 넣지 않는다.
+     */
+    private val byKind = ConcurrentHashMap<QueryKind, AtomicInteger>()
+
+    /**
+     * 세션 맵이 가득 차 **관측을 버린** 횟수.
+     *
+     * 세션은 30분 유휴 뒤에야 거둬지므로, 매 요청 새 `sessionId` 를 주면 30분치가
+     * 힙에 쌓인다. 인증이 없는 경로라 상한이 필요하지만, 넘쳤을 때 조용하면 학습이
+     * 왜 안 되는지 알 수 없다.
+     */
+    private val droppedSessions = AtomicInteger()
 
     /** 질의를 2회 이상 받은 세션 수. 비율이 곧 "재검색이 얼마나 흔한가"다. */
     private val multiQuerySessions = AtomicInteger()
@@ -104,6 +138,19 @@ class TrajectoryStore(
      * `SessionRaceTest` 가 그 측정 장치다.
      */
     fun onQuery(sessionId: String, query: String, keywords: List<String>, scope: String = "") {
+        // **로그에 들어가는 것에는 상한이 있어야 한다.** `sessionId` 는 클라이언트가 주는
+        // 임의 문자열이고 맵 키이자 `Trajectory.session` 이다. 자르지 않고 버린다 —
+        // 자르면 서로 다른 두 세션이 같은 키로 합쳐져 궤적이 섞인다.
+        if (sessionId.length > MAX_SESSION_ID) {
+            droppedSessions.incrementAndGet()
+            return
+        }
+        // 맵이 가득 차면 **새 세션만** 거절한다. 이미 있는 세션은 계속 관측된다.
+        val existing = sessions[sessionId]
+        if (existing == null && sessions.size >= MAX_SESSIONS) {
+            droppedSessions.incrementAndGet()
+            return
+        }
         val s = sessions.computeIfAbsent(sessionId) { sessionCount.incrementAndGet(); Session(it) }
         queryCount.incrementAndGet()
         synchronized(s) {
@@ -117,7 +164,9 @@ class TrajectoryStore(
                 val reformulated = overlap(prev.keywords, keywords) >= reformulationOverlap
                 finalize(sessionId, prev, success = !reformulated, scope = s.scope)
             }
-            s.spans.add(QuerySpan(normalize(keywords), Gate.classify(query)))
+            // 항 수도 로그로 흘러간다(`Trajectory.keywords`). 자연어 질의는 이 근처에도
+            // 안 오므로 자르는 편이 안전하다 — 여기서는 버리면 그 질의를 통째로 못 배운다.
+            s.spans.add(QuerySpan(normalize(keywords.take(MAX_KEYWORDS)), Gate.classify(query)))
             s.lastTouch = System.currentTimeMillis()
         }
     }
@@ -201,6 +250,7 @@ class TrajectoryStore(
 
     private fun apply(t: Trajectory) {
         trajCount.incrementAndGet()
+        byKind.computeIfAbsent(t.kind) { AtomicInteger() }.incrementAndGet()
         if (t.scope.isNotEmpty()) scopesSeen.add(t.scope)
         // 셋으로 나눈다. 읽은 게 없는데 힌트만 서빙된 것은 **실패가 아니라 미판정**이다
         // (good abandonment). 실패로 세면 `sessionFailureRate` 가 부풀고, 그러면
@@ -329,6 +379,9 @@ class TrajectoryStore(
         val h = trajHits.get(); val m = trajMisses.get(); val n = h + m
         return linkedMapOf(
             "terms" to postings.size,
+            // 게이트가 실제로 무엇을 거르는지. UNKNOWN 이 아주 낮으면 게이트는 사실상
+            // 항등함수이고, 그러면 `LOCALIZATION 만 간선 생성` 이 아무 일도 안 하는 것이다.
+            "byKind" to QueryKind.entries.associate { it.name to (byKind[it]?.get() ?: 0) },
             "termPagePairs" to postings.values.sumOf { it.size },
             "ambiguousTerms" to postings.values.count { it.size > 1 },
             // 궤적(세션) 단위 성공률. 사람이 원하는 것을 찾았는가.
@@ -345,6 +398,8 @@ class TrajectoryStore(
             // 클릭 없는 종료를 실패로 세면 안 된다는 것이 IR 의 확립된 지적이다.
             "sessionFailureRate" to if (n > 0) m.toDouble() / n else null,
             "abandonedWithHints" to abandonedCount.get(),
+            // 0 이 아니면 세션 상한이나 sessionId 길이 상한에 걸려 **관측을 버리는 중**이다.
+            "droppedSessions" to droppedSessions.get(),
             "trajectories" to trajCount.get(),
             // 1 이면 학습이 균질하다. 2 이상이면 권한 폭이 다른 관측이 섞이는 중이다.
             "permissionScopes" to scopesSeen.size,

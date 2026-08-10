@@ -69,6 +69,10 @@ class LearnLayerTest {
         // 겪은 버그: 위치 명사만 있고 조회 동사가 없어 UNKNOWN으로 누락
         assertEquals(QueryKind.LOCALIZATION, Gate.classify("로그인 붙이는 법 알려줘"))
         assertEquals(QueryKind.TRACING, Gate.classify("토큰이 어떻게 흐르나"))
+        // `흐르다` 는 ㄹ 불규칙이다. 어간형만 마커에 두면 사람이 실제로 치는 활용형을
+        // 놓치고, 놓치면 8토큰 폴백으로 **LOCALIZATION** 이 된다 — 경로 의존 질의가
+        // 간선을 만드는 쪽이라 방향이 나쁘다(실측으로 발견).
+        assertEquals(QueryKind.TRACING, Gate.classify("배포가 어떻게 흘러가나"))
         assertEquals(QueryKind.RATIONALE, Gate.classify("왜 이 정책이지"))
     }
 

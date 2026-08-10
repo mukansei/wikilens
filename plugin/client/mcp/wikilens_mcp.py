@@ -206,6 +206,22 @@ def status() -> int:
             print("  운영자가 POST /api/admin/acl/user 로 계정을 등록해야 합니다.")
             ok = False
 
+        # 게이트가 실제로 무엇을 거르는지. UNKNOWN 이 거의 0 이면 `LOCALIZATION 만
+        # 간선 생성` 이 사실상 항등함수라는 뜻이고, 그건 밖에서 볼 방법이 없었다.
+        kinds = s.get("byKind") or {}
+        total_kinds = sum(kinds.values())
+        if total_kinds:
+            shown = " ".join(f"{k}={v}" for k, v in kinds.items() if v)
+            print(f"QUERY_KINDS={shown}")
+
+        # 0 이 아니면 세션 상한이나 sessionId 길이 상한에 걸려 관측을 버리는 중이다.
+        if s.get("droppedSessions"):
+            print(f"DROPPED_SESSIONS={s['droppedSessions']}")
+            print("\n세션 관측을 버리고 있습니다 — 검색은 정상이지만 **그만큼 학습이"
+                  " 안 됩니다.** 클라이언트가 요청마다 새 sessionId 를 만들고 있거나"
+                  " 비정상적으로 긴 값을 보내는지 확인하세요.")
+            ok = False
+
         # 궤적 로그 쓰기가 실패해도 메모리 학습은 계속된다. 그래서 이 값이 0 이 아니면
         # **메모리와 로그가 갈라지는 중**이고, 재기동하면 그만큼이 사라진다.
         # 궤적은 유일한 복구 불가 자산이라 서버 로그의 WARN 만으로는 부족하다.

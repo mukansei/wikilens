@@ -148,7 +148,7 @@ class ContentService(
         val vaultRoot = locator.root
         val visible = index.allMeta()
             .filter { acl.canSee(tokens, it.id) }
-            .map { PageRef(it.id, it.title, VaultLayout.relPagePath(it.id)) }
+            .map { PageRef(it.id, it.title) }
 
         val q = GrepQuery(vaultRoot, visible, pattern, regex, cap, budgetNanos)
         var used = engine

@@ -1,6 +1,7 @@
 package dev.wikilens.service
 
 import dev.wikilens.api.GrepMatch
+import dev.wikilens.vault.VaultLayout
 import java.nio.file.Path
 
 /**
@@ -25,8 +26,17 @@ interface GrepEngine {
     fun search(q: GrepQuery): GrepOutcome
 }
 
-/** 스캔 대상 한 건. 엔진이 ACL 을 다시 보지 않도록 **이미 걸러진** 것만 담긴다. */
-data class PageRef(val id: String, val title: String, val relPath: String)
+/**
+ * 스캔 대상 한 건. 엔진이 ACL 을 다시 보지 않도록 **이미 걸러진** 것만 담긴다.
+ *
+ * [relPath] 는 **쓸 때 만든다.** rg 경로는 디렉터리를 통째로 넘기고 결과를 거르므로
+ * 이 값을 한 번도 안 쓴다 — 미리 만들면 요청마다 문서 수만큼(이 코퍼스면 13,921회)
+ * 문자열을 조립하고 버린다. `data class` 의 동등성에는 안 들어가는데, 어차피 id 가
+ * 식별자라 그게 맞다.
+ */
+data class PageRef(val id: String, val title: String) {
+    val relPath: String by lazy { VaultLayout.relPagePath(id) }
+}
 
 data class GrepQuery(
     val vaultRoot: Path,
