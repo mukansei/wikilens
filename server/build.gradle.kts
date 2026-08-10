@@ -67,3 +67,21 @@ tasks.withType<Test> {
 tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
     jvmArgs(nativeAccess)
 }
+
+/**
+ * 산출물을 **하나로** 만든다.
+ *
+ * Spring Boot 플러그인은 기본으로 둘을 낸다 — 실행 가능한 fat jar 와 클래스만 든
+ * `-plain.jar`. 후자는 아무도 안 쓰는데, `build/libs/*.jar` 로 집는 배포 스크립트를
+ * **조용히 애매하게** 만든다. `Dockerfile` 의 `COPY` 가 정확히 그 형태다.
+ *
+ * 이 한 줄이 그것을 보장하고, Dockerfile 의 글롭은 그 위에 서 있다. 확인은 이미지
+ * 빌드로 했다 — 컨테이너 안 `build/libs` 에 파일이 하나다.
+ *
+ * **jar 이름은 고정하지 못했다.** `archiveFileName` 도 `archiveBaseName`+
+ * `archiveVersion` 도 이 조합(Gradle 9.6.1 · Boot 3.5.16)에서 `bootJar` 에 안 먹었다 —
+ * 둘 다 깨끗한 컨테이너 빌드로 확인했고 산출물은 계속 `server-<버전>.jar` 다.
+ * 원인을 못 찾았고, 글롭이 하나만 맞으면 문제가 없어 더 파지 않았다. 이름이 필요해지면
+ * 여기서부터 다시 볼 것.
+ */
+tasks.named<Jar>("jar") { enabled = false }
