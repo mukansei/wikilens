@@ -486,7 +486,10 @@ def call_tool(name: str, args: dict) -> tuple[str, bool]:
 
         if name == "grep":
             r = post("/api/grep", {
-                "pattern": args.get("pattern", ""), "userKey": USER, "sessionId": SESSION,
+                # sessionId 를 안 보낸다 — grep 은 궤적 관측 대상이 아니다(서버의
+                # `Controller.grep` 에 이유가 있다). 보내면 서버가 버리는데, 보내는
+                # 쪽만 보면 "기록되고 있다" 로 읽힌다.
+                "pattern": args.get("pattern", ""), "userKey": USER,
                 "limit": int(args.get("limit", 40)), "regex": bool(args.get("regex", False)),
             })
             # 패턴 자체가 거부된 경우. 이유를 안 보여주면 "쓸 수 없는 문법" 과

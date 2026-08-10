@@ -71,6 +71,19 @@ class Controller(
         return r
     }
 
+    /**
+     * 원문 스캔. **궤적 관측 대상이 아니다** — `search`·`read` 와 달리 `store` 를
+     * 부르지 않는다.
+     *
+     * 학습 포스팅의 키가 **분석된 항**(Nori 토큰)인데 grep 패턴은 정규식이거나 토큰
+     * 경계와 무관한 부분문자열이다(`cow` 로 `acme` 를 찾는 것이 grep 의 존재 이유다).
+     * 같은 포스팅에 넣으면 키가 오염돼 어휘 질의의 학습까지 흐려진다. `tree` 를 뺀 것과
+     * 같은 이유다 — 그쪽은 분류 신호라서, 이쪽은 어휘 단위가 달라서.
+     *
+     * **그래서 grep 으로 찾아 읽은 것은 학습에 안 들어간다.** `onRead` 는 열린 스팬이
+     * 없으면 버리므로(질의 없는 읽기는 궤적이 아니다) 조용히 사라진다 — 의도한 손실이다.
+     * 되돌리려면 항 단위 포스팅과 어떻게 섞을지부터 정해야 한다.
+     */
     @PostMapping("/grep")
     fun grep(@RequestBody req: GrepRequest): GrepResponse =
         content.grep(req.pattern, req.userKey, req.limit, req.regex)
