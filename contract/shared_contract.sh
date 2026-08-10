@@ -590,6 +590,14 @@ check "성능 측정이 합성 볼트로 재현됨 (실코퍼스 없이도 돈�
    && grep -q "SyntheticVault" server/src/test/kotlin/dev/wikilens/service/GrepScaleTest.kt \
    && ! grep -q "System.getProperty(\"user.home\")" server/src/test/kotlin/dev/wikilens/service/RipgrepBudgetTest.kt'
 
+# `canSee` 는 조건이 둘인데(등록됐나 + 토큰이 겹치나) 진단이 첫째만 보고 있었다.
+# 둘째는 `wikilens acl` 을 처음 돌리면 **반드시** 걸린다 — 페이지 토큰이 @public 에서
+# @space:<KEY> 로 바뀌면서 기존 등록이 전부 안 맞게 된다. 등록·색인은 멀쩡하다.
+check "토큰이 안 겹치는 상태가 stats 와 --status 에 드러남" \
+  'grep -q "fun tokenOverlap" server/src/main/kotlin/dev/wikilens/acl/AclRegistry.kt \
+   && grep -q "\"aclTokenOverlap\" to acl.tokenOverlap()" server/src/main/kotlin/dev/wikilens/api/Controller.kt \
+   && grep -q "aclTokenOverlap" plugin/client/mcp/wikilens_mcp.py'
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."

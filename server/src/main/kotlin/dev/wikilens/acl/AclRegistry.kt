@@ -73,7 +73,34 @@ class AclRegistry(
         if (pages.isEmpty()) return
         pages.forEach { (id, tokens) -> putPage(id, tokens) }
         byPage.keys.retainAll(pages.keys)
+        // **[allTokens] 도 함께 갈아끼운다.** 늘기만 하면 사라진 스페이스의 토큰이 남아
+        // 둘이 낙관적으로 틀린다 — 시행을 껐을 때의 "모두가 가진 것", 그리고 아래
+        // [tokenOverlap] 진단.
+        allTokens.retainAll(pages.values.flatten().toSet())
     }
+
+    /**
+     * 등록된 사용자 토큰과 페이지 토큰이 **몇 개나 겹치는가.** 0 이면 등록이 있어도
+     * 전원이 빈손이다.
+     *
+     * **`canSee` 는 조건이 둘인데(`등록됐나` + `토큰이 겹치나`) 진단은 첫째만 보고
+     * 있었다.** 그리고 둘째는 가설이 아니라 `wikilens acl` 을 처음 돌리면 **반드시
+     * 걸리는** 경로다 — 그전에는 `mirror/acl/` 이 없어 전 페이지가 `@public` 폴백이라
+     * `["@public"]` 로 등록한 사람이 다 보이는데, 수집 후에는 페이지 토큰이
+     * `@space:<KEY>` 로 바뀌어 **전원이 0건**이 된다. 등록도 색인도 멀쩡하고
+     * `ACL_USERS` 도 초록이라 아무도 이유를 모른다.
+     *
+     * 권한 수집은 **옳은 조치**인데 그것이 전원 블랙아웃으로 나타나는 것이 문제다.
+     * 서버는 양쪽 토큰을 이미 알고 있으므로 말해줄 수 있다.
+     */
+    fun tokenOverlap(): Int = userTokens().count { it in allTokens }
+
+    /** 등록된 사용자들이 가진 토큰. 자기 `userKey` 는 뺀다 — 페이지 토큰이 될 수 없다. */
+    fun userTokens(): Set<String> =
+        byUser.entries.flatMapTo(HashSet()) { (u, ts) -> ts.filterNot { it == u } }
+
+    /** 지금 페이지들이 실제로 요구하는 토큰. 진단 메시지에 실어 양쪽을 보여준다. */
+    fun pageTokens(): Set<String> = allTokens.toSet()
     fun putUser(userKey: String, tokens: Collection<String>) {
         byUser[userKey] = tokens.toSet() + userKey
         // **바로 저장한다.** 등록은 드물고(운영자가 손으로 부른다) 잃으면 전원이 빈손이

@@ -124,6 +124,12 @@ class Controller(
             // **꺼져 있으면 등록 없이 전원이 전 문서를 본다.** 겉으로는 정상이라
             // 밖에서 볼 수 없으면 아무도 모른다.
             "aclEnforced" to acl.isEnforced(),
+            // **등록 여부만으로는 부족하다.** 토큰이 안 겹치면 등록이 있어도 전원이
+            // 빈손인데, 그 상태가 "문서가 없다" 와 구별되지 않는다. 양쪽 토큰을 함께
+            // 실어 무엇과 무엇이 안 맞는지 바로 보이게 한다(길면 자른다).
+            "aclTokenOverlap" to acl.tokenOverlap(),
+            "aclUserTokens" to acl.userTokens().sorted().take(TOKEN_SAMPLE),
+            "aclPageTokens" to acl.pageTokens().sorted().take(TOKEN_SAMPLE),
             // 서버는 알고 있는데 밖으로 안 내보내던 값이다. 둘이 **다를 때만** 진단
             // 가치가 있다 — 재색인이 안 된 상태라는 뜻이고, 실질적으로는 볼트를 못 읽어
             // 기동 적재가 건너뛰어진 경우다. 그전에는 기동 로그를 뒤져야만 알 수 있었다.
@@ -137,6 +143,11 @@ class Controller(
             // 조용히 늘어나는 자리이고, 그 둘이 압축을 설계할 시점을 알려준다.
             "trajectoryLog" to log.status(),
         )
+
+    companion object {
+        /** 진단에 실을 토큰 표본 수. 전부 실으면 스페이스가 많은 배포에서 응답이 커진다. */
+        private const val TOKEN_SAMPLE = 20
+    }
 
     @GetMapping("/health")
     fun health() = mapOf("ok" to true)
