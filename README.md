@@ -30,13 +30,62 @@ Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** "�
 **서버판**. 지금 배포한다면 로컬판입니다(서버판은 신원이 자기주장입니다 →
 [미해결](#미해결)).
 
+### 로컬판 실행 (각자, 5분)
+
 ```
-로컬판 (5분, 각자)                          서버판 (관리자 + 사용자)
-/plugin marketplace add ./                  wikilens sync --root ~/wiki
-/plugin install wikilens-local@wikilens     wikilens acl --root ~/wiki
-/wikilens-local:setup                       WIKILENS_ADMIN_TOKEN=… docker compose up -d --build
-                                            → 사용자 등록(POST /api/admin/acl/user)
-준비물: Confluence 주소 + 개인 토큰          사용자는 /plugin install wikilens-client@wikilens
+/plugin marketplace add ./
+/plugin install wikilens-local@wikilens
+/wikilens-local:setup          # 자격증명·볼트·CLI·첫 싱크까지 한 번에
+```
+
+준비물은 **Confluence 주소와 개인 토큰(PAT)** 둘뿐입니다. 이미 볼트가 있으면 옮기지
+말고 그 경로를 등록하면 됩니다.
+
+### 서버판 실행 (관리자)
+
+**사용자는 Confluence 자격증명이 필요 없습니다.** 서비스 계정 하나로 한 번 싱크합니다.
+
+```bash
+export CONFLUENCE_URL=https://회사.atlassian.net CONFLUENCE_TOKEN=<서비스계정 PAT>
+export WIKILENS_ADMIN_TOKEN=<임의의 긴 ASCII 문자열>
+
+# 1. 볼트 만들기 — 호스트에서 합니다. 컨테이너는 싱크하지 않습니다.
+wikilens sync --space PLATFORM --root ~/wiki
+wikilens acl                   --root ~/wiki      # 권한 수집 (주기가 다릅니다)
+
+# 2. 서버 기동
+WIKILENS_VAULT=~/wiki docker compose up -d --build
+
+# 3. 사용자 등록 — 어떤 토큰을 줄지는 `wikilens acl` 출력의 토큰 목록이 알려줍니다
+curl -XPOST -H "X-WikiLens-Admin: $WIKILENS_ADMIN_TOKEN" \
+  'localhost:8787/api/admin/acl/user?userKey=alice@corp' \
+  -H 'Content-Type: application/json' -d '["@space:PLATFORM"]'
+
+# 4. 확인 — 여기서 초록이 아니면 사용자는 "문서가 없다" 로 봅니다
+WIKILENS_SERVER=http://localhost:8787 WIKILENS_USER=alice@corp \
+  python3 plugin/client/mcp/wikilens_mcp.py --status
+```
+
+사용자는 플러그인만 설치합니다 — `/plugin install wikilens-client@wikilens` 후
+`/wikilens-client:setup` 에 **서버 주소와 본인 식별자** 둘.
+
+**4번이 중요한 이유** — 이 시스템의 실패는 대부분 **에러가 아니라 0건**으로 나타나고,
+0건은 "문서가 없다" 와 구별되지 않습니다:
+
+| 빠뜨리면 | 증상 | `--status` 가 하는 말 |
+|---|---|---|
+| `wikilens acl` | 전 페이지가 `@public` — **과다 노출** | — |
+| 사용자 등록 | 모든 검색 0건 | `ACL_USERS=0` |
+| 등록 토큰이 페이지 토큰과 다름 | 모든 검색 0건 | `ACL_TOKEN_OVERLAP=0` |
+| `WIKILENS_ADMIN_TOKEN` | `/api/admin` 전부 404 | 기동 로그 WARN |
+| 싱크 후 재색인 | 바뀐 권한·문서가 반영 안 됨 | `ANALYZER` 불일치 등 |
+
+**자동화는 cron 한 줄입니다.** `&&` 가 필수입니다 — 실패했는데 재색인하면 반쪽
+상태가 반영됩니다:
+
+```bash
+wikilens sync --root ~/wiki && wikilens acl --root ~/wiki \
+  && curl -XPOST -H "X-WikiLens-Admin: $TOKEN" localhost:8787/api/admin/reindex
 ```
 
 **먼저 확인할 것 하나** — 첫 싱크가 끝나면 `wikilens stats` 가 *"제목과 어휘가 안 겹치는
