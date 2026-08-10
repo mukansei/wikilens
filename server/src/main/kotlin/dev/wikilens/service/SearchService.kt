@@ -90,10 +90,22 @@ class SearchService(
         val top = lexical.firstOrNull()?.score?.toDouble()?.takeIf { it > 0.0 } ?: 1.0
         val priors = lexical.associate { it.id to (it.score / top).coerceIn(0.0, 1.0) }
 
-        // **권한 필터를 학습 레이어 안으로 넣어 넘긴다.** 여기서 `take` 뒤에 거르면
-        // 권한이 좁은 사용자는 상위 후보가 전부 안 보일 때 힌트가 통째로 0이 된다.
-        // 토큰은 위에서 이미 구했다 — 페이지마다 다시 조회하지 않는다.
-        val hints = store.hints(terms, priors, limit) { pid -> acl.canSee(tokens, pid) }
+        // **서빙 못 할 후보는 자르기 전에 전부 걸러 넘긴다.** `take` 뒤에 거르면 버려질
+        // 후보가 limit 슬롯을 먹어, 서빙 가능한 힌트가 아래에 있어도 안 나온다.
+        //
+        // 조건이 둘이다:
+        //
+        //   - **권한.** 권한이 좁은 사용자는 상위 후보가 전부 안 보일 때 힌트가 통째로 0.
+        //   - **존재.** 포스팅은 **한 번도 지워지지 않는다**(궤적 로그가 정본이고
+        //     append-only 다). 위키에서 삭제된 페이지의 간선이 그대로 남아 살아있는
+        //     간선을 밀어낸다 — 실측: 학습 페이지 넷 중 둘을 지우자 남은 둘 중 **하나만**
+        //     나왔다(지워진 둘이 슬롯을 먹고 아래에서 폐기됐다).
+        //
+        // 토큰은 위에서 이미 구했다 — 페이지마다 다시 조회하지 않는다. `metaOf` 는
+        // 스냅샷 맵 조회라 후보마다 불러도 싸다.
+        val hints = store.hints(terms, priors, limit) { pid ->
+            acl.canSee(tokens, pid) && index.metaOf(pid) != null
+        }
 
         data class Acc(var score: Double, var source: String, var rel: Double?)
         val acc = LinkedHashMap<String, Acc>()
