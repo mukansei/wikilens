@@ -45,13 +45,20 @@ Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** "�
 
 **사용자는 Confluence 자격증명이 필요 없습니다.** 서비스 계정 하나로 한 번 싱크합니다.
 
+**전제 둘:** 아래 명령은 **저장소 루트**에서 돕니다(`compose.yml` 과 프록시 경로가
+상대경로입니다). 그리고 CLI 는 `~/.wikilens/venv` 에 깔려 **PATH 에 없습니다** —
+아래처럼 절대경로로 부르거나 `WL=~/.wikilens/venv/bin/wikilens` 로 별칭을 잡으세요.
+
 ```bash
+cd <저장소 루트>
+WL=~/.wikilens/venv/bin/wikilens        # 없으면: python3 -m venv ~/.wikilens/venv &&
+                                        #         ~/.wikilens/venv/bin/pip install ./cli
 export CONFLUENCE_URL=https://회사.atlassian.net CONFLUENCE_TOKEN=<서비스계정 PAT>
 export WIKILENS_ADMIN_TOKEN=<임의의 긴 ASCII 문자열>
 
 # 1. 볼트 만들기 — 호스트에서 합니다. 컨테이너는 싱크하지 않습니다.
-wikilens sync --space PLATFORM --root ~/wiki
-wikilens acl                   --root ~/wiki      # 권한 수집 (주기가 다릅니다)
+$WL sync --space PLATFORM --root ~/wiki
+$WL acl                   --root ~/wiki      # 권한 수집 (주기가 다릅니다)
 
 # 2. 서버 기동
 WIKILENS_VAULT=~/wiki docker compose up -d --build
@@ -84,9 +91,13 @@ WIKILENS_SERVER=http://localhost:8787 WIKILENS_USER=alice@corp \
 상태가 반영됩니다:
 
 ```bash
-wikilens sync --root ~/wiki && wikilens acl --root ~/wiki \
+WL=~/.wikilens/venv/bin/wikilens
+$WL sync --root ~/wiki && $WL acl --root ~/wiki \
   && curl -XPOST -H "X-WikiLens-Admin: $TOKEN" localhost:8787/api/admin/reindex
 ```
+
+cron 에서는 **절대경로가 특히 중요합니다** — cron 의 PATH 는 대개 `/usr/bin:/bin`
+입니다. 자격증명도 `export` 가 아니라 `~/.wikilens/env.sh`(600)에서 읽습니다.
 
 **먼저 확인할 것 하나** — 첫 싱크가 끝나면 `wikilens stats` 가 *"제목과 어휘가 안 겹치는
 별칭을 가진 페이지"* 비율을 냅니다. **그 값이 낮으면 어휘 격차가 없다는 뜻이고, 이 도구는
