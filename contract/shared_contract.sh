@@ -291,13 +291,20 @@ sys.exit(1 if missing else 0)
 " server/src/main/kotlin/dev/wikilens/config/WikiLensProperties.kt server/src/main/kotlin/dev/wikilens/config/LearnProps.kt server/src/main/resources/application.yml\'
 
 
-# 자격증명 파일 경로가 두 곳에 하드코딩돼 있다 — CLI(`credentials.py`)와 진단
-# (`vault_status.py`). 갈리면 CLI 는 읽는데 진단은 "없다"고 하거나 그 반대가 된다.
-# 래퍼(`wikilens_cli.sh`)도 같은 파일을 source 하므로 셋이 같아야 한다.
-check "자격증명 파일 경로가 세 곳에서 같음 (~/.wikilens/env.sh)" \
+# 자격증명 파일 경로를 아는 곳은 **파이썬 둘뿐**이어야 한다 — CLI(`credentials.py`)와
+# 진단(`vault_status.py`). 갈리면 CLI 는 읽는데 진단은 "없다" 고 한다.
+#
+# **래퍼는 조립하지 않고 물어본다.** 예전에는 `$HOME/.wikilens/env.sh` 를 직접 만들었는데,
+# 셸의 `$HOME` 과 파이썬의 `Path.home()` 은 같은 자리가 아닐 수 있다 — Windows 에서
+# 파이썬은 `USERPROFILE` 을 보고 Git Bash 의 `HOME` 은 홈 드라이브로 잡혀 있을 수 있다.
+# 갈리면 래퍼가 소싱한 파일과 CLI 가 읽는 파일이 달라 **자격증명이 있는데 없다고 죽는다**
+# (macOS JDK 의 `user.home` vs `HOME` 과 같은 실패 — 조용히 실패 20번).
+check "자격증명 경로 해석처가 파이썬 둘뿐 (래퍼는 조립하지 않고 물어본다)" \
   'grep -q "Path.home() / \".wikilens\" / \"env.sh\"" cli/wikilens/credentials.py \
    && grep -q "^ENV_PATH = CONFIG_DIR / \"env.sh\"" plugin/local/scripts/vault_status.py \
-   && grep -q "HOME/.wikilens/env.sh" plugin/local/scripts/wikilens_cli.sh'
+   && grep -q "\-\-env-path" plugin/local/scripts/vault_status.py \
+   && grep -q "vault_status.py\" --env-path" plugin/local/scripts/wikilens_cli.sh \
+   && ! grep -q "HOME/.wikilens/env.sh" plugin/local/scripts/wikilens_cli.sh'
 
 # `~/.wikilens/config.json` 의 볼트 키를 이제 **세 언어가** 읽는다 — Python 진단·설정
 # (`vault_status.py`), Python setup(`setup_vault.py`), Kotlin 서버(`UserConfig.kt`).
@@ -604,6 +611,18 @@ check "토큰이 안 겹치는 상태가 stats 와 --status 에 드러남" \
 check "MCP 인터프리터가 이름 고정이 아니고 기본값을 가짐 (Windows)" \
   'grep -q "WIKILENS_PYTHON:-python3" plugin/client/.mcp.json \
    && ! grep -qE "\"command\": \"python3?\"" plugin/client/.mcp.json'
+
+# Git for Windows 의 기본값이 `core.autocrlf=true` 라, `.gitattributes` 가 없으면
+# Windows 에서 clone 할 때 `.sh` 가 CRLF 로 나온다. bash 는 첫 줄부터
+# `$'\r': command not found` 로 죽고, 증상이 문법 오류처럼 보여 원인을 찾기 어렵다.
+check "셸 스크립트가 CRLF 로 체크아웃되지 않음 (.gitattributes)" \
+  '[ -f .gitattributes ] && grep -q "^\*\.sh text eol=lf" .gitattributes'
+
+# 파이썬 이름은 플랫폼마다 다르다(python3 · python · py). 래퍼가 하나를 박으면
+# Windows 에서 볼트를 만드는 모든 경로가 통째로 안 돈다.
+check "래퍼가 파이썬 이름을 고정하지 않음 (Windows)" \
+  'grep -q "for _c in \"\${WIKILENS_PYTHON:-}\" python3 python" plugin/local/scripts/wikilens_cli.sh \
+   && ! grep -qE "^[^#]*python3 \"\$" plugin/local/scripts/wikilens_cli.sh'
 
 echo
 if [ "$fail" -eq 0 ]; then

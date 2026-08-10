@@ -1,0 +1,14 @@
+# **셸 스크립트는 반드시 LF 다.**
+#
+# Git for Windows 의 기본값이 `core.autocrlf=true` 라, 이 설정이 없으면 Windows 에서
+# clone 할 때 `.sh` 가 CRLF 로 체크아웃된다. 그러면 bash 가 첫 줄부터
+# `$'\r': command not found` 로 죽는다 — 래퍼(`wikilens_cli.sh`)와 검증(`check.sh`,
+# `contract/shared_contract.sh`)이 통째로 안 돈다. 증상이 문법 오류처럼 보여서
+# 원인을 찾기도 어렵다.
+*.sh text eol=lf
+gradlew text eol=lf
+
+# 골든 픽스처는 **바이트 동일**이 계약이다(빌드 멱등성·교차 언어 대조). 줄바꿈이
+# 플랫폼마다 바뀌면 Python 이 만든 것과 Kotlin 이 읽는 것이 갈린다.
+contract/shared-fixture/** -text
+*.jsonl -text

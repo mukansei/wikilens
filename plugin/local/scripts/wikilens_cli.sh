@@ -15,7 +15,27 @@
 # 계속 하게 되므로 그쪽 경로도 같은 파일 하나로 덮인다.
 set -euo pipefail
 
-ENV_FILE="${WIKILENS_ENV:-$HOME/.wikilens/env.sh}"
+_here="$(dirname "$0")"
+
+# 파이썬 이름은 플랫폼마다 다르다 — macOS·리눅스는 `python3`, Windows 는 대개
+# `python` 이고 `py` 런처만 있는 경우도 있다. Git Bash 에서도 `python3` 는 대개 없다.
+# 하나를 박으면 Windows 에서 이 래퍼가 통째로 안 돈다.
+PY=""
+for _c in "${WIKILENS_PYTHON:-}" python3 python; do
+  [ -n "$_c" ] && command -v "$_c" >/dev/null 2>&1 && { PY="$_c"; break; }
+done
+if [ -z "$PY" ] && command -v py >/dev/null 2>&1; then PY="py -3"; fi
+if [ -z "$PY" ]; then
+  echo "파이썬을 찾을 수 없습니다 (python3 · python · py 를 찾아봤습니다)." >&2
+  echo "  파이썬을 설치했다면 WIKILENS_PYTHON 에 그 이름을 지정하세요." >&2
+  exit 127
+fi
+
+# **자격증명 파일 경로를 여기서 조립하지 않는다.** 셸의 `$HOME` 과 파이썬의
+# `Path.home()` 이 같은 자리가 아닐 수 있다(Windows 에서 파이썬은 `USERPROFILE` 을
+# 보는데 Git Bash 의 `HOME` 은 다를 수 있다). 갈리면 래퍼가 소싱한 파일과 CLI 가 읽는
+# 파일이 달라져 **자격증명이 있는데 없다고 죽는다.** 해석처는 `vault_status.py` 하나다.
+ENV_FILE="${WIKILENS_ENV:-$($PY "$_here/vault_status.py" --env-path 2>/dev/null)}"
 if [ -f "$ENV_FILE" ]; then
   # 이미 export 된 값이 있으면 그쪽이 이긴다 — 일회성 재정의(토큰 교체 등)를 파일이
   # 덮으면 낡은 자격증명으로 조용히 인증한다.
@@ -40,7 +60,7 @@ fi
 CLI=()
 while IFS= read -r part; do
   [ -n "$part" ] && CLI+=("$part")
-done < <(python3 "$(dirname "$0")/vault_status.py" --cli 2>/dev/null)
+done < <($PY "$_here/vault_status.py" --cli 2>/dev/null)
 
 if [ ${#CLI[@]} -eq 0 ]; then
   echo "wikilens CLI 를 찾을 수 없습니다. /wikilens-local:setup 을 실행하세요." >&2
@@ -61,7 +81,7 @@ for _a in "$@"; do
   case "$_a" in --root|--root=*) _has_root=1; break ;; esac
 done
 if [ "$_has_root" -eq 0 ]; then
-  _vault="$(python3 "$(dirname "$0")/vault_status.py" --vault-path 2>/dev/null || true)"
+  _vault="$($PY "$_here/vault_status.py" --vault-path 2>/dev/null || true)"
   [ -n "$_vault" ] && set -- --root "$_vault" "$@"
 fi
 
