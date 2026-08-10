@@ -128,6 +128,18 @@ class FakeConfluence(BaseHTTPRequestHandler):
                 }
             self._json(body); return
 
+        if "/restriction/byOperation/read" in path:
+            # `wikilens acl` 이 쓰는 **낱개** 조회. 페이지네이션을 안 거치므로
+            # 429 백오프가 `_paged` 안에만 있으면 이 경로는 보호를 못 받는다.
+            if type(self).rate_limit_once and not type(self)._limited:
+                type(self)._limited = True
+                self.send_response(429)
+                self.send_header("Retry-After", "0")
+                self.end_headers(); return
+            self._json({"restrictions": {"user": {"results": []},
+                                         "group": {"results": []}}})
+            return
+
         self.send_response(404); self.end_headers()
 
 
@@ -430,3 +442,23 @@ def test_cql_escapes_embedded_quotes():
 
     cql2 = _cql_for_space('PLATFORM', since='2026-01-01 00:00')
     assert '"PLATFORM"' in cql2 and '"2026-01-01 00:00"' in cql2
+
+
+def test_single_request_path_also_backs_off_on_429(server):
+    """
+    **429 백오프가 `_paged` 안에만 있었다.** 그런데 `wikilens acl` 은 페이지마다 낱개
+    조회를 해서 `_get` 을 직접 부르고, 그게 이 프로젝트에서 API 를 가장 세게 쓰는
+    경로다(13,921건이면 요청도 13,921개).
+
+    보호가 없으면 429 하나가 곧 "조회 실패" 이고, 전부 실패하면 acl.json 이 비어
+    나온다 — 서버는 그것을 **전 페이지가 아무에게도 안 보임**으로 읽는다.
+    """
+    FakeConfluence.rate_limit_once = True
+    c = ConfluenceClient(server, BasicAuth("me@corp", "tok"))
+    prefix = c.detect_prefix()
+    FakeConfluence._limited = False          # detect_prefix 가 이미 썼을 수 있다
+    url = f"{server}{prefix}/rest/api/content/123/restriction/byOperation/read"
+
+    r = c._get(url)
+
+    assert r.status_code == 200, "429 에서 물러섰다가 다시 시도하지 않았다"

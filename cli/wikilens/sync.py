@@ -26,6 +26,8 @@ from . import credentials
 
 CHECKPOINT_EVERY = 100      # 이 건수마다 상태 저장 → 중단되어도 이어받는다
 MAX_RETRY_WAIT = 120        # 429 백오프 상한. 무한 대기 방지
+FIRST_RETRY_WAIT = 5        # 서버가 Retry-After 를 안 주면 여기서 시작해 배로 늘린다
+MAX_RETRIES = 5             # 이만큼 해도 429 면 호출부가 실패로 다룬다
 
 
 class ConfluenceError(RuntimeError):
@@ -95,11 +97,34 @@ class ConfluenceClient:
         return self.auth.describe()
 
     def _get(self, url: str, **kw):
-        """401 이면 인증을 갱신하고 한 번 재시도한다. OAuth 토큰 만료 대응."""
-        r = self.s.get(url, timeout=self.timeout, **kw)
-        if r.status_code == 401 and self.auth.refresh():
-            self.auth.apply(self.s)
+        """
+        모든 GET 이 지나는 자리. 401 갱신과 **429 백오프를 여기서** 한다.
+
+        429 가 예전에는 `_paged` 안에만 있었다. 그런데 `acl` 은 페이지마다 낱개
+        조회를 하느라 `_get` 을 직접 부르고, 그게 이 프로젝트에서 API 를 가장 세게
+        쓰는 경로다(13,921건이면 요청도 13,921개). 실측: 429 를 주면 재시도 없이
+        전부 "조회 실패" 가 되고 `acl.json` 이 비어 나온다 — 그 파일이 비면 서버는
+        **전 페이지를 아무에게도 안 보이는 것**으로 읽는다.
+
+        재시도를 여기 두면 부르는 쪽이 기억할 일이 없다. 같은 일을 두 곳에서 하지
+        않도록 `_paged` 의 429 분기는 지웠다.
+        """
+        wait = FIRST_RETRY_WAIT
+        refreshed = False
+        for _ in range(MAX_RETRIES):
             r = self.s.get(url, timeout=self.timeout, **kw)
+            # 갱신은 **한 번뿐이다.** 429 재시도 루프를 두르면서 이 조건을 안 걸었더니
+            # 무효 토큰 하나에 IAM 을 다섯 번 두드렸다(테스트가 잡았다) — 토큰이 정말
+            # 만료된 것이면 한 번으로 되고, 안 되면 더 해도 안 된다.
+            if r.status_code == 401 and not refreshed and self.auth.refresh():
+                refreshed = True
+                self.auth.apply(self.s)
+                continue
+            if r.status_code != 429:
+                return r
+            # 서버가 알려준 값을 따르되 상한을 건다 — 무한 대기 방지.
+            time.sleep(min(int(r.headers.get("Retry-After", wait) or wait), MAX_RETRY_WAIT))
+            wait = min(wait * 2, MAX_RETRY_WAIT)
         return r
 
     # ------------------------------------------------------------ 진단
@@ -242,18 +267,13 @@ class ConfluenceClient:
         exp = self.FULL_EXPAND if expand is None else expand
         if exp:
             params["expand"] = exp
-        wait = 5
+        # 429 백오프는 `_get` 이 한다 — 여기 두면 낱개 조회 경로가 그 보호를 못 받는다.
         while url:
             try:
                 r = self._get(url, params=params)
             except requests.RequestException as e:
                 raise ConfluenceError("요청 실패: " + str(e)) from e
 
-            if r.status_code == 429:
-                delay = min(int(r.headers.get("Retry-After", wait)), MAX_RETRY_WAIT)
-                time.sleep(delay)
-                wait = min(wait * 2, MAX_RETRY_WAIT)
-                continue
             if r.status_code in (401, 403):
                 raise ConfluenceError(_auth_hint(r.status_code, self.auth_mode))
             if r.status_code != 200:

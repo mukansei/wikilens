@@ -114,10 +114,17 @@ def test_lookup_failure_keeps_the_old_value_instead_of_opening(tmp_path):
 
 
 def test_unknown_page_that_failed_is_omitted_not_opened(tmp_path):
-    """처음 보는 페이지를 못 읽었으면 **아무에게도 안 보여야** 한다(fail-closed)."""
-    root = vault(tmp_path, {"1": {"space": "ENG", "ancestors": []}})
-    collect(root, FakeClient({"1": None}))
+    """
+    처음 보는 페이지를 못 읽었으면 **아무에게도 안 보여야** 한다(fail-closed).
+
+    성공하는 페이지를 하나 같이 둔다 — 전부 실패하면 파일을 아예 안 쓰는 별도 규칙에
+    걸려서, 여기서 재려는 **부분** 실패가 아니게 된다.
+    """
+    root = vault(tmp_path, {"1": {"space": "ENG", "ancestors": []},
+                            "2": {"space": "ENG", "ancestors": []}})
+    collect(root, FakeClient({"1": None, "2": []}))
     assert "1" not in written(root)
+    assert "2" in written(root)
 
 
 def test_report_counts_what_matters(tmp_path):
@@ -177,10 +184,38 @@ def test_ancestor_outside_the_synced_set_is_still_queried(tmp_path):
 
 def test_unusable_previous_file_does_not_crash_or_open(tmp_path):
     """`null` 도 유효한 JSON 이다 — 파싱된다고 쓸 수 있는 값은 아니다."""
-    root = vault(tmp_path, {"1": {"space": "ENG", "ancestors": []}})
+    root = vault(tmp_path, {"1": {"space": "ENG", "ancestors": []},
+                            "2": {"space": "ENG", "ancestors": []}})
     acl_dir = root / "mirror" / "acl"
     acl_dir.mkdir(parents=True)
     (acl_dir / "acl.json").write_text("null", encoding="utf-8")
 
-    collect(root, FakeClient({"1": None}))
+    collect(root, FakeClient({"1": None, "2": []}))
     assert "1" not in written(root)
+
+
+def test_total_failure_does_not_overwrite_the_old_file(tmp_path):
+    """
+    배운 게 없는데 덮으면 `{}` 가 남고, 서버는 그것을 **전 페이지 비공개**로 읽는다
+    (fail-closed 라 맞는 해석이다). 볼트를 못 읽은 재기동이 멀쩡한 색인을 지우던 것과
+    같은 자리 — 못 읽은 것과 없는 것은 다르다.
+    """
+    root = vault(tmp_path, {"1": {"space": "ENG", "ancestors": []},
+                            "2": {"space": "ENG", "ancestors": []}})
+    acl_dir = root / "mirror" / "acl"
+    acl_dir.mkdir(parents=True)
+    (acl_dir / "acl.json").write_text(json.dumps({"1": [GROUP_PREFIX + "old"]}), encoding="utf-8")
+
+    rep = collect(root, FakeClient({"1": None, "2": None}))
+
+    assert rep.wrote is False
+    assert written(root) == {"1": [GROUP_PREFIX + "old"]}, "옛 파일이 덮였다"
+
+
+def test_first_run_total_failure_writes_nothing(tmp_path):
+    """옛 파일이 없으면 만들지도 않는다 — 빈 파일이 '수집했다'로 읽히면 안 된다."""
+    root = vault(tmp_path, {"1": {"space": "ENG", "ancestors": []}})
+    rep = collect(root, FakeClient({"1": None}))
+
+    assert rep.wrote is False
+    assert not (root / "mirror" / "acl" / "acl.json").exists()
