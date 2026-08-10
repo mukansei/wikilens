@@ -34,10 +34,10 @@ services:
       # 범위를 이 서버에 닿는 전원이 공유해도 되는 배포에서만 맞다.
       WIKILENS_ACL_ENFORCED: ${WIKILENS_ACL_ENFORCED:-true}
     restart: unless-stopped
-    # 상태 디렉터리는 한 프로세스만 쓴다(`StateDirLock`). 스케일 아웃하려면 state
-    # 볼륨을 나눠야 하고, 그러면 학습이 갈린다 — 지금은 복제하지 않는 것이 맞다.
-    deploy:
-      replicas: 1
+    # **복제하지 않는다.** 상태 디렉터리는 한 프로세스만 쓰고(`StateDirLock` 이 둘째
+    # 기동을 거부한다), 스케일 아웃하려면 state 볼륨을 나눠야 하는데 그러면 학습이
+    # 갈린다. `deploy.replicas: 1` 을 적어뒀었지만 그건 기본값이라 아무것도 강제하지
+    # 않는다 — 강제하는 것은 락이고, 여기 적을 것은 그 사실이다.
 
 volumes:
   wikilens-state:
