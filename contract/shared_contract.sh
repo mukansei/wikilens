@@ -551,6 +551,21 @@ check "429 백오프가 모든 GET 에 걸리고, 전부 실패하면 acl.json �
    && grep -q "rep.failed >= len(pages)" cli/wikilens/acl.py \
    && grep -q "rep.wrote" cli/wikilens/cli.py'
 
+# 궤적 로그는 append-only 이고 유일한 복구 불가 자산이다. 거기로 흘러가는 것 — 항 목록·
+# sessionId — 에 상한이 없으면 한 요청이 무한정 적어 넣는다. `limit` 과 `MAX_PATTERN` 만
+# 죄고 이 둘은 안 죄던 것이 **같은 판단의 비대칭**이었다.
+check "로그로 흘러가는 것에 상한이 있음 (질의·항·sessionId·세션 수)" \
+  'grep -q "const val MAX_QUERY" server/src/main/kotlin/dev/wikilens/service/SearchService.kt \
+   && grep -q "keywords.take(MAX_KEYWORDS)" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
+   && grep -q "sessionId.length > MAX_SESSION_ID" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
+   && grep -q "sessions.size >= MAX_SESSIONS" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt'
+
+# `LOCALIZATION 만 간선 생성` 은 계약으로 잠겨 있는데, 그 게이트가 실제로 무엇을 걸러내는지
+# 밖에서 볼 방법이 없었다. UNKNOWN 이 거의 0 이면 게이트는 사실상 항등함수다.
+check "게이트의 종류 분포가 stats 와 --status 에 드러남" \
+  'grep -q "\"byKind\" to QueryKind.entries" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
+   && grep -q "QUERY_KINDS=" plugin/client/mcp/wikilens_mcp.py'
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."

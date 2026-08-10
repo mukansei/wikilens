@@ -37,8 +37,7 @@ class RipgrepBudgetTest {
         if (!engine.isAvailable() || !Files.isDirectory(vault.resolve("mirror/pages"))) return null
         val all = Files.walk(vault.resolve("mirror/pages")).use { s ->
             s.filter { it.toString().endsWith(".md") }
-                .map { PageRef(it.fileName.toString().removeSuffix(".md"), "t",
-                               vault.relativize(it).toString()) }
+                .map { PageRef(it.fileName.toString().removeSuffix(".md"), "t") }
                 .toList()
         }
         return all.takeIf { it.size >= 5_000 }      // 작으면 구별력이 없다

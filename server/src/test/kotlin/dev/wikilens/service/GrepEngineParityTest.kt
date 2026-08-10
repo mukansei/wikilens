@@ -50,9 +50,9 @@ class GrepEngineParityTest {
     }
 
     private fun pages() = listOf(
-        PageRef("100", "루트", "mirror/pages/00/100.md"),
-        PageRef("200", "자식A", "mirror/pages/00/200.md"),
-        PageRef("300", "고아B", "mirror/pages/00/300.md"),
+        PageRef("100", "루트"),
+        PageRef("200", "자식A"),
+        PageRef("300", "고아B"),
     )
 
     @Test
