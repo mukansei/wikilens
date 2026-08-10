@@ -215,11 +215,64 @@ Description:
 | `trajectoryLog.replaySkipped` | 0 이 아니면 기동 시 **옛 궤적이 버려지는 중**입니다(대개 스키마 변경). 로그를 지우지 마세요 |
 | `trajectoryLog.replayMillis` · `bytes` | 로그는 append-only 라 줄지 않습니다. 재생이 10초를 넘으면 기동 로그가 경고합니다 — 실측으로 100만 건이 5.3초 · 210MB 이고, 그때가 체크포인트를 설계할 시점입니다(`DECISIONS.md` D17) |
 
+## Docker 로 띄우기
+
+```bash
+export WIKILENS_ADMIN_TOKEN=<임의의 긴 ASCII 문자열>
+WIKILENS_VAULT=~/wiki docker compose up -d --build
+```
+
+`compose.yml` 이 저장소 루트에 있습니다. **요점은 볼륨 셋입니다** — 이미지에는 코드만
+있고 데이터는 전부 밖에 있습니다.
+
+| 마운트 | 무엇 | 지우면 |
+|---|---|---|
+| `/vault` (`:ro`) | 위키 미러. 호스트의 `wikilens sync` 가 만듭니다 | 재싱크 |
+| `/state` | 궤적 로그·사용자 등록 | **복구 불가** — 백업 대상은 여기뿐입니다 |
+| `/index` | Lucene 색인 | 재색인으로 복구 |
+
+**볼트는 이미지에 굽지 않습니다.** 위키 본문은 데이터이고, 이미지에 구우면 그 사본을
+회수할 수 없습니다 — 레지스트리에 올라간 순간 권한 취소가 불가능해집니다. `:ro` 로
+마운트하는 것도 같은 이유입니다. 읽기 전용을 규율이 아니라 **마운트 옵션**으로 얻습니다.
+
+**싱크는 이 컨테이너가 하지 않습니다.** `sync`·`acl` 은 Confluence 자격증명이 필요한데
+서버는 그걸 가질 이유가 없습니다(가지면 "위키에 쓰기 금지" 가 설계 보장에서 규율로
+내려갑니다 — `DECISIONS.md` D22). 호스트 cron 이 돌리고 끝나면 재색인을 부릅니다:
+
+```bash
+wikilens sync --root ~/wiki && wikilens acl --root ~/wiki \
+  && curl -XPOST -H "X-WikiLens-Admin: $TOKEN" localhost:8787/api/admin/reindex
+```
+
+`&&` 가 필수입니다 — 실패했는데 재색인하면 반쪽 상태가 반영됩니다.
+
+**이미지가 ripgrep 을 갖고 있습니다.** 호스트에서는 서비스 매니저의 `PATH` 에 따라
+조용히 JVM 스캔으로 떨어질 수 있는데(아래 절), 컨테이너에서는 우리가 PATH 를 정하므로
+그 불확실성이 없습니다.
+
+**한 상태 디렉터리에 서버 하나입니다.** `StateDirLock` 이 둘째 기동을 거부합니다.
+스케일 아웃하려면 `state` 볼륨을 나눠야 하는데 그러면 학습이 갈립니다 — 지금은
+복제하지 않는 것이 맞습니다.
+
+**루트로 안 돕니다**(uid 10001). 마운트한 디렉터리를 그 uid 가 읽을 수 있어야 합니다.
+
+> 확인한 것: 볼트 마운트 → 색인 2건, 등록 → 검색·읽기·grep(engine=ripgrep) 정상,
+> `docker restart` 후 사용자 등록과 궤적이 그대로 남음(`/state` 볼륨).
+
 ## 배포할 때는 경로를 절대경로로 주세요
 
 기본값이 **상대경로**입니다(`./mirror-root`, `./.wikilens/index`, `./.wikilens/state`).
 `bootRun` 은 Gradle 이 작업 디렉터리를 `server/` 로 고정해서 늘 같은 자리를 쓰지만,
 **jar 로 띄우면 실행한 디렉터리 기준**이 됩니다.
+
+**`PATH` 도 함께 보세요.** rg 는 이름(`rg`)으로만 찾습니다 — 셸이 아니라 `execvp` 라
+별칭·셸 함수·`~/.zshrc` 의 PATH 추가가 안 보입니다. systemd·launchd·cron 의 기본
+PATH 에는 `/opt/homebrew/bin` 이나 `/usr/local/bin` 이 없는 경우가 많아, **개발
+머신에서는 rg 로 돌던 서버가 서비스로 띄우면 조용히 JVM 스캔으로 떨어집니다.**
+답은 같고 느려질 뿐이지만(대조 테스트가 그것을 지킵니다), 알고 그러는 것과 모르고
+그러는 것은 다릅니다 — `--status` 의 `GREP_ENGINE` 이 어느 쪽인지 말합니다.
+유닛 파일에 `Environment=PATH=/opt/homebrew/bin:/usr/bin:/bin` 처럼 넣으면 됩니다.
+(Docker 로 띄우면 이미지가 rg 를 갖고 있어 이 문제가 없습니다.)
 
 엉뚱한 디렉터리에서 띄우면 **에러 없이 정상 기동합니다** — 빈 볼트를 보고 문서 0개로
 뜨고, `state/` 도 새로 만들어 **학습 궤적이 분기됩니다**(실측 2026-08-06).
