@@ -15,9 +15,8 @@ class TreeRenderer(
 ) {
     companion object {
         /**
-         * 잘린 가지의 하위 개수를 셀 때 **가지 하나당** 훑는 노드 수 상한.
-         * 요청 전체가 아니라 가지별이어야 한다 — 공유하면 첫 큰 가지가 예산을 소진해
-         * 뒤따르는 작은 가지까지 "N개 이상"으로 어림되고, 정확도가 트리 순서에 의존한다.
+         * 잘린 가지의 하위 개수를 셀 때 **가지 하나당** 상한. 요청 전체로 공유하면 첫 큰
+         * 가지가 예산을 소진해 정확도가 트리 순서에 의존한다.
          */
         const val DESCENDANT_BUDGET = 1000
     }
@@ -62,11 +61,8 @@ class TreeRenderer(
     }
 
     /**
-     * (보이는 하위 개수, 예산 초과로 어림했는지).
-     *
-     * 개수도 **보이는** 하위만 센다 — 개수가 숨긴 문서의 존재를 새면 안 된다.
-     * 예산을 넘기면 그 자리서 멈춘다. 전체 서브트리를 다 훑으면 depth 로 응답을
-     * 가볍게 하려는 취지가 큰 가지에서 무너진다.
+     * (보이는 하위 개수, 예산 초과로 어림했는지). **보이는** 것만 센다 — 개수가 숨긴
+     * 문서의 존재를 새면 안 된다.
      */
     private fun countVisibleBelow(pid: String, canSee: (String) -> Boolean): Pair<Int, Boolean> {
         var budget = DESCENDANT_BUDGET

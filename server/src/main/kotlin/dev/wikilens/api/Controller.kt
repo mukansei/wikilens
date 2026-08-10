@@ -13,14 +13,11 @@ import org.springframework.web.bind.annotation.*
 import org.springframework.web.server.ResponseStatusException
 
 /**
- * 서버판 API.
+ * 서버판 HTTP 표면.
  *
- * 클라이언트에 볼트를 배포하지 않는다. 배포된 사본은 회수할 수 없어 권한 취소가
- * 불가능해지기 때문이다. 서버가 검색·읽기·grep 을 전부 서빙하고 매 요청마다
- * ACL 을 확인한다.
- *
- * 그래서 관측 훅이 필요 없다 — 읽기가 서버를 거치므로 서버가 궤적을 직접 본다.
- * `sessionId` 는 MCP 프록시 프로세스 하나당 하나이며, 그것이 곧 세션 경계다.
+ * 클라이언트에 볼트를 배포하지 않는다 — 배포된 사본은 회수할 수 없어 권한 취소가
+ * 불가능해진다. 그래서 관측 훅도 필요 없다: 읽기가 서버를 거치므로 서버가 궤적을 직접
+ * 본다. `sessionId` 는 MCP 프록시 프로세스 하나당 하나이고 그것이 세션 경계다.
  */
 @RestController
 @RequestMapping("/api", produces = [MediaType.APPLICATION_JSON_VALUE])
@@ -39,24 +36,18 @@ class Controller(
         val res = searchService.search(req)
         // 질의 관측. 별도 훅 없이 도구 호출 자체가 궤적이 된다.
         //
-        // **거부된 질의는 관측하지 않는다.** `error` 가 있으면 검색이 아예 안 돌았다 —
-        // 세지 않기로 한 것이 아니라 셀 것이 없다. 관측하면 세션 객체가 생기고
-        // `sinceStart.queries` 와 `multiQueryRate` 가 클라이언트 오류로 오염된다.
-        // (결과가 0건인 것과는 다르다. 그건 진짜 시도이고 일부러 센다 — 재검색의
-        // 첫 시도가 거기 있어서 안 세면 과소 계상된다.)
+        // **거부된 질의는 관측하지 않는다** — 검색이 아예 안 돌았으니 셀 것이 없다.
+        // 관측하면 세션 객체가 생기고 `sinceStart` 가 클라이언트 오류로 오염된다.
+        // (결과 0건과는 다르다 — 그건 진짜 시도라 일부러 센다.)
         if (res.error != null) return res
         req.sessionId?.let { sid ->
-            // 권한 **범위** 를 함께 남긴다 — 신원이 아니다(`AclRegistry.scopeOf`).
-            // 학습이 권한 폭에 오염되는 문제를 나중에 다루려면 로그에 있어야 하고,
-            // 나중에 넣으면 그전 궤적에는 영영 없다.
+            // 권한 **범위**를 남긴다 — 신원이 아니다(`AclRegistry.scopeOf`).
             store.onQuery(sid, req.query, res.terms, acl.scopeOf(req.userKey))
-            // 학습 레이어가 서빙한 힌트를 함께 넘긴다. 세션이 끝까지 안 읽으면 그
-            // 힌트가 틀린 것이므로 미스로 되돌아간다 — `pWrong` 이 재려던 값이다.
+            // 서빙한 힌트도 넘긴다. 끝까지 안 읽히면 틀린 힌트라 미스로 되돌아간다.
             store.onServed(
                 sid,
                 hinted = res.hits.filter { it.source != "lexical" }.map { it.pageId },
-                // 전체를 순위 순으로 넘긴다 — 사용자가 몇 번째를 골랐는지가 신호다.
-                ranked = res.hits.map { it.pageId },
+                ranked = res.hits.map { it.pageId },   // 몇 번째를 골랐는지가 신호다
             )
         }
         return res
@@ -88,10 +79,7 @@ class Controller(
     fun grep(@RequestBody req: GrepRequest): GrepResponse =
         content.grep(req.pattern, req.userKey, req.limit, req.regex)
 
-    /**
-     * 계층 목차(로컬판 TREE.md의 서버판). 앵커/학습과 분리된 별도 경로라
-     * 궤적 관측 대상이 아니다 — 어휘 신호가 아니라 분류 신호이기 때문이다.
-     */
+    /** 계층 목차. 어휘가 아니라 분류 신호라 궤적 관측 대상이 아니다. */
     @PostMapping("/tree")
     fun tree(@RequestBody req: TreeRequest): TreeResponse {
         val rendered = index.renderTree({ pid -> acl.canSee(req.userKey, pid) }, req.rootId, req.depth)
@@ -104,9 +92,8 @@ class Controller(
         mapOf("finalized" to store.onEnd(req.sessionId))
 
     /**
-     * 수동 재색인. **적재 로직은 [IndexingService] 하나뿐이다** — 기동 적재와 같은 코드다.
-     * 예전엔 여기서 `vault.read` + `index.rebuild` 를 직접 불러서, 기동 쪽에만 넣은
-     * "빈 볼트면 건너뛴다" 방어가 이 경로에는 없었다(실측: 색인 2,383건이 0으로 지워짐).
+     * 수동 재색인. **적재 로직은 [IndexingService] 하나뿐이다** — 따로 두었더니 기동 쪽에만
+     * 넣은 "빈 볼트면 건너뛴다" 방어가 여기엔 없었다(실측: 색인 2,383건이 0으로 지워짐).
      */
     @PostMapping("/admin/reindex")
     fun reindex(): Map<String, Any> {
@@ -134,26 +121,23 @@ class Controller(
             "indexedDocs" to index.docCount,
             "aclPages" to acl.pageCount(),
             "aclUsers" to acl.userCount(),
-            // **꺼져 있으면 등록 없이 전원이 전 문서를 본다.** 겉으로는 정상이라
-            // 밖에서 볼 수 없으면 아무도 모른다.
+            // **꺼져 있으면 등록 없이 전원이 전 문서를 본다** — 겉으로는 정상이라 밖에서
+            // 못 보면 아무도 모른다.
             "aclEnforced" to acl.isEnforced(),
-            // **등록 여부만으로는 부족하다.** 토큰이 안 겹치면 등록이 있어도 전원이
-            // 빈손인데, 그 상태가 "문서가 없다" 와 구별되지 않는다. 양쪽 토큰을 함께
-            // 실어 무엇과 무엇이 안 맞는지 바로 보이게 한다(길면 자른다).
+            // **등록 여부만으로는 부족하다** — 토큰이 안 겹치면 등록이 있어도 전원이
+            // 빈손이고 그 상태가 "문서가 없다" 와 구별되지 않는다. 양쪽 토큰을 함께 실어
+            // 무엇과 무엇이 안 맞는지 보이게 한다.
             "aclTokenOverlap" to acl.tokenOverlap(),
             "aclUserTokens" to acl.userTokens().sorted().take(TOKEN_SAMPLE),
             "aclPageTokens" to acl.pageTokens().sorted().take(TOKEN_SAMPLE),
-            // 서버는 알고 있는데 밖으로 안 내보내던 값이다. 둘이 **다를 때만** 진단
-            // 가치가 있다 — 재색인이 안 된 상태라는 뜻이고, 실질적으로는 볼트를 못 읽어
-            // 기동 적재가 건너뛰어진 경우다. 그전에는 기동 로그를 뒤져야만 알 수 있었다.
+            // 둘이 **다를 때만** 진단 가치가 있다 — 재색인이 안 된 상태이고, 실질적으로는
+            // 볼트를 못 읽어 기동 적재가 건너뛰어진 경우다.
             "analyzer" to index.activeKind.key,          // 질의에 실제로 쓰이는 것 (= 색인 기록)
             "analyzerConfigured" to index.buildKind.key, // 이 프로세스의 설정
-            // 본문 스캔 경로가 둘이라 어느 쪽인지가 답의 근거가 된다. 그전에는
-            // 기동 로그(콘솔 전용)를 뒤지거나 grep 을 한 번 던져야만 알 수 있었다.
+            // 스캔 경로가 둘이라 어느 쪽인지가 답의 근거가 된다.
             "grepEngine" to content.engineName,
             "grepEngineUsable" to content.engineUsable,
-            // 궤적 로그 상태. **append-only 라 줄지 않는다** — 크기와 재생 시간이
-            // 조용히 늘어나는 자리이고, 그 둘이 압축을 설계할 시점을 알려준다.
+            // **append-only 라 줄지 않는다** — 크기와 재생 시간이 압축 시점을 알려준다.
             "trajectoryLog" to log.status(),
         )
 
