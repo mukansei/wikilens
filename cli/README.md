@@ -65,6 +65,37 @@ printf 'export CONFLUENCE_URL=%s\nexport CONFLUENCE_TOKEN=%s\n' "$CONFLUENCE_URL
 `--full`은 전체 재싱크 + 삭제 감지입니다. 증분 싱크(`lastModified > cursor`)로는
 삭제된 페이지가 원리적으로 잡히지 않으니 가끔 돌려주세요.
 
+### `acl` — 서버판을 쓸 때만
+
+```bash
+wikilens --root ~/wiki acl
+```
+
+페이지별 읽기 권한을 `mirror/acl/acl.json` 에 모읍니다. **`sync` 와 분리돼 있고 더
+자주 돌려야 합니다** — 권한 변경은 `lastModified` 를 안 건드려 증분 싱크가 영영 못
+잡습니다. 로컬판은 개인 토큰이 곧 권한 범위라 필요 없습니다.
+
+`byOperation` 은 **직접 제한만** 주므로 상속을 `ancestors` 로 직접 풉니다. 제한이
+없는 페이지는 `@public` 이 아니라 `@space:<KEY>` 를 받습니다 — 여러 스페이스를 한
+볼트에 모으면 사용자마다 볼 수 있는 스페이스가 다르기 때문입니다(`DECISIONS.md` D19).
+
+출력에서 볼 것:
+
+| | 뜻 |
+|---|---|
+| `실패` | 조회를 못 한 페이지. **공개로 바뀌지 않습니다** — 옛 값을 지키고, 처음 보는 페이지면 빠집니다 |
+| `미확정` | 자신은 읽었지만 **조상을 못 읽어** 확정 못 한 페이지. 다시 돌리면 대개 해소됩니다 |
+
+둘 중 하나라도 0 이 아니면 종료 코드가 1 입니다. 조회가 **전부** 실패하면 파일을
+아예 쓰지 않습니다 — 배운 게 없는데 덮으면 옛 값까지 사라지고, 서버는 빈 파일을
+"전 페이지 비공개" 로 읽습니다.
+
+```bash
+wikilens --root ~/wiki acl && curl -XPOST -H "X-WikiLens-Admin: $TOKEN" .../api/admin/reindex
+```
+
+`&&` 가 중요합니다 — 실패했는데 재색인하면 반쪽 권한이 반영됩니다.
+
 ### 도입 판단
 
 ```console
