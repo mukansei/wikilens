@@ -39,8 +39,34 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ripgrep curl \
  && rm -rf /var/lib/apt/lists/*
 
-# 루트로 안 돈다. 마운트한 볼륨의 소유자를 이 uid 로 맞춰야 한다(compose 참고).
+# 루트로 안 돈다.
 RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin wikilens
+
+# **마운트 지점을 이미지에 미리 만들어 이 uid 로 넘긴다.** 없으면 `docker compose up`
+# 이 **기동조차 못 한다** — Docker 는 이미지에 없는 경로의 새 named volume 을
+# `root:root 0755` 로 만들고, 비루트로 도는 우리는 거기 못 쓴다(실측, 이 Dockerfile 의
+# 2단계를 그대로 떼어 재현):
+#
+#     drwxr-xr-x 2 root root /state   ← uid=10001 로 실행
+#     touch: cannot touch '/state/.lock': Permission denied
+#
+# 첫 쓰기가 `StateDirLock` 의 `/state/.lock` 이고, 거기서 나는 것은
+# `AccessDeniedException` 이다 — `OverlappingFileLockException` 이 아니라서 그 catch 를
+# 안 지나가고, `StateDirLockFailureAnalyzer` 도 `AlreadyRunning` 만 다루므로 **우리가
+# 만든 진단 대신 생 스택트레이스**가 나온다.
+#
+# **bind mount 로 확인하면 안 걸린다** — Docker Desktop for Mac 이 bind mount 만 권한을
+# 재매핑하기 때문이다. named volume 은 재매핑하지 않고, Linux 호스트에서는 둘 다 걸린다.
+# 그래서 `docker run` 으로 통과한 검증이 `docker compose up` 을 보증하지 못한다.
+#
+# 여기서 만들어 두면 **새 볼륨이 이 소유권을 물려받는다** — 같은 방법으로 확인했고,
+# 실제 `docker compose up` 으로도 확인했다(`/state/.lock` 이 uid 10001 소유로 생성,
+# `/api/health` 200).
+#
+# **`USER` 앞이어야 한다** — 뒤면 비루트라 `chown` 이 못 돈다. 계약이 순서를 검사한다.
+RUN mkdir -p /vault /state /index \
+ && chown wikilens:wikilens /vault /state /index
+
 USER wikilens
 WORKDIR /app
 # 글롭이지만 **하나만 맞는 것이 보장된다** — `build.gradle.kts` 가 `-plain.jar` 를
