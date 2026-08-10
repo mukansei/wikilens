@@ -13,6 +13,14 @@ WikiLens 서버판 설정을 진행하세요. 인자: `$ARGUMENTS` (비어 있�
 python3 "${CLAUDE_PLUGIN_ROOT}/mcp/wikilens_mcp.py" --status
 ```
 
+> **Windows(Git Bash 없이 PowerShell 도구를 쓰는 경우)** 는 같은 명령을 이렇게 씁니다 —
+> 인터프리터 이름과 변수 문법이 둘 다 다릅니다:
+>
+> ```powershell
+> python "$env:CLAUDE_PLUGIN_ROOT\mcp\wikilens_mcp.py" --status
+> ```
+
+
 `SERVER=` 와 `USER=` 뒤의 괄호가 출처입니다(`env` · `config` · `default`).
 **`default` 면 설정한 적이 없다는 뜻**이고, 그 상태에서는 로컬 주소를 보고 있어
 검색이 전부 빕니다.

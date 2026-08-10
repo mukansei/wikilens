@@ -561,20 +561,26 @@ Nori 는 **영문을 깨뜨리지 않습니다** — 공백·구두점으로 자
 `--wikilens.analyzer=korean|english|standard`. 로컬판은 grep 이라 언어와 무관합니다.
 자세한 것은 [`server/README.md`](server/README.md#분석기는-색인-시점에-고른다).
 
-### 플랫폼 — macOS·Linux 입니다
+### 플랫폼
 
-**Windows 는 지금 지원하지 않습니다.** 파이썬만 깔면 되는 문제가 아니라서 그렇게
-적습니다:
+| | macOS · Linux · WSL | Windows 네이티브 |
+|---|---|---|
+| **서버판 사용자**(검색만) | 됩니다 | **됩니다** — 프록시가 순수 파이썬이라 셸이 필요 없습니다 |
+| 서버 운영(sync·acl) | 됩니다 | Git for Windows 또는 WSL 필요 |
+| 로컬판 | 됩니다 | Git for Windows 또는 WSL 필요 |
 
-| | 무엇이 걸리나 |
-|---|---|
-| `python3` 라는 **이름** | Windows 는 대개 `python` 또는 `py` 입니다. `.mcp.json` 의 `"command": "python3"` 과 스킬·커맨드가 그 이름을 그대로 씁니다 — **서버판 사용자도 걸립니다**(MCP 프록시가 파이썬입니다) |
-| `wikilens_cli.sh` | bash 래퍼입니다. 볼트를 만들거나 갱신하는 **모든 경로**가 여기를 지납니다 |
-| `~/.wikilens/env.sh` | 자격증명 정본이 `source` 하는 셸 스크립트입니다(그렇게 둔 이유는 `DECISIONS.md` D10) |
-| 검색 경로도 | 실제 매칭은 Claude Code 의 `Grep` 도구라 OS 와 무관하지만, 그 앞에서 `python3 vault_status.py` 로 볼트 경로를 먼저 풉니다 |
+**Windows 에서 인터프리터 이름이 다릅니다.** macOS·리눅스는 `python3`, Windows 는
+대개 `python`·`py` 입니다. MCP 설정은 `${WIKILENS_PYTHON:-python3}` 이라 기본값으로
+돌고, 이름이 다르면 `setx WIKILENS_PYTHON python` 하나로 바꿉니다.
 
-**WSL 에서는 리눅스와 같습니다.** Windows 사용자는 지금 그 길을 쓰세요.
-네이티브 지원은 위 넷을 다 바꿔야 하는 일이라 [다음 작업](CLAUDE.md)에 적어뒀습니다.
+**셸이 필요한 자리는 볼트를 *만드는* 쪽뿐입니다** — `wikilens_cli.sh` 래퍼와 자격증명
+`~/.wikilens/env.sh` 가 셸 스크립트입니다(그렇게 둔 이유는 `DECISIONS.md` D10).
+Claude Code 는 Git for Windows 가 있으면 Git Bash 로 Bash 도구를 쓰고, 없으면
+PowerShell 도구를 씁니다 — **후자에서는 볼트를 만들 수 없습니다.**
+그 둘을 파이썬으로 옮기는 것이 [다음 작업](CLAUDE.md) 6번입니다.
+
+> **Windows 에서 실제로 돌려본 적은 없습니다.** 위는 코드가 무엇을 요구하는지에서
+> 온 것이지 실행 확인이 아닙니다 — 이 저장소의 다른 검증과 같은 급으로 읽지 마세요.
 
 ---
 

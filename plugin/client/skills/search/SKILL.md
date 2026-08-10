@@ -85,6 +85,9 @@ search("로그인 붙이는 법")
 
 ```
 Bash: python3 "${CLAUDE_PLUGIN_ROOT}/mcp/wikilens_mcp.py" --status
+
+Windows 에서 Bash 도구가 없으면(Git for Windows 미설치) PowerShell 로:
+`python "$env:CLAUDE_PLUGIN_ROOT\mcp\wikilens_mcp.py" --status`
 ```
 
 `ACL_USERS=0` 이면 문서가 없는 게 아니라 **운영자가 아직 아무도 등록하지 않은 것**이고,
