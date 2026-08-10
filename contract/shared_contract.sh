@@ -574,6 +574,12 @@ check "빠른 문턱 판정이 이분법과 대조됨 (커버리지 축 포함)"
    && grep -q "Reliability.meetsThreshold" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
    && grep -q "for (c in listOf" server/src/test/kotlin/dev/wikilens/learn/ReliabilityThresholdTest.kt'
 
+# 거부된 질의는 검색이 아예 안 돈 것이라 관측할 것이 없다. 관측하면 세션 객체가 생기고
+# `sinceStart` 의 원시 계측이 클라이언트 오류로 오염된다. 결과 0건과는 다르다 —
+# 그건 진짜 시도이고 일부러 센다.
+check "거부된 질의는 궤적으로 관측하지 않음 (0건과는 다르다)" \
+  'grep -q "if (res.error != null) return res" server/src/main/kotlin/dev/wikilens/api/Controller.kt'
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."
