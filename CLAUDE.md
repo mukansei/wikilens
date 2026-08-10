@@ -263,6 +263,11 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
   **계약이 파일 경로를 grep 하므로 파일을 나눌 때 계약도 함께 고쳐야 한다** —
   실제로 이 분할에서 셋이 깨졌다(`learn/Scoring.kt` 가 `Gate.kt`·`Reliability.kt`·
   `QueryKind.kt` 로 나뉘며 사라졌다).
+- **`grep` 은 궤적을 안 남긴다** — `search`·`read` 와 달리 `store` 를 안 부르고
+  `GrepRequest` 에 `sessionId` 도 없다. 포스팅의 키가 분석된 항인데 grep 패턴은 토큰
+  경계와 무관한 부분문자열·정규식이라 섞으면 키가 오염된다. 대가는 **grep 으로 찾아
+  읽은 것이 학습에 안 들어가는 것**이고(열린 스팬이 없어 `onRead` 가 버린다) 의도한
+  손실이다. `tree` 를 뺀 것과 같은 계열이다.
 - **`api/` 와 `service/` 가 나뉘어 있다** — `api/` 는 HTTP 표면(Controller·Dto)이고
   서비스는 `service/` 다. 다만 **Dto 는 `api/` 에 남아 서비스가 그대로 반환한다** —
   타입이 넷뿐이라 매핑 층은 얻는 것 없이 코드만 두 배가 되고, 이 서비스들은 HTTP 말고
