@@ -85,7 +85,10 @@ class AdminInterceptorTest {
      * 값이 **비었을 때만** 나와서 아무 단서가 없다.
      */
     @Test
-    fun `비ASCII 토큰도 맞으면 통과한다`() {
+    fun `비ASCII 토큰도 가드 수준에서는 통과한다`() {
+        // **여기까지만 참이다.** 전선에서는 표준 클라이언트가 이 헤더를 아예 못 보낸다
+        // (실측: JDK HTTP 클라이언트가 `invalid header value`). 이 테스트는 바이트 비교가
+        // 옳다는 것을 잠글 뿐, **비ASCII 토큰을 써도 된다는 뜻이 아니다.**
         val raw = "테스트토큰".toByteArray(Charsets.UTF_8)
         val asServletSeesIt = String(raw, Charsets.ISO_8859_1)   // 톰캣이 넘겨주는 모양
         mvc("테스트토큰").perform(get("/api/admin/dump").header("X-WikiLens-Admin", asServletSeesIt))
