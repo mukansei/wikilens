@@ -205,6 +205,21 @@ def status() -> int:
             print("\n등록된 사용자가 없습니다 — 아무도 아무것도 못 봅니다.")
             print("  운영자가 POST /api/admin/acl/user 로 계정을 등록해야 합니다.")
             ok = False
+        # **등록만으로는 부족하다.** 토큰이 안 겹치면 등록이 있어도 전원이 빈손이고,
+        # 그 상태가 "문서가 없다" 와 구별되지 않는다. `wikilens acl` 을 처음 돌리면
+        # 반드시 걸리는 경로다 — 그전엔 전 페이지가 `@public` 폴백이라 `["@public"]`
+        # 등록으로 다 보이는데, 수집 후엔 `@space:<KEY>` 로 바뀐다.
+        elif enforced and users and pages and s.get("aclTokenOverlap") == 0:
+            ut = ", ".join(s.get("aclUserTokens") or []) or "(없음)"
+            pt = ", ".join(s.get("aclPageTokens") or []) or "(없음)"
+            print("ACL_TOKEN_OVERLAP=0")
+            print(f"\n등록된 사용자의 토큰이 **어느 페이지 토큰과도 안 겹칩니다** —"
+                  f" 등록은 됐지만 전원이 빈손입니다.")
+            print(f"  사용자 토큰: {ut}")
+            print(f"  페이지 토큰: {pt}")
+            print("  `wikilens acl` 을 처음 돌린 뒤라면 페이지 토큰이 @public 에서"
+                  " @space:<KEY> 로 바뀐 것입니다 — 그 값으로 다시 등록하세요.")
+            ok = False
 
         # 게이트가 실제로 무엇을 거르는지. UNKNOWN 이 거의 0 이면 `LOCALIZATION 만
         # 간선 생성` 이 사실상 항등함수라는 뜻이고, 그건 밖에서 볼 방법이 없었다.

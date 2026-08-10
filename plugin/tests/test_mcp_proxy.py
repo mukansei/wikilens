@@ -24,6 +24,9 @@ received: list[tuple[str, dict]] = []
 #: 가짜 서버가 낼 grep 엔진 상태 (이름, 쓸 수 있나). 테스트가 도중에 바꾼다.
 STATS_ENGINE = ["ripgrep", True]
 
+#: 가짜 서버가 낼 ACL 토큰 상태 (겹침 수, 사용자 토큰, 페이지 토큰)
+STATS_ACL = [1, ["@public"], ["@public"]]
+
 class Fake(BaseHTTPRequestHandler):
     def log_message(self, *a):  # 조용히
         pass
@@ -41,7 +44,9 @@ class Fake(BaseHTTPRequestHandler):
         if self.path == "/api/health":
             self._json({"ok": True})
         elif self.path == "/api/stats":
-            self._json({"indexedDocs": 2378, "aclUsers": 3,
+            self._json({"indexedDocs": 2378, "aclUsers": 3, "aclPages": 2378,
+                        "aclTokenOverlap": STATS_ACL[0],
+                        "aclUserTokens": STATS_ACL[1], "aclPageTokens": STATS_ACL[2],
                         "grepEngine": STATS_ENGINE[0],
                         "grepEngineUsable": STATS_ENGINE[1]})
         else:
@@ -308,6 +313,18 @@ def main() -> int:
         check("쓸 수 없는 엔진을 짚음", "쓸 수 없습니다" in st_e.stdout, st_e.stdout[:300])
         check("그 경우 종료코드가 0 이 아님", st_e.returncode != 0, str(st_e.returncode))
         STATS_ENGINE[:] = ["ripgrep", True]
+
+        # 등록은 됐는데 토큰이 안 겹치는 상태. `wikilens acl` 을 처음 돌리면 반드시
+        # 걸리는 경로다 — 등록·색인 다 멀쩡하고 ACL_USERS 도 초록이라 안 짚으면 아무도
+        # 이유를 모른다.
+        STATS_ACL[:] = [0, ["@public"], ["@space:DOCS"]]
+        st_t = subprocess.run([sys.executable, str(PROXY), "--status"],
+                              capture_output=True, text=True, env=clean)
+        check("토큰이 안 겹치는 것을 짚음", "안 겹칩니다" in st_t.stdout, st_t.stdout[:300])
+        check("무엇과 무엇이 안 맞는지 보여줌",
+              "@public" in st_t.stdout and "@space:DOCS" in st_t.stdout, st_t.stdout[:300])
+        check("그 경우 종료코드가 0 이 아님", st_t.returncode != 0, str(st_t.returncode))
+        STATS_ACL[:] = [1, ["@public"], ["@public"]]
 
         # 설정한 적이 없는 상태는 출처가 default 로 드러나야 한다. (도달 여부는
         # 기본 포트에 무엇이 떠 있느냐에 달려 있으므로 여기서 단정하지 않는다 —
