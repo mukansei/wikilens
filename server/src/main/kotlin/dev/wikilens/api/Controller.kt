@@ -38,6 +38,13 @@ class Controller(
     fun search(@RequestBody req: SearchRequest): SearchResponse {
         val res = searchService.search(req)
         // 질의 관측. 별도 훅 없이 도구 호출 자체가 궤적이 된다.
+        //
+        // **거부된 질의는 관측하지 않는다.** `error` 가 있으면 검색이 아예 안 돌았다 —
+        // 세지 않기로 한 것이 아니라 셀 것이 없다. 관측하면 세션 객체가 생기고
+        // `sinceStart.queries` 와 `multiQueryRate` 가 클라이언트 오류로 오염된다.
+        // (결과가 0건인 것과는 다르다. 그건 진짜 시도이고 일부러 센다 — 재검색의
+        // 첫 시도가 거기 있어서 안 세면 과소 계상된다.)
+        if (res.error != null) return res
         req.sessionId?.let { sid ->
             // 권한 **범위** 를 함께 남긴다 — 신원이 아니다(`AclRegistry.scopeOf`).
             // 학습이 권한 폭에 오염되는 문제를 나중에 다루려면 로그에 있어야 하고,

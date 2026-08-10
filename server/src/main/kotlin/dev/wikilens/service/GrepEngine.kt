@@ -29,13 +29,20 @@ interface GrepEngine {
 /**
  * 스캔 대상 한 건. 엔진이 ACL 을 다시 보지 않도록 **이미 걸러진** 것만 담긴다.
  *
- * [relPath] 는 **쓸 때 만든다.** rg 경로는 디렉터리를 통째로 넘기고 결과를 거르므로
+ * [relPath] 는 **읽을 때 만든다.** rg 경로는 디렉터리를 통째로 넘기고 결과를 거르므로
  * 이 값을 한 번도 안 쓴다 — 미리 만들면 요청마다 문서 수만큼(이 코퍼스면 13,921회)
- * 문자열을 조립하고 버린다. `data class` 의 동등성에는 안 들어가는데, 어차피 id 가
- * 식별자라 그게 맞다.
+ * 문자열을 조립하고 버린다.
+ *
+ * **`by lazy` 가 아니라 그냥 계산 프로퍼티다.** 값은 문서당 **최대 한 번** 읽히는데
+ * (`JvmGrepEngine` 의 `resolve(p.relPath)` 하나뿐) `by lazy` 는 인스턴스마다 홀더
+ * 객체와 락을 만든다. 캐시할 것이 없다.
+ *
+ * 실측(13,921건 · 순서를 뒤집어 대조): JVM 경로 lazy 0.56~0.66ms · getter 0.42~0.48ms,
+ * rg 경로는 둘이 노이즈 범위 안에서 겹친다. **전체가 1ms 미만이라 여기서 더 짜낼 것은
+ * 없다** — 다시 최적화하러 오지 말 것.
  */
 data class PageRef(val id: String, val title: String) {
-    val relPath: String by lazy { VaultLayout.relPagePath(id) }
+    val relPath: String get() = VaultLayout.relPagePath(id)
 }
 
 data class GrepQuery(
