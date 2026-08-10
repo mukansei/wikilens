@@ -634,6 +634,18 @@ check "와이어 포맷 정본이 있고 양쪽이 그것을 검사함" \
    && grep -q "wire-format.json" server/src/test/kotlin/dev/wikilens/api/WireFormatTest.kt \
    && grep -q "wire-format.json" plugin/tests/test_mcp_proxy.py'
 
+# 컨테이너가 비루트로 도는데 마운트 지점이 이미지에 없으면, Docker 가 새 named volume 을
+# `root:root` 로 만들어 **서버가 기동조차 못 한다**(첫 쓰기가 `StateDirLock` 의
+# `/state/.lock` 이다). `compose.yml` 이 문서화된 유일한 기동 경로라 이게 깨지면 아무도
+# 못 띄운다. `docker run` + bind mount 로는 안 걸린다 — Docker Desktop for Mac 이 bind
+# mount 만 권한을 재매핑하기 때문이다. 그래서 검증이 통과해도 이 계약이 따로 필요하다.
+#
+# `mkdir`·`chown` 이 `USER` **앞**이어야 한다. 뒤면 비루트라 chown 이 못 돈다.
+check "컨테이너가 마운트 지점을 소유함 (없으면 compose 기동 실패)" \
+  'grep -q "chown wikilens:wikilens /vault /state /index" server/Dockerfile \
+   && [ $(grep -n "chown wikilens:wikilens /vault" server/Dockerfile | cut -d: -f1) \
+        -lt $(grep -n "^USER wikilens" server/Dockerfile | cut -d: -f1) ]'
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."
