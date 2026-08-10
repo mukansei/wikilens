@@ -1,0 +1,47 @@
+{
+  "_comment": [
+    "HTTP 응답의 JSON 키 — Kotlin DTO 와 MCP 프록시를 잇는 **정본**이다.",
+    "",
+    "Kotlin `api/*Response.kt` 의 필드 이름이 곧 JSON 키이고, 프록시",
+    "(plugin/client/mcp/wikilens_mcp.py)가 그 키로 읽는다. 둘은 문자열로만",
+    "이어져 있어 한쪽만 바꾸면 **컴파일도 테스트도 통과하는데 런타임에 빈 값**이 된다.",
+    "",
+    "예전에는 이 사실이 `api/Dto.kt` 주석에만 있었다. 실측: `ReadResponse.markdown` 을",
+    "`body` 로 바꿔봤더니 Kotlin 테스트가 이름 참조로 걸리기는 했는데, 그건 Kotlin API 를",
+    "잡은 것이지 와이어 계약이 아니다 — 테스트를 같이 고치면 아무도 프록시가 깨진다고",
+    "말해주지 않는다. 프록시 테스트는 가짜 서버라 키를 손으로 적어둔다.",
+    "",
+    "always  = 항상 나오는 키",
+    "optional = null 이면 생략되는 키 (application.yml 의 default-property-inclusion: non_null)",
+    "",
+    "값은 실제로 띄운 서버의 응답에서 뽑았다(2026-08-10)."
+  ],
+
+  "search": {
+    "always": ["query", "terms", "lexicalCandidates", "learnedHints", "hits"],
+    "optional": ["error"],
+    "hit": {
+      "always": ["pageId", "title", "space", "score", "source"],
+      "optional": ["reliability"]
+    }
+  },
+
+  "read": {
+    "always": ["pageId", "title", "space", "markdown"],
+    "optional": []
+  },
+
+  "grep": {
+    "always": ["pattern", "scanned", "matches", "truncated"],
+    "optional": ["error", "engine"],
+    "match": {
+      "always": ["pageId", "title", "line", "text"],
+      "optional": []
+    }
+  },
+
+  "tree": {
+    "always": ["markdown", "truncated"],
+    "optional": []
+  }
+}

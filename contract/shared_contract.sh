@@ -624,6 +624,16 @@ check "래퍼가 파이썬 이름을 고정하지 않음 (Windows)" \
   'grep -q "for _c in \"\${WIKILENS_PYTHON:-}\" python3 python" plugin/local/scripts/wikilens_cli.sh \
    && ! grep -qE "^[^#]*python3 \"\$" plugin/local/scripts/wikilens_cli.sh'
 
+# DTO 필드 이름이 곧 JSON 키이고 MCP 프록시가 그 키로 읽는다. 문자열로만 이어져 있어
+# 한쪽만 바꾸면 컴파일도 테스트도 통과하는데 런타임에 그 자리가 빈다. 정본을 두고
+# 양쪽이 그것에 맞는지 본다 — Kotlin 은 직렬화 결과로, 프록시 테스트는 가짜 서버가
+# 내는 키로. (실측: 정본을 넣자마자 가짜 서버의 tree 응답에 `truncated` 가 빠져 있던
+# 것을 잡았다 — 실제 서버가 절대 안 내는 모양을 테스트하고 있었다.)
+check "와이어 포맷 정본이 있고 양쪽이 그것을 검사함" \
+  '[ -f contract/wire-format.json ] \
+   && grep -q "wire-format.json" server/src/test/kotlin/dev/wikilens/api/WireFormatTest.kt \
+   && grep -q "wire-format.json" plugin/tests/test_mcp_proxy.py'
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."
