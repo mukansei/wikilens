@@ -21,7 +21,36 @@ Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** "�
 
 ---
 
-**쓰려는 분은** [어느 것을 쓰나요](#어느-것을-쓰나요) → [시작하기](#시작하기) 두 절이면
+## TL;DR
+
+**무엇** — 제목에도 본문에도 없는 표현으로 위키 문서를 찾습니다. 근거는 **다른 문서가
+그 페이지를 링크할 때 쓴 말**입니다.
+
+**어느 것을 쓰나** — 혼자거나 소규모 팀이면 **로컬판**, 여러 사람이 한 서버를 쓰면
+**서버판**. 지금 배포한다면 로컬판입니다(서버판은 신원이 자기주장입니다 →
+[미해결](#미해결)).
+
+```
+로컬판 (5분, 각자)                          서버판 (관리자 + 사용자)
+/plugin marketplace add ./                  wikilens sync --root ~/wiki
+/plugin install wikilens-local@wikilens     wikilens acl --root ~/wiki
+/wikilens-local:setup                       WIKILENS_ADMIN_TOKEN=… docker compose up -d --build
+                                            → 사용자 등록(POST /api/admin/acl/user)
+준비물: Confluence 주소 + 개인 토큰          사용자는 /plugin install wikilens-client@wikilens
+```
+
+**먼저 확인할 것 하나** — 첫 싱크가 끝나면 `wikilens stats` 가 *"제목과 어휘가 안 겹치는
+별칭을 가진 페이지"* 비율을 냅니다. **그 값이 낮으면 어휘 격차가 없다는 뜻이고, 이 도구는
+값어치가 없습니다.** 이 개발 코퍼스(13,926건)에서는 **163건 · 1%** 였습니다 —
+낮은 쪽입니다. 그래도 그 163개는 다른 방법으로는 못 찾는 페이지입니다.
+
+**서버판을 켤 때 자주 걸리는 것 하나** — `wikilens acl` 을 처음 돌리면 페이지 토큰이
+`@public` 에서 `@space:<KEY>` 로 바뀌어, 그전에 `["@public"]` 로 등록한 사용자가 **전원
+0건**이 됩니다. `wikilens_mcp.py --status` 가 `ACL_TOKEN_OVERLAP=0` 으로 짚어줍니다.
+
+---
+
+**더 읽으실 분은** [어느 것을 쓰나요](#어느-것을-쓰나요) → [시작하기](#시작하기) 두 절이면
 충분합니다. 그 아래는 만드는 사람을 위한 것입니다.
 
 | | |
@@ -52,9 +81,10 @@ Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** "�
 | 오프라인 | 가능 | 불가 |
 | 학습 | 없음 | 팀의 탐색 이력이 쌓임 |
 
-**지금 팀에 배포한다면 로컬판입니다.** 서버판은 ACL 수집 전까지 제3자를 붙이면 안 됩니다
-(→ [미해결](#미해결)). 대가는 Confluence 부하가 사용자 수에 비례하는 것이라
-소규모 팀에 한합니다.
+**지금 팀에 배포한다면 로컬판입니다.** 서버판은 권한 수집까지 만들었지만 **신원이
+아직 자기주장**이라(`userKey` 를 아무 값으로 적을 수 있습니다) 신뢰 경계 안에서만
+쓸 수 있습니다 — 리버스 프록시(SSO)를 앞에 두면 풀립니다(→ [미해결](#미해결)).
+로컬판의 대가는 Confluence 부하가 사용자 수에 비례하는 것이라 소규모 팀에 한합니다.
 
 설치해서 쓰기만 한다면 여기서 멈추고 사용 안내로 가세요 —
 [**로컬판**](plugin/local/README.md) · [**서버판**](plugin/client/README.md).
@@ -251,8 +281,23 @@ export CONFLUENCE_PREFIX=""        # Server/DC 강제
 ```bash
 # 서비스 계정으로 1회 싱크 (사용자별 싱크 없음 → Confluence 부하 1배)
 CONFLUENCE_TOKEN=<서비스계정> wikilens sync --space PLATFORM --root ~/wiki
+CONFLUENCE_TOKEN=<서비스계정> wikilens acl  --root ~/wiki   # 권한 수집 (별도 주기)
 
-cd server && ./gradlew bootRun          # 기동 시 볼트를 찾아 전량 색인
+# 권장 — Docker. 이미지가 ripgrep 을 갖고 있고 경로가 절대경로로 못 박혀 있습니다.
+export WIKILENS_ADMIN_TOKEN=<임의의 긴 ASCII 문자열>
+WIKILENS_VAULT=~/wiki docker compose up -d --build
+
+# 또는 직접 — 기동 시 볼트를 찾아 전량 색인합니다
+cd server && ./gradlew bootRun
+```
+
+**등록을 안 하면 전원이 빈손입니다**(fail-closed). 어떤 토큰으로 등록해야 하는지는
+`wikilens acl` 출력의 토큰 목록이 알려줍니다:
+
+```bash
+curl -XPOST -H "X-WikiLens-Admin: $TOKEN" \
+  'localhost:8787/api/admin/acl/user?userKey=alice@corp' \
+  -H 'Content-Type: application/json' -d '["@space:PLATFORM"]'
 ```
 
 **볼트 경로를 서버에 따로 알려주지 않아도 됩니다.** 기본 자리(`server/mirror-root`)가
@@ -487,17 +532,19 @@ Nori 는 **영문을 깨뜨리지 않습니다** — 공백·구두점으로 자
 
 ## 만드는 사람을 위해
 
-### 변경 후 이 넷이 통과해야 합니다
+### 변경 후 이것 하나가 통과해야 합니다
 
 ```bash
-./contract/shared_contract.sh          # 교차 언어 계약
-python -m pytest -q                    # cli/tests + plugin/tests
-cd server && ./gradlew test            # JUnit
-python3 plugin/tests/test_mcp_proxy.py # pytest 가 안 걷는 독립 스크립트
+./check.sh
 ```
 
-IntelliJ 를 쓴다면 `.idea/runConfigurations/` 의 **"3. 전체 검증"** 이 넷을 한 번에
-돌립니다. 서버를 띄울 때는 **"1. 서버 실행 (bootRun)"** 을 쓰세요 — `fun main` 옆
+계약(교차 언어) · pytest(cli+plugin) · MCP 프록시 · JUnit 넷을 돌리고 **한 줄로
+판정**합니다. 종료 코드가 실패 개수입니다. 판정은 출력이 아니라 **각 도구의 종료
+코드**로 합니다 — 예전에는 출력을 grep 해서 `BUILD FAILED` 한 줄이 묻힌 채 커밋된 적이
+있습니다.
+
+처음 clone 했다면 개발용 venv 부터 만들라고 `check.sh` 가 알려줍니다.
+IntelliJ 의 **"3. 전체 검증"** 도 이것을 부릅니다. 서버를 띄울 때는 **"1. 서버 실행 (bootRun)"** 을 쓰세요 — `fun main` 옆
 화살표로 띄우면 작업 디렉터리가 달라져 볼트·색인·**궤적**이 다른 자리를 씁니다.
 
 작업 규율은 [`CLAUDE.md`](CLAUDE.md) 에 있습니다 — 절대 깨면 안 되는 계약,
@@ -512,11 +559,13 @@ IntelliJ 를 쓴다면 `.idea/runConfigurations/` 의 **"3. 전체 검증"** 이
 | 인증 계층 (SSO/IAM) | 통과 — 가짜 IAM 으로 OAuth2·만료 갱신·401 재시도 |
 | Kotlin 학습 레이어 (`learn/`) | JUnit 통과. 기대값 6개가 `scoring_reference.py` 산출과 1e-6 일치 |
 | Kotlin 서비스 계층 | JUnit 통과 |
-| Lucene/Spring 배선 | 빌드·bootRun·재색인 검증됨 (실데이터 2,383건) |
+| Lucene/Spring 배선 | 빌드·bootRun·재색인 검증됨 (실데이터 13,921건) |
+| Docker 기동 | 검증됨 — 볼트 마운트·ACL·검색·읽기·grep, `restart` 후 궤적·등록 유지 |
+| 성능 측정 | 합성 볼트로 재현 (`GrepScaleTest`) — 실코퍼스 없이도 돕니다 |
 | **검색 랭킹 품질** | **미검증** — 배선이 도는 것과 랭킹이 좋은 것은 다른 문제입니다 |
 | **실사용 적중률** | **측정된 바 없음** |
 
-**개수는 일부러 안 적습니다** — 늘 때마다 낡습니다. 위 네 스위트를 돌리면 나옵니다.
+**개수는 일부러 안 적습니다** — 늘 때마다 낡습니다. `./check.sh` 를 돌리면 나옵니다.
 
 ### 측정 지표 (우선순위 순)
 
@@ -539,6 +588,11 @@ IntelliJ 를 쓴다면 `.idea/runConfigurations/` 의 **"3. 전체 검증"** 이
 
 권한 변경이 `lastModified` 를 안 건드리는 문제는 `acl` 을 `sync` 와 분리해 더 자주
 돌리는 것으로 다룹니다 (로컬판에는 해당 없음 — 개인 토큰이 곧 권한 범위).
+
+**사람 쪽 권한은 손으로 유지합니다.** 페이지 권한은 `wikilens acl` 이 따라가지만,
+"누가 어느 스페이스를 보는가" 는 운영자가 등록합니다. Confluence 에서 그룹이 바뀌어도
+모르고, **빠져도 지울 때까지 계속 보입니다** — 낡는 방향이 "덜 보임" 이 아니라
+"더 보임" 입니다. 사람이 늘거나 그룹 이동이 잦은 팀에는 이 방식이 안 맞습니다.
 
 **"유용했다"의 판정.** 서버는 무엇을 읽었는지만 보고 그게 답이었는지는 모릅니다.
 신호 다섯을 씁니다 — 마지막 읽기, 질의 재구성, **서빙했는데 끝내 안 읽힌 힌트**,
