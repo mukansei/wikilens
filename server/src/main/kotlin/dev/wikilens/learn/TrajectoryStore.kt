@@ -360,18 +360,33 @@ class TrajectoryStore(
         for (t in terms) {
             val byPage = postings[t] ?: continue
             for ((pid, hm) in byPage) {
-                val snap = synchronized(hm) { intArrayOf(hm[0], hm[1]) }
+                // 락 안에서는 int 둘만 읽는다. 예전에는 (항×페이지)마다 배열을 하나씩
+                // 만들어 버렸다 — 3항 × 1만 후보면 질의당 3만 할당이다. 개선됐을 때만
+                // 만든다.
+                val h: Int
+                val m: Int
+                synchronized(hm) { h = hm[0]; m = hm[1] }
                 cover[pid] = (cover[pid] ?: 0) + 1
                 val cur = best[pid]
-                if (cur == null || (snap[0] - snap[1]) > (cur[0] - cur[1])) best[pid] = snap
+                if (cur == null || (h - m) > (cur[0] - cur[1])) best[pid] = intArrayOf(h, m)
             }
         }
 
         return best.mapNotNull { (pid, hm) ->
             if (!visible(pid)) return@mapNotNull null      // **take 보다 먼저** — 위 주석 참고
             val c = (cover[pid] ?: 0).toDouble() / terms.size
-            val rel = Reliability.ebLower(hm[0], hm[1], priors[pid] ?: 0.3) * c
-            if (rel >= serveThreshold) Hint(pid, hm[0], hm[1], rel) else null
+            val prior = priors[pid] ?: 0.3
+            // **문턱 판정을 cdf 한 번으로 한다.** `ebLower` 는 이분법이라 cdf 를 80회
+            // 부르는데, 여기서 필요한 것은 대부분 넘었는지 여부뿐이다. 후보 수는
+            // 포스팅이 쌓일수록 단조증가하고 이 루프는 **모든 검색이 지나는 핫패스**다.
+            // `rel = ebLower * c >= serveThreshold` 이므로 문턱은 페이지마다
+            // `serveThreshold / c` 다 — 항을 일부만 덮은 후보는 그만큼 높은 문턱을 넘어야
+            // 한다(c 가 작으면 문턱이 1 을 넘어 자명하게 기각된다).
+            if (!Reliability.meetsThreshold(hm[0], hm[1], prior, serveThreshold / c)) {
+                return@mapNotNull null
+            }
+            // 통과한 소수에만 정확한 값을 구한다 — 이 값이 랭킹 키라 근사하면 안 된다.
+            Hint(pid, hm[0], hm[1], Reliability.ebLower(hm[0], hm[1], prior) * c)
         }.sortedByDescending { it.reliability }.take(limit)
     }
 
