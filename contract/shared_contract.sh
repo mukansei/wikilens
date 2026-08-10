@@ -461,10 +461,11 @@ check "ACL 시행이 꺼진 것이 기동·stats·--status 세 곳에서 보임"
 # 볼 수 있는 후보가 더 아래에 있어도 슬롯을 이미 뺏겼기 때문이다. `SearchService` 가
 # 어휘 결과에서 이미 겪은 실패다(조용히 실패 8번: "take 를 필터 뒤로"). 지금은 전 페이지가
 # @public 이라 안 보이고 **ACL 수집이 들어오는 순간** 나타난다.
-check "학습 힌트를 자르기 전에 권한으로 거름 (안 그러면 좁은 권한은 힌트가 0)" \
+check "서빙 못 할 힌트를 자르기 전에 거름 (권한 + 존재)" \
   'grep -q "visible: (String) -> Boolean" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
    && grep -q "if (!visible(pid))" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
-   && grep -qE "store\.hints\(.*\) \{ pid -> acl\.canSee\(tokens, pid\) \}" server/src/main/kotlin/dev/wikilens/service/SearchService.kt'
+   && grep -qE "store\.hints\(.*limit\) \{ pid ->" server/src/main/kotlin/dev/wikilens/service/SearchService.kt \
+   && grep -q "acl.canSee(tokens, pid) && index.metaOf(pid) != null" server/src/main/kotlin/dev/wikilens/service/SearchService.kt'
 
 # 궤적에 남기는 것은 권한 **범위**(토큰 해시)이지 신원이 아니다. userKey 가 들어가면
 # "누가 무엇을 검색했나" 가 영구 기록으로 남는데 그건 이 도구가 지금 안 하는 일이고,

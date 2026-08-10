@@ -161,4 +161,33 @@ class SearchServiceTest {
         assertTrue(res.hits.size <= SearchService.MAX_LIMIT,
                    "상한을 넘었다: ${res.hits.size}")
     }
+
+    /**
+     * **삭제된 페이지의 학습 간선이 살아있는 것을 밀어내면 안 된다.**
+     *
+     * 포스팅은 한 번도 지워지지 않는다 — 궤적 로그가 정본이고 append-only 라, 위키에서
+     * 문서를 지워도 그 간선은 남는다(재기동하면 로그에서 되살아나므로 지우는 것도
+     * 답이 아니다). 그래서 **서빙 시점에 거른다.**
+     *
+     * 거르는 자리가 중요하다. `take` 뒤에서 걸렀더니 지워진 페이지가 limit 슬롯을 먹고
+     * 아래에서 폐기돼, 살아있는 간선이 있는데도 안 나왔다(실측: 넷 중 둘을 지우자 남은
+     * 둘 중 하나만). CLAUDE.md 8·22번과 **같은 실패인데 자리만 또 다르다.**
+     */
+    @Test
+    fun `삭제된 페이지의 간선이 살아있는 간선을 밀어내지 않는다`() {
+        val learned = (1..4).map { page("L$it", "학습전용 $it", "커피 머신 청소 $it") }
+        load(*(learned + page("X", "무관", "커피")).toTypedArray())
+        repeat(6) { r -> learned.forEach { train("s$r-${it.id}", "로그인", it.id) } }
+
+        val before = svc.search(SearchRequest("로그인", user, limit = 3))
+        assertEquals(3, before.hits.count { it.pageId.startsWith("L") },
+                     "전제가 깨졌다 — 학습 힌트 셋이 나와야 한다")
+
+        // L1·L2 가 위키에서 삭제됐다. 재색인하면 색인에서 사라지지만 학습은 남는다.
+        load(learned[2], learned[3], page("X", "무관", "커피"))
+
+        val after = svc.search(SearchRequest("로그인", user, limit = 3))
+        assertEquals(setOf("L3", "L4"), after.hits.map { it.pageId }.filter { it.startsWith("L") }.toSet(),
+                     "지워진 페이지가 슬롯을 먹어 살아있는 간선이 밀려났다")
+    }
 }

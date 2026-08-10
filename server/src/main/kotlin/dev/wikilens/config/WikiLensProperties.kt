@@ -45,7 +45,7 @@ data class WikiLensProperties(
     /**
      * 본문 스캔 엔진: `auto`(기본) · `jvm` · `ripgrep`.
      *
-     * `auto` 는 rg 가 있으면 rg 다 — 문서당 스캔 비용이 약 3.3배 싸서 예산에 닿는
+     * `auto` 는 rg 가 있으면 rg 다 — 문서당 스캔 비용이 약 3~4배 싸서 예산에 닿는
      * 지점을 그만큼 뒤로 민다. 한계를 "몇 건" 으로 적지 않는 이유와 다시 재는 법은
      * `ContentService.GREP_BUDGET_NANOS` 와 `GrepScaleTest` 에 있다.
      * 두 경로가 같은 답을 내는지는 `GrepEngineParityTest` 가 지킨다.
