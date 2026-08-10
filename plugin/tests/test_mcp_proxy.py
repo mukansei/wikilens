@@ -20,6 +20,11 @@ PORT = 8899
 
 received: list[tuple[str, dict]] = []
 
+#: 가짜 서버가 **내보낸** payload. 요청(`received`)이 아니라 응답을 기록한다 —
+#: 와이어 포맷(키 이름)을 정본과 대조하려면 나가는 바이트를 봐야 한다.
+#: 이름이 `sent` 가 아닌 이유: 아래 테스트가 지역 변수로 `sent` 를 쓰고 있어 가려진다.
+responded: list[tuple[str, dict]] = []
+
 
 #: 가짜 서버가 낼 grep 엔진 상태 (이름, 쓸 수 있나). 테스트가 도중에 바꾼다.
 STATS_ENGINE = ["ripgrep", True]
@@ -32,6 +37,7 @@ class Fake(BaseHTTPRequestHandler):
         pass
 
     def _json(self, payload: dict) -> None:
+        responded.append((self.path, payload))
         raw = json.dumps(payload, ensure_ascii=False).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -75,19 +81,20 @@ class Fake(BaseHTTPRequestHandler):
                        "matches": [{"pageId": "200000003", "title": "배포 파이프라인 규격",
                                     "line": 42, "text": "DEPLOY_TOKEN=..."}]}
         elif self.path == "/api/tree":
+            # `truncated` 는 실제 서버가 **항상** 보낸다(Boolean 이라 null 생략이 안 된다).
+            # 빠져 있었고 와이어 포맷 검사가 그것을 잡았다 — 가짜 서버가 실제 서버가
+            # 절대 안 내는 모양을 내고 있었다.
             payload = {"markdown": "- [SPACE] 팀 홈 — 111354187\n"
-                                    "  - 참고. 조직 R&R 정리 — 167164533\n"}
+                                    "  - 참고. 조직 R&R 정리 — 167164533\n",
+                       "truncated": False}
         elif self.path == "/api/session/end":
             payload = {"finalized": 1}
         else:
             self.send_response(404); self.end_headers(); return
 
-        raw = json.dumps(payload, ensure_ascii=False).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(raw)))
-        self.end_headers()
-        self.wfile.write(raw)
+        # `_json` 으로 합친다 — 예전에는 여기서 응답을 직접 써서 do_GET 과 코드가
+        # 둘이었고, 그래서 **응답 기록이 절반만** 됐다.
+        self._json(payload)
 
 
 def rpc(proc, msg: dict) -> dict | None:
@@ -295,6 +302,37 @@ def main() -> int:
         finally:
             if p5.poll() is None:
                 p5.stdin.close(); p5.kill()
+
+        # --- 11b. 와이어 포맷이 Kotlin DTO 와 같은가 ------------------------
+        #
+        # **DTO 필드 이름이 곧 JSON 키다.** 한쪽만 바꾸면 컴파일도 테스트도 통과하는데
+        # 런타임에 그 자리가 조용히 빈다 — 가짜 서버가 키를 손으로 적어두므로 이 파일의
+        # 다른 검사는 계속 초록이다. 정본은 `contract/wire-format.json` 이고 Kotlin 쪽은
+        # `WireFormatTest` 가 **직렬화 결과로** 같은 파일을 검사한다. 여기서는 가짜
+        # 서버가 그 정본대로 내보내는지 본다 — 어긋나면 프록시가 읽는 키와 서버가
+        # 내는 키가 갈렸다는 뜻이다.
+        print("\n=== 11b. 와이어 포맷 (contract/wire-format.json) ===")
+        spec = json.loads((PROXY.parents[3] / "contract" / "wire-format.json")
+                          .read_text(encoding="utf-8"))
+
+        def wire(label, node, got):
+            allowed = set(node["always"]) | set(node["optional"])
+            missing, extra = set(node["always"]) - set(got), set(got) - allowed
+            check(f"{label} 키가 정본과 맞음", not missing and not extra,
+                  f"빠짐={sorted(missing)} 남음={sorted(extra)}")
+
+        by_path = {}
+        for path, payload in responded:
+            by_path.setdefault(path, payload)
+        for api, key in (("search", "/api/search"), ("read", "/api/read"),
+                         ("grep", "/api/grep"), ("tree", "/api/tree")):
+            payload = by_path.get(key)
+            if payload is None:
+                check(f"{api} 응답을 관측함", False, "가짜 서버가 그 경로를 안 탔다")
+                continue
+            wire(api, spec[api], payload)
+        wire("search.hit", spec["search"]["hit"], by_path["/api/search"]["hits"][0])
+        wire("grep.match", spec["grep"]["match"], by_path["/api/grep"]["matches"][0])
 
         # --- 12. --status 진단 -------------------------------------------
         print("\n=== 12. --status 진단 ===")
