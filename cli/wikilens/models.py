@@ -91,7 +91,3 @@ def canonical_json(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":")) + "\n"
 
 
-def jsonl_line(obj: Any) -> str:
-    """JSONL 한 줄. 결정적 직렬화 규칙은 [canonical_json] 과 **같아야** 한다 —
-    예전엔 같은 구현이 두 벌로 복제돼 있어 한쪽만 바뀔 위험이 있었다."""
-    return canonical_json(obj)

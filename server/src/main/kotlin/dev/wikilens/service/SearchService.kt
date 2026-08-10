@@ -1,11 +1,5 @@
 package dev.wikilens.service
 
-/*
- * `api/` 에서 분리했다. 거기엔 HTTP 표면(`Controller`·`Dto`)만 남는다 —
- * 한 패키지가 "라우팅"과 "무엇을 하는가"를 함께 갖고 있으면, 검색 랭킹을 고치려는
- * 사람과 엔드포인트를 추가하려는 사람이 같은 자리를 연다.
- */
-
 import dev.wikilens.api.SearchHit
 import dev.wikilens.api.SearchRequest
 import dev.wikilens.api.SearchResponse
@@ -18,11 +12,11 @@ import org.springframework.stereotype.Service
 /**
  * 어휘 랭킹(Lucene) + 학습 힌트(궤적) 융합.
  *
- * 서버가 질의를 토큰화한다. 클라이언트는 원문만 보낸다 — 토크나이저 정본이 하나여야
- * 항이 어긋나지 않는다. 양쪽이 각자 토큰화했다가 조용히 0건이 되는 버그를 겪었다.
+ * `api/` 에서 분리한 이유는 한 패키지가 "라우팅" 과 "무엇을 하는가" 를 함께 가지면 랭킹을
+ * 고치려는 사람과 엔드포인트를 추가하려는 사람이 같은 자리를 열어서다.
  *
- * 학습 힌트는 순위가 아니라 **신뢰도로 가중**한다. EB 하한은 이미 확률이므로
- * 순위로 뭉개면 보정된 정보를 버리게 된다.
+ * 학습 힌트는 순위가 아니라 **신뢰도로 가중**한다 — EB 하한은 이미 확률이라 순위로
+ * 뭉개면 보정된 정보를 버린다.
  */
 @Service
 class SearchService(
@@ -34,36 +28,22 @@ class SearchService(
         private const val RRF_K = 60.0
         private const val LEARNED_WEIGHT = 1.6
 
-        /**
-         * 클라이언트가 요구할 수 있는 최대 결과 수. `grep` 이 같은 이유로 죄는 것과
-         * 짝이다 — 거기는 응답 크기 때문이고 **여기는 궤적 로그 때문**이다.
-         */
+        /** 최대 결과 수. `grep` 은 응답 크기 때문이고 **여기는 궤적 로그 때문**이다. */
         const val MAX_LIMIT = 100
 
         /**
-         * 질의 길이 상한. `grep` 의 `MAX_PATTERN` 과 같은 자리다 — 거기만 있고 여기
-         * 없던 것이 **같은 판단의 비대칭**이었다.
-         *
-         * 분석된 항이 `Trajectory.keywords` 로 궤적 로그에 들어간다. 로그는 append-only
-         * 이고 유일한 복구 불가 자산이라, 한 요청이 무한정 적어 넣을 수 있으면 안 된다.
-         * 자연어 질의는 이 근처에도 안 온다.
+         * 질의 길이 상한. 분석된 항이 `Trajectory.keywords` 로 **궤적 로그에 영구히**
+         * 들어가므로 한 요청이 무한정 적어 넣을 수 있으면 안 된다. `grep` 의
+         * `MAX_PATTERN` 과 같은 자리다.
          */
         const val MAX_QUERY = 500
     }
 
     fun search(req: SearchRequest): SearchResponse {
-        // **상한이 없으면 셋이 깨진다.** 전부 실측으로 확인했다:
-        //
-        //   - `limit <= 0` → Lucene 이 예외를 던져 **HTTP 500**. 버그 있는 클라이언트
-        //     하나면 난다.
-        //   - 큰 값 → `limit * 3` 이 오버플로우해 음수가 되고 역시 500
-        //     (실측: `limit=715827883`).
-        //   - 그리고 이게 제일 나쁘다 — **서빙한 힌트는 궤적 로그에 `served` 로 영구히
-        //     남는다.** 로그는 append-only 이고 유일한 복구 불가 자산이라, 한 요청이
-        //     수천 개를 적어 넣을 수 있으면 안 된다.
-        //
-        // Lucene 자체는 `maxDoc` 으로 죄므로 메모리는 안 터진다(실측: limit 300만이
-        // 3,941건 · 636KB · 268ms). 그래서 이 상한은 메모리가 아니라 위 셋을 위한 것이다.
+        // **상한이 없으면 셋이 깨진다**(전부 실측): `limit <= 0` 은 Lucene 예외로 HTTP 500,
+        // 큰 값은 `limit * 3` 오버플로우로 또 500, 그리고 제일 나쁜 것 — **서빙한 힌트가
+        // 궤적 로그에 영구히 남으므로** 한 요청이 수천 개를 적어 넣으면 안 된다.
+        // 메모리는 Lucene 이 `maxDoc` 으로 죄어 안 터진다(limit 300만 → 3,941건 268ms).
         val limit = req.limit.coerceIn(1, MAX_LIMIT)
         // 자르지 않고 거부한다 — 자르면 사용자가 친 것과 다른 질의의 답을 주면서
         // 그 사실을 안 알린다. `grep` 이 패턴에 대해 하는 것과 같다.
@@ -73,9 +53,8 @@ class SearchService(
         }
         val tokens = acl.tokensFor(req.userKey)
 
-        // **항과 검색을 한 번에 받는다.** 따로 부르면 그 사이 재색인이 끝났을 때
-        // 항은 옛 분석기 것이고 결과는 새 색인 것이 된다 — 그 항이 학습 포스팅의
-        // 키라서, 같은 질의가 그 순간에만 다른 키로 기록된다.
+        // **항과 검색을 한 번에 받는다** — 따로 부르면 그 사이 재색인이 끝났을 때 항은
+        // 옛 분석기 것이고 결과는 새 색인 것이 된다. 그 항이 학습 포스팅의 키다.
         val analyzed = index.analyzeAndSearch(req.query, tokens, limit * 3)
         val terms = analyzed.terms
 
@@ -90,19 +69,25 @@ class SearchService(
         val top = lexical.firstOrNull()?.score?.toDouble()?.takeIf { it > 0.0 } ?: 1.0
         val priors = lexical.associate { it.id to (it.score / top).coerceIn(0.0, 1.0) }
 
-        // **서빙 못 할 후보는 자르기 전에 전부 걸러 넘긴다.** `take` 뒤에 거르면 버려질
-        // 후보가 limit 슬롯을 먹어, 서빙 가능한 힌트가 아래에 있어도 안 나온다.
+        // **서빙 못 할 후보는 자르기 전에 거른다.** `take` 뒤에 거르면 버려질 후보가
+        // limit 슬롯을 먹어, 서빙 가능한 힌트가 아래에 있어도 안 나온다 — 같은 술어를
+        // 자리만 바꿔 세 번 놓쳤다(`CLAUDE.md` 조용히 실패 8·22번).
         //
-        // 조건이 둘이다:
+        //   - **권한** — 실제로 겪은 실패. 권한이 좁으면 힌트가 통째로 0 이 됐다.
+        //   - **존재** — 포스팅은 한 번도 지워지지 않는다(궤적 로그가 정본이고
+        //     append-only). 단 **도달 경로는 아직 확인되지 않았다**: `VaultReader.read` 가
+        //     `acl.replacePages` 로 `retainAll` 하므로 삭제 방향은 권한 술어가 이미
+        //     거른다(실측). 남는 자리는 `reload()` 의 `replacePages` → `rebuild` 사이
+        //     창뿐이다. "고친 버그" 가 아니라 아직 안 일어난 것을 막는 것으로 읽을 것.
         //
-        //   - **권한.** 권한이 좁은 사용자는 상위 후보가 전부 안 보일 때 힌트가 통째로 0.
-        //   - **존재.** 포스팅은 **한 번도 지워지지 않는다**(궤적 로그가 정본이고
-        //     append-only 다). 위키에서 삭제된 페이지의 간선이 그대로 남아 살아있는
-        //     간선을 밀어낸다 — 실측: 학습 페이지 넷 중 둘을 지우자 남은 둘 중 **하나만**
-        //     나왔다(지워진 둘이 슬롯을 먹고 아래에서 폐기됐다).
+        // **이 술어가 유일한 권한 관문이다.** 아래 융합 루프에는 재확인이 없다 —
+        // `canSee(userKey, p)` 는 정의상 `canSee(tokensFor(userKey), p)` 이고, 이 요청은
+        // 위에서 `tokens` 를 한 번 잡아 어휘 검색까지 그것으로 했다. 재확인은 **그 안에서
+        // 유일하게 토큰을 다시 읽던 자리**라, 없앤 쪽이 요청 내 일관성이 높다(권한이 요청
+        // 도중 바뀌어도 한 요청은 한 권한 스냅샷으로 답한다).
         //
-        // 토큰은 위에서 이미 구했다 — 페이지마다 다시 조회하지 않는다. `metaOf` 는
-        // 스냅샷 맵 조회라 후보마다 불러도 싸다.
+        // **옮기거나 지우지 말 것** — `SearchServiceTest` 의 "권한 없는 페이지는 학습
+        // 힌트로도 새지 않는다" 가 이것 하나에 걸려 있다(빼면 빨개진다, 확인함).
         val hints = store.hints(terms, priors, limit) { pid ->
             acl.canSee(tokens, pid) && index.metaOf(pid) != null
         }
@@ -115,9 +100,6 @@ class SearchService(
             acc[s.id] = Acc(1.0 / (RRF_K + rank + 1), "lexical", null)
         }
         hints.forEachIndexed { rank, h ->
-            // 힌트 대상도 ACL 을 통과해야 한다. 학습 레이어는 권한을 모르므로
-            // 여기서 반드시 다시 거른다 — 이중 방어선이다.
-            if (!acl.canSee(req.userKey, h.pageId)) return@forEachIndexed
             val boost = LEARNED_WEIGHT * h.reliability / (RRF_K + rank + 1)
             val cur = acc[h.pageId]
             if (cur != null) {
@@ -127,10 +109,9 @@ class SearchService(
             }
         }
 
-        // 어휘 결과에 없는 후보(학습 힌트로만 발견된 페이지)는 메타데이터 캐시에서 채운다.
-        // 예전엔 여기서 조용히 버려져 `source="learned"` 가 도달 불가능한 분기였다 —
-        // 어휘 검색이 못 찾는 문서를 찾아주는 것이 학습 레이어의 존재 이유인데 그게 죽어 있었다.
-        // take 는 필터 **뒤에** 와야 한다. 앞에 두면 버려질 후보가 limit 슬롯을 먹는다.
+        // 학습 힌트로만 발견된 페이지는 메타 캐시에서 채운다. 여기서 버리면
+        // `source="learned"` 가 도달 불가능한 분기가 되는데, **어휘 검색이 못 찾는 문서를
+        // 찾아주는 것이 학습 레이어의 존재 이유다.** `take` 는 필터 **뒤에** 와야 한다.
         val hits = acc.entries
             .sortedByDescending { it.value.score }
             .mapNotNull { (pid, a) ->
