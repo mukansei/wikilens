@@ -432,13 +432,15 @@ grep 엔진 RE2 전환(D12), 두 판 우선순위(D13), 분석기 색인 시점 
    `abandonedWithHints` 로 따로 세고 `sessionFailureRate` 분모에서 뺀다. 힌트 단위
    벌점(`rejected`)은 그대로 — 안 읽혔다는 사실은 확실하다.
    **남은 약점:** `dest = reads.last()` 라는 전제 자체는 그대로다.
-4. **저장소를 비공개 git 에 올리기** — remote 가 없어 `pip install git+URL` 분기,
-   타 머신 첫 설치, git source 마켓플레이스가 **전부 미검증**이다. 팀 배포의 선결 조건.
+4. **git source 로 실제 설치해 보기** — 저장소는 이미 올라가 있다
+   (`github.com/mukansei/wikilens`). 그런데 `pip install git+URL` 분기, 타 머신 첫 설치,
+   git source 마켓플레이스는 **여전히 미검증**이다 — **올릴 곳이 없어서가 아니라 그
+   경로로 설치해 본 적이 없어서다.** 팀 배포의 선결 조건.
    같은 머신의 `acme-dt` 가 `github.com/example-org` 에서 설치돼 도는 걸로 보아
-   경로 자체는 실재한다 — wikilens 로 확인만 안 됐다. 올릴 때 `--sparse` 를 쓴다면
+   경로 자체는 실재한다 — wikilens 로 확인만 안 됐다. `--sparse` 를 쓴다면
    `.claude-plugin plugin cli` 셋을 다 넣어야 한다(`cli/` 가 빠지면 `CLI_SOURCE` 가
-   비어 setup 이 git URL 을 되묻는 분기로 떨어진다). 게시 후에는 플러그인 이름이
-   불변이 되므로 개명은 그전에 끝낼 것 — D9.
+   비어 setup 이 git URL 을 되묻는 분기로 떨어진다).
+   **게시됐으므로 플러그인 이름은 이미 불변이다** — 개명하려면 `renames` 를 쓸 것(D9).
 
 5. **서버가 여러 대일 때 학습을 공유하기 (궤적 이벤트 전달)** — 아직 안 함.
    지금은 `StateDirLock` 이 **상태 디렉터리당 서버 하나로 막는다.** 둘을 띄우면 포스팅이
