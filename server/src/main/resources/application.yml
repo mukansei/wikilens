@@ -109,4 +109,4 @@ wikilens:
 
 logging:
   level:
-    dev.wikilens: INFO
+    io.wikilens: INFO
