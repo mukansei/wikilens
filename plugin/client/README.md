@@ -163,7 +163,7 @@ python3 ~/.claude/plugins/cache/wikilens/wikilens-client/*/mcp/wikilens_mcp.py -
 
 ```bash
 # 서비스 계정으로 1회 싱크 (사용자별 싱크 없음 → Confluence 부하 1배)
-CONFLUENCE_TOKEN=<서비스계정> wikilens --root ~/wiki sync --space PLATFORM
+CONFLUENCE_TOKEN=<서비스계정> wikilens --root ~/.wikilens/vault sync --space PLATFORM
 cd server && ./gradlew bootRun      # 기동 시 볼트를 찾아 전량 색인합니다
 ```
 

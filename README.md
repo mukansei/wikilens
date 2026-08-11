@@ -50,9 +50,15 @@ Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** 팀
 
 **사용자는 Confluence 자격증명이 필요 없습니다.** 서비스 계정 하나로 한 번 싱크합니다.
 
-**전제 둘:** 아래 명령은 저장소 루트에서 돕니다(`compose.yml` 과 프록시 경로가
-상대경로입니다). 그리고 CLI 는 `~/.wikilens/venv` 에 깔려 **PATH 에 없습니다** —
-아래처럼 절대경로로 부르거나 `WL=~/.wikilens/venv/bin/wikilens` 로 별칭을 잡으세요.
+**전제 셋:** 아래 명령은 저장소 루트에서 돕니다(`compose.yml` 과 프록시 경로가
+상대경로입니다). CLI 는 `~/.wikilens/venv` 에 깔려 **PATH 에 없습니다** — 아래처럼
+절대경로로 부르거나 `WL=~/.wikilens/venv/bin/wikilens` 로 별칭을 잡으세요.
+
+그리고 **볼트는 `~/.wikilens/vault` 입니다.** 로컬판·서버판·`compose.yml` 이 전부 이
+자리를 기본으로 봅니다 — 지우는 방법이 `rm -rf ~/.wikilens` 하나로 유지되고, 서버가
+`~/.wikilens/config.json` 의 `vault` 를 폴백으로 읽으므로 경로를 따로 알려줄 일도
+없습니다(`DECISIONS.md` D15). 다른 자리에 두려면 `--root` 와
+`--wikilens.vault-root` 를 **함께** 바꾸세요.
 
 ```bash
 cd <저장소 루트>
@@ -62,11 +68,11 @@ export CONFLUENCE_URL=https://회사.atlassian.net CONFLUENCE_TOKEN=<서비스�
 export WIKILENS_ADMIN_TOKEN=<임의의 긴 ASCII 문자열>
 
 # 1. 볼트 만들기 — 호스트에서 합니다. 컨테이너는 싱크하지 않습니다.
-$WL sync --space PLATFORM --root ~/wiki
-$WL acl                   --root ~/wiki      # 권한 수집 (주기가 다릅니다)
+$WL sync --space PLATFORM --root ~/.wikilens/vault
+$WL acl                   --root ~/.wikilens/vault      # 권한 수집 (주기가 다릅니다)
 
-# 2. 서버 기동
-WIKILENS_VAULT=~/wiki docker compose up -d --build
+# 2. 서버 기동 — compose 기본값이 같은 자리라 볼트 경로를 안 줘도 됩니다
+docker compose up -d --build
 
 # 3. 사용자 등록 — 어떤 토큰을 줄지는 `wikilens acl` 출력의 토큰 목록이 알려줍니다
 curl -XPOST -H "X-WikiLens-Admin: $WIKILENS_ADMIN_TOKEN" \
@@ -97,7 +103,7 @@ WIKILENS_SERVER=http://localhost:8787 WIKILENS_USER=alice@corp \
 
 ```bash
 WL=~/.wikilens/venv/bin/wikilens
-$WL sync --root ~/wiki && $WL acl --root ~/wiki \
+$WL sync --root ~/.wikilens/vault && $WL acl --root ~/.wikilens/vault \
   && curl -XPOST -H "X-WikiLens-Admin: $TOKEN" localhost:8787/api/admin/reindex
 ```
 
@@ -307,8 +313,8 @@ EOF
 chmod 600 ~/.wikilens/env.sh
 
 ~/.wikilens/venv/bin/wikilens doctor                       # 연결·인증·스페이스 확인
-~/.wikilens/venv/bin/wikilens sync --space PLATFORM --root ~/wiki   # 수 분
-~/.wikilens/venv/bin/wikilens stats --root ~/wiki
+~/.wikilens/venv/bin/wikilens sync --space PLATFORM --root ~/.wikilens/vault   # 수 분
+~/.wikilens/venv/bin/wikilens stats --root ~/.wikilens/vault
 ```
 
 자격증명은 `export` 가 아니라 파일에 둡니다. `export` 는 그 셸에서만 살아서
@@ -347,12 +353,12 @@ export CONFLUENCE_PREFIX=""        # Server/DC 강제
 
 ```bash
 # 서비스 계정으로 1회 싱크 (사용자별 싱크 없음 → Confluence 부하 1배)
-CONFLUENCE_TOKEN=<서비스계정> wikilens sync --space PLATFORM --root ~/wiki
-CONFLUENCE_TOKEN=<서비스계정> wikilens acl  --root ~/wiki   # 권한 수집 (별도 주기)
+CONFLUENCE_TOKEN=<서비스계정> wikilens sync --space PLATFORM --root ~/.wikilens/vault
+CONFLUENCE_TOKEN=<서비스계정> wikilens acl  --root ~/.wikilens/vault   # 권한 수집 (별도 주기)
 
 # 권장 — Docker. 이미지가 ripgrep 을 갖고 있고 경로가 절대경로로 못 박혀 있습니다.
 export WIKILENS_ADMIN_TOKEN=<임의의 긴 ASCII 문자열>
-WIKILENS_VAULT=~/wiki docker compose up -d --build
+docker compose up -d --build   # compose 기본값이 ~/.wikilens/vault 입니다
 
 # 또는 직접 — 기동 시 볼트를 찾아 전량 색인합니다
 cd server && ./gradlew bootRun
