@@ -432,7 +432,8 @@ grep 엔진 RE2 전환(D12), 두 판 우선순위(D13), 분석기 색인 시점 
    이어야 손익분기 `p_hit > p_wrong/(n−1)` 의 그 값이 된다(세션 성공률은
    `sessionFailureRate` 로 분리). **집계는 질의 종류를 가리지 않는다** — 힌트는 `Gate`
    분류와 무관하게 서빙되는데 한때 집계만 `cacheable` 뒤에 있어 UNKNOWN 이 통째로
-   빠졌다(마커에 안 걸리는 자연어 질의가 전부 거기다). 과소 보고 방향이었다. 실측으로 자기교정 확인: 힌트를 거부하자 같은 질의의
+   빠졌다(마커에 안 걸리는 자연어 질의가 전부 거기다). 과소 보고 방향이었다.
+   실측으로 자기교정 확인: 힌트를 거부하자 같은 질의의
    `학습 힌트 1 · rel=0.57` 이 다음 검색에서 0으로 내려갔다.
    **읽기 개수와 순위도 반영했다:** 마지막 읽기 앞의 것들은 "열어보고 지나친" 것이므로
    미스로 charge 한다(1건이면 미스 0, 6건이면 5 — 확신도가 비율로 드러난다). 그리고
@@ -491,7 +492,8 @@ grep 엔진 RE2 전환(D12), 두 판 우선순위(D13), 분석기 색인 시점 
 
    **결정적 사실:** Claude Code 는 Git for Windows 가 있으면 Git Bash 로 Bash 도구를
    쓰고, **없으면 PowerShell 도구를 쓴다** — 출처는 https://code.claude.com/docs/en/setup
-   ("Set up on Windows" 절). 즉 **Windows 에 Bash 가 있다고 가정할 수 없다.** 셸에 기대는 설계는 그만큼 Windows 를 잘라낸다.
+   ("Set up on Windows" 절). 즉 **Windows 에 Bash 가 있다고 가정할 수 없다.**
+   셸에 기대는 설계는 그만큼 Windows 를 잘라낸다.
 
    **연 것:** `.mcp.json` 의 `command` 를 `${WIKILENS_PYTHON:-python3}` 로 바꿨다.
    `.mcp.json` 은 `${VAR:-기본값}` 확장을 지원한다(https://code.claude.com/docs/en/mcp 의

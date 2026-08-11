@@ -589,7 +589,8 @@ Python 과 Kotlin 은 **파일로만** 연결됩니다. 볼트 포맷이 곧 인
 | 로컬판 | 됩니다 | **Git for Windows** 가 있으면 됩니다 |
 
 Claude Code 는 Git for Windows 가 있으면 **Git Bash 로 Bash 도구**를 쓰고, 없으면
-PowerShell 도구를 씁니다(https://code.claude.com/docs/en/setup). 볼트를 *만드는* 경로(`wikilens_cli.sh` 래퍼, 자격증명
+PowerShell 도구를 씁니다(https://code.claude.com/docs/en/setup).
+볼트를 *만드는* 경로(`wikilens_cli.sh` 래퍼, 자격증명
 `~/.wikilens/env.sh`)가 셸 스크립트라, Bash 도구가 있어야 로컬판과 서버 운영이
 됩니다. 검색만 하는 서버판 사용자는 해당 없습니다.
 
@@ -679,8 +680,9 @@ setx WIKILENS_PYTHON python
 있습니다.
 
 처음 clone 했다면 개발용 venv 부터 만들라고 `check.sh` 가 알려줍니다.
-IntelliJ 의 **"3. 전체 검증"** 도 이것을 부릅니다. 서버를 띄울 때는 "1. 서버 실행 (bootRun)" 을 쓰세요 — `fun main` 옆
-화살표로 띄우면 작업 디렉터리가 달라져 볼트·색인·궤적이 다른 자리를 씁니다.
+IntelliJ 의 **"3. 전체 검증"** 도 이것을 부릅니다. 서버를 띄울 때는
+"1. 서버 실행 (bootRun)" 을 쓰세요 — `fun main` 옆 화살표로 띄우면 작업 디렉터리가
+달라져 볼트·색인·궤적이 다른 자리를 씁니다.
 
 작업 규율은 [`CLAUDE.md`](CLAUDE.md) 에 있습니다 — 절대 깨면 안 되는 계약,
 조용히 실패하는 것들, 의도적으로 이상해 보이는 것.
