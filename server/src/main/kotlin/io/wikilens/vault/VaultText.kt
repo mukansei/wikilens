@@ -18,8 +18,14 @@ import java.nio.file.Path
  * 볼트는 Python 싱크가 UTF-8 로 쓰므로 정상 경로에서는 안 생긴다. 디스크가 차거나
  * 싱크가 도중에 죽으면 남는다.
  *
- * **세 소비자가 같은 디코더를 써야 한다** — `read`(ContentService) · JVM 스캔 ·
- * rg 의 stdout. 한 벌만 REPORT 로 되돌아가면 그 경로만 500 이 난다.
+ * **네 소비자가 같은 디코더를 써야 한다** — `read`(ContentService) · JVM 스캔 ·
+ * rg 의 stdout · **색인**(`VaultReader.readBody`). 한 벌만 REPORT 로 되돌아가면
+ * 그 경로만 갈린다.
+ *
+ * **넷째가 오래 빠져 있었다.** 색인만 `Files.readString` 을 쓰고 실패를 빈 문자열로
+ * 삼켜서, 깨진 파일 하나가 `grep`·`read` 에서는 정상인데 `search` 에서만 사라졌다
+ * (실측 2026-08-12). 이 목록이 셋이라고 적혀 있던 것이 그 결함을 가렸다 —
+ * **소비자를 추가하면 여기도 고칠 것.** `MalformedBodyTest` 가 색인 경로를 잠근다.
  */
 object VaultText {
     fun reader(f: Path): BufferedReader = reader(Files.newInputStream(f))
