@@ -110,6 +110,26 @@ def quarantine_unusable_config() -> str:
     return str(backup)
 
 
+def _text(value) -> str:
+    """
+    설정값을 문자열로. **경로가 될 수 없는 타입은 없는 것으로 친다.**
+
+    `_config()` 가 dict 를 보장해도 **그 안의 값 타입은 아무도 안 봤다.**
+    `{"vault": 123}` 한 줄이면 `Path(123)` 이 `TypeError` 를 내고 이 스크립트가 통째로
+    죽는다 — 스킬은 `VAULT=` 대신 traceback 을 받는데 **그 분기가 없어 검색이 아예
+    안 된다**(실측). 손으로 고치는 파일이라 따옴표를 빠뜨린 숫자·경로 목록이 실제로
+    들어온다.
+
+    같은 파일을 읽는 다른 둘은 이미 견딘다 — MCP 프록시는 `str(v)` 로 강제하고
+    Kotlin `UserConfig` 는 `isTextual` 로 거른다. **로컬판만 빠져 있었다.**
+
+    숫자를 문자열로 바꾸지 않고 **버리는** 이유: 경로로 쓸 값이라 `123` 은 어차피
+    사용자 의도가 아니고, 조용히 상대경로 `./123` 을 만들면 "왜 빈 볼트인가" 를 더
+    찾기 어려워진다. 기본 경로로 떨어지면 `STATUS` 가 그것을 말한다.
+    """
+    return value.strip() if isinstance(value, str) else ""
+
+
 def resolve_vault(cfg: dict | None = None) -> Path:
     """
     볼트 경로 정본.
@@ -119,7 +139,7 @@ def resolve_vault(cfg: dict | None = None) -> Path:
     (기존에 다른 위치에 볼트를 만들어 둔 사용자는 config 한 줄로 그대로 쓴다.)
     """
     cfg = _config() if cfg is None else cfg
-    for raw in (os.environ.get("WIKILENS_VAULT"), cfg.get("vault")):
+    for raw in (os.environ.get("WIKILENS_VAULT"), _text(cfg.get("vault"))):
         if raw:
             return Path(raw).expanduser().resolve()
     return DEFAULT_VAULT
@@ -157,8 +177,8 @@ def cli_argv(cfg: dict | None = None) -> list[str]:
     """
     cfg = _config() if cfg is None else cfg
 
-    explicit = cfg.get("cli")
-    if isinstance(explicit, str) and explicit:
+    explicit = _text(cfg.get("cli"))
+    if explicit:
         p = Path(explicit).expanduser()
         if p.is_file() and os.access(p, os.X_OK):
             return [str(p)]
@@ -194,8 +214,10 @@ def find_cli(cfg: dict) -> str:
 
 def cli_source(cfg: dict) -> str:
     """`pip install` 에 넘길 대상. 없으면 빈 문자열 — setup 이 사용자에게 물어야 한다."""
-    if cfg.get("cli_source"):
-        return str(cfg["cli_source"])
+    # `_text` 로 거른다 — 이 값은 `pip install` 인자로 나가므로 dict·숫자를 `str()`
+    # 로 뭉개면 `pip install {'a': 1}` 같은 명령이 만들어진다.
+    if _text(cfg.get("cli_source")):
+        return _text(cfg["cli_source"])
     if os.environ.get("WIKILENS_CLI_SOURCE"):
         return os.environ["WIKILENS_CLI_SOURCE"]
     known = Path.home() / ".claude" / "plugins" / "known_marketplaces.json"

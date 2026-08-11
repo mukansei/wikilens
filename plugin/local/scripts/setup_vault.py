@@ -23,7 +23,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from vault_status import (  # noqa: E402
-    CONFIG_DIR, CONFIG_PATH, DEFAULT_VAULT, ENV_PATH, VENV_CLI, _config,
+    CONFIG_DIR, CONFIG_PATH, DEFAULT_VAULT, ENV_PATH, VENV_CLI, _config, _text,
     cli_argv, cli_source, quarantine_unusable_config,
 )
 
@@ -239,10 +239,13 @@ def main(argv: list[str]) -> int:
     # --vault 를 안 주면 이미 기록된 볼트를 그대로 쓴다. 기본 경로로 되돌리면
     # `--register-permissions` 만 다시 호출했을 때 엉뚱한 경로가 등록된다.
     existing = _config()
+    # `_text` 로 거른다 — `{"vault": 123}` 이면 `Path()` 가 `TypeError` 를 내고 setup 이
+    # 통째로 죽는다. 손으로 고치는 파일이라 따옴표 빠진 값이 실제로 들어온다.
+    # (`vault_status.resolve_vault` 와 같은 규칙이다.)
     if args.vault:
         vault = Path(args.vault).expanduser().resolve()
-    elif existing.get("vault"):
-        vault = Path(existing["vault"]).expanduser().resolve()
+    elif _text(existing.get("vault")):
+        vault = Path(_text(existing["vault"])).expanduser().resolve()
     else:
         vault = DEFAULT_VAULT
     source = args.cli_source or cli_source(existing)
