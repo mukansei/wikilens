@@ -164,7 +164,7 @@ wikilens acl --root ~/.wikilens/vault      # 그다음 POST /api/admin/reindex
 ## ACL 시행을 끌 수 있습니다 — 다만 조건이 좁습니다
 
 ```bash
---wikilens.acl-enforced=false      # 기본은 true
+--wikilens.acl-enforced=true       # 기본은 false (끔)
 ```
 
 **끄면 등록 없이 접속한 누구나 색인된 전 문서를 봅니다.** `userKey` 도 필요 없어집니다.

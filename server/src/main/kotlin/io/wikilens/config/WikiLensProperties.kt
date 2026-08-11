@@ -25,8 +25,15 @@ data class WikiLensProperties(
      * ([io.wikilens.index.LuceneIndex]). 둘은 재색인에서 만난다.
      */
     val analyzer: String = "korean",
-    /** 질의 시점 ACL 시행. 기본 **켜짐**. 끄는 것이 정당한 경우는 [AclRegistry] 참고. */
-    val aclEnforced: Boolean = true,
+    /**
+     * 질의 시점 ACL 시행. **기본이 꺼짐이다** — 지금의 시행은 실질적으로 사용자
+     * 허용목록이라(`sync` 가 권한을 안 가져온다) 얻는 것 없이 전원이 빈손이 되는
+     * 함정이었다. 켜는 조건과 그때 생기는 일은 [AclRegistry] 참고.
+     *
+     * **꺼져 있다는 사실은 기동 로그·`/api/stats`·`--status` 셋이 계속 말한다.**
+     * 조용히 열린 것이 아니라 시끄럽게 열린 상태여야 이 기본값이 정당하다.
+     */
+    val aclEnforced: Boolean = false,
     /** `/api/admin` 공유 토큰. **비면 관리 API 가 전부 404.** 근거는 [io.wikilens.api.AdminGuard]. */
     val adminToken: String = "",
     /**

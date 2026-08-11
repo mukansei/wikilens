@@ -453,10 +453,22 @@ check "ACL 시행 스위치가 한 곳뿐 (소비자는 스위치를 모른다)"
   '! git grep -lE "isEnforced|aclEnforced" -- server/src/main/kotlin/io/wikilens/service \
         server/src/main/kotlin/io/wikilens/index server/src/main/kotlin/io/wikilens/vault'
 
-# 기본값이 꺼짐이면 **조용히 열린 채** 배포된다. 조용히 빈손인 쪽이 낫다 — 그건 눈에 띈다.
-check "ACL 시행 기본값이 켜짐 (상수와 application.yml 이 함께)" \
-  'grep -q "val aclEnforced: Boolean = true" server/src/main/kotlin/io/wikilens/config/WikiLensProperties.kt \
-   && grep -q "^  acl-enforced: true$" server/src/main/resources/application.yml'
+# **기본값이 꺼짐으로 바뀌었다**(2026-08-11). 지금의 시행은 `sync` 가 권한을 안 가져와
+# 실질적으로 사용자 허용목록이라, 얻는 것 없이 전원이 빈손이 되는 함정이었다.
+#
+# 그래서 "켜짐인가" 는 더는 검사할 것이 아니다. **남는 불변식은 둘이 일치하는가**다 —
+# 코드 상수와 `application.yml` 이 갈리면 운영자가 한쪽을 고치고 다른 쪽이 조용히
+# 이긴다. 그리고 꺼짐이 기본이므로 **"꺼진 것이 보이는가"(아래 계약)가 이 기본값의
+# 전제**가 된다. 다시 켬으로 되돌린다면 두 곳을 함께 고쳐야 이 검사가 통과한다.
+check "ACL 시행 기본값이 상수와 application.yml 에서 같음" \
+  'python3 -c "
+import re, pathlib, sys
+kt = pathlib.Path(\"server/src/main/kotlin/io/wikilens/config/WikiLensProperties.kt\").read_text()
+yml = pathlib.Path(\"server/src/main/resources/application.yml\").read_text()
+m = re.search(r\"val aclEnforced: Boolean = (true|false)\", kt)
+y = re.search(r\"^  acl-enforced: (true|false)$\", yml, re.M)
+sys.exit(0 if m and y and m.group(1) == y.group(1) else 1)
+"'
 
 # 꺼두면 계속 말해야 한다 — 기동 로그 한 번으로는 재기동 뒤 아무도 모른다.
 check "ACL 시행이 꺼진 것이 기동·stats·--status 세 곳에서 보임" \
