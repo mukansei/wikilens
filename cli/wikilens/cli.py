@@ -6,6 +6,7 @@ import json
 import sys
 from pathlib import Path
 
+from . import credentials
 from . import layout
 from .build import build
 
@@ -220,8 +221,11 @@ def main(argv: list[str] | None = None) -> int:
         prog="wikilens",
         description="Confluence 위키를 로컬 마크다운으로 미러링하고 별칭 색인을 만듭니다.",
     )
-    p.add_argument("--root", default=".", help="볼트 루트 (기본: 현재 디렉터리). "
-                                               "서브커맨드 앞뒤 어디에 와도 됩니다")
+    # 기본값을 **정본에서 가져온다.** 예전에는 `.`(현재 디렉터리)라, 저장소 안에서
+    # `sync` 를 실수로 돌리면 거기에 볼트가 생겼다. 해석 규칙은 `credentials.vault_root`.
+    p.add_argument("--root", default=str(credentials.vault_root()),
+                   help="볼트 루트 (기본: ~/.wikilens/vault 또는 config.json 의 vault). "
+                        "서브커맨드 앞뒤 어디에 와도 됩니다")
     p.add_argument("-v", "--verbose", action="store_true")
     sub = p.add_subparsers(dest="cmd", required=True)
 

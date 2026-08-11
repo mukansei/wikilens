@@ -41,6 +41,26 @@ object UserConfig {
         return Path.of(home)
     }
 
+    /**
+     * 설정값 하나를 절대경로로 푼다. **`~` 를 여기서 확장한다.**
+     *
+     * 기본값이 전부 `~/.wikilens/…` 인데 **Spring 도 JVM 도 `~` 를 안 푼다** — 그대로
+     * 두면 실행 디렉터리 밑에 `~` 라는 이름의 디렉터리가 생긴다. 셸이 확장해주는 것에
+     * 익숙해서 놓치기 쉬운 자리다.
+     *
+     * 확장이 [defaultHome] 을 지나므로 `HOME` 이 다르게 잡히는 환경(systemd·cron)에서도
+     * CLI 와 같은 자리를 본다.
+     */
+    fun resolve(raw: String): Path {
+        val s = raw.trim()
+        val p = when {
+            s == "~" -> defaultHome()
+            s.startsWith("~/") -> defaultHome().resolve(s.removePrefix("~/"))
+            else -> Path.of(s)
+        }
+        return p.toAbsolutePath().normalize()
+    }
+
     private val mapper = ObjectMapper()
 
     /**
@@ -55,6 +75,6 @@ object UserConfig {
         val node: JsonNode = runCatching { mapper.readTree(file.toFile()) }.getOrNull() ?: return null
         val raw = node.path(VAULT_KEY).takeIf { it.isTextual }?.asText()?.trim().orEmpty()
         if (raw.isEmpty()) return null
-        return runCatching { Path.of(raw).toAbsolutePath().normalize() }.getOrNull()
+        return runCatching { resolve(raw) }.getOrNull()
     }
 }

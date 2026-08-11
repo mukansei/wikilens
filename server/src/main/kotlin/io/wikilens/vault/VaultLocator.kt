@@ -37,7 +37,7 @@ class VaultLocator(private val props: WikiLensProperties) {
      */
     val root: Path
         get() {
-            val configured = Path.of(props.vaultRoot).toAbsolutePath().normalize()
+            val configured = UserConfig.resolve(props.vaultRoot)   // `~` 확장이 여기 있다
             if (props.vaultRoot != WikiLensProperties.DEFAULT_VAULT_ROOT) return configured
             if (Files.isDirectory(configured)) return configured
             val fromUserConfig = UserConfig.vaultRoot()?.takeIf { Files.isDirectory(it) } ?: return configured

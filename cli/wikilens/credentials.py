@@ -31,7 +31,35 @@ import shlex
 from pathlib import Path
 
 #: 비밀 아닌 설정은 `config.json`, 토큰류는 여기. 근거는 `DECISIONS.md` D10.
-ENV_PATH = Path.home() / ".wikilens" / "env.sh"
+CONFIG_DIR = Path.home() / ".wikilens"
+ENV_PATH = CONFIG_DIR / "env.sh"
+CONFIG_PATH = CONFIG_DIR / "config.json"
+DEFAULT_VAULT = CONFIG_DIR / "vault"
+
+
+def vault_root() -> Path:
+    """
+    볼트 자리. **명시 `--root` > `config.json` 의 `vault` > `~/.wikilens/vault`.**
+
+    CLI 가 `config.json` 을 읽는 이유는 그것이 **정본**이기 때문이다 — 서버(Kotlin)도,
+    MCP 프록시도, 로컬판 진단도 같은 파일을 읽는데 **CLI 만 안 읽고 있었다.** 그래서
+    래퍼(`wikilens_cli.sh`)가 `--root` 를 대신 채우는 장치를 갖고 있었고, 그 장치가
+    없는 경로(서버 운영자가 CLI 를 직접 부르는 경우)는 `--root` 를 손으로 줘야 했다.
+
+    기본값이 `.`(현재 디렉터리)였던 것도 위험했다 — 저장소 안에서 `sync` 를 실수로
+    돌리면 **거기에 볼트가 생긴다.** 자리를 정해두면 그 실수가 성립하지 않는다.
+    """
+    from_cfg = ""
+    try:
+        import json
+        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        if isinstance(cfg, dict):
+            v = cfg.get("vault")
+            # 값 타입까지 본다 — `{"vault": 123}` 이면 `Path()` 가 TypeError 를 낸다.
+            from_cfg = v.strip() if isinstance(v, str) else ""
+    except (OSError, ValueError):
+        pass
+    return Path(from_cfg).expanduser() if from_cfg else DEFAULT_VAULT
 
 #: `export KEY=VALUE` 또는 `KEY=VALUE`. 값은 shlex 가 따옴표를 푼다.
 _LINE = re.compile(r"^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)=(.*)$")

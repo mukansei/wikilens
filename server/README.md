@@ -17,47 +17,43 @@ Confluence 미러를 **서버측에서 색인**하고, 탐색 궤적을 축적�
 ./gradlew bootRun    # 개발용 기동 (작업 디렉터리가 server/ 로 고정된다)
 ```
 
-## 처음 clone 했다면 볼트부터 연결하세요
+## 처음 clone 했다면 볼트부터 만드세요
 
-`bootRun` 은 기본값 `./mirror-root` 를 보는데, **그건 저장소에 없습니다**(gitignore).
-그대로 띄우면 이렇게 됩니다:
+기본값이 전부 **홈 아래**라 저장소 위치·작업 디렉터리와 무관합니다:
 
-```
-ERROR  볼트에서 문서를 하나도 못 읽었습니다: …/server/mirror-root
-```
+| | 기본값 |
+|---|---|
+| 볼트 | `~/.wikilens/vault` |
+| 색인 | `~/.wikilens/index` |
+| 상태(궤적·사용자 등록) | `~/.wikilens/state` |
 
-기동은 되지만 검색이 전부 빕니다. **대개는 아무것도 안 해도 됩니다** — 그 자리가
-비어 있으면 서버가 `~/.wikilens/config.json` 의 `vault` 를 읽습니다(`config/UserConfig.kt`).
-로컬판으로 볼트를 만들었다면 거기 이미 경로가 적혀 있습니다.
-
-볼트가 아직 없으면 먼저 만듭니다(`cli/README.md` 참고):
+**대개는 아무것도 설정할 것이 없습니다.** 로컬판으로 볼트를 만들었다면 서버가 그대로
+찾습니다. 없으면 만듭니다(`cli/README.md` 참고):
 
 ```bash
-wikilens sync --space <KEY> --root ~/.wikilens/vault
+wikilens sync --space <KEY>          # --root 를 안 주면 ~/.wikilens/vault
 ```
 
-설정 파일을 안 쓰는 배포에서는 경로를 명시합니다 — **명시가 항상 이깁니다**:
+다른 자리에 두려면 명시합니다 — **명시가 항상 이깁니다**:
 
 ```bash
 --wikilens.vault-root=/srv/wikilens/mirror
 ```
 
-심링크(`ln -s ~/.wikilens/vault server/mirror-root`)도 여전히 동작합니다. 어느 방법을 쓰든
-**사본은 만들지 마세요** — 볼트가 둘이 되면 어느 쪽을 색인했는지 알 수 없습니다.
-기동 로그 첫 줄이 실제로 고른 경로를 찍습니다.
+`~/.wikilens/config.json` 에 `vault` 가 적혀 있으면 그것도 읽습니다
+(`config/UserConfig.kt`). **사본은 만들지 마세요** — 볼트가 둘이 되면 어느 쪽을
+색인했는지 알 수 없습니다. 기동 로그 첫 줄이 실제로 고른 경로를 찍습니다.
 
-### IntelliJ 에서는 **`1. 서버 실행 (bootRun)`** 구성을 쓰세요
+### 작업 디렉터리는 이제 상관없습니다
 
-`fun main` 옆의 초록 화살표로 띄우면 IntelliJ 가 구성을 즉석에서 만드는데, 그때
-**작업 디렉터리가 저장소 루트**가 됩니다. 기본값이 상대경로라 이렇게 갈립니다:
+예전에는 기본값이 `./mirror-root`·`./.wikilens/state` 처럼 **상대경로**라, IntelliJ 가
+`fun main` 에서 띄우면(작업 디렉터리 = 저장소 루트) `gradlew bootRun`(= `server/`)과
+**다른 자리**를 썼습니다. 볼트가 없는 건 ERROR 로 보이지만 **상태 디렉터리는 조용히
+새로 만들어져서**, 옛 궤적을 못 읽은 채 두 갈래로 쌓였습니다.
 
-| | 볼트 | 상태(궤적) |
-|---|---|---|
-| `bootRun` (체크인된 구성) | `server/mirror-root` ✓ | `server/.wikilens/state` ✓ |
-| main 에서 바로 실행 | `<루트>/mirror-root` ✗ | `<루트>/.wikilens/state` ✗ |
-
-볼트가 없는 건 ERROR 로 바로 보이지만, **상태 디렉터리는 조용히 새로 만들어집니다** —
-그러면 옛 궤적을 못 읽은 채 두 갈래로 쌓이고, 궤적은 유일한 복구 불가 자산입니다.
+기본값을 홈으로 옮겨 그 갈림이 성립하지 않습니다(실측: `/tmp`·저장소 루트·`server/`
+셋에서 띄워 상태 경로가 동일). `~` 는 Spring 도 JVM 도 안 풀어주므로
+`UserConfig.resolve` 한 곳에서 확장합니다.
 그래서 기존 로그가 없으면 이렇게 경고합니다:
 
 ```
