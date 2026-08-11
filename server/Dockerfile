@@ -88,6 +88,18 @@ RUN mkdir -p /home/wikilens/.wikilens/vault \
  && chown -R wikilens:wikilens /home/wikilens/.wikilens
 
 USER wikilens
+
+# **`HOME` 을 명시한다 — `USER` 로 박히는 것에 기대면 안 된다.**
+#
+# Docker 는 `USER` 의 `/etc/passwd` 항목에서 `HOME` 을 파생시키는데, 그것은 **기본
+# 사용자에 한해서만** 산다. `docker compose` 의 `user:` 로 uid 를 바꾸는 순간(리눅스
+# 호스트에서 bind mount 를 쓰려면 필요하다) passwd 항목이 없어 `HOME=/` 이 되고,
+# 그러면 `~/.wikilens/vault` 가 `/.wikilens/vault` 로 풀려 **경로 해석이 통째로
+# 어긋난다**(실측: `--user 502:20` → `HOME=/`).
+#
+# ENV 로 두면 uid 와 무관하게 유지된다(실측: 같은 오버라이드에서 `/home/wikilens`).
+ENV HOME=/home/wikilens
+
 WORKDIR /app
 # 글롭이지만 **하나만 맞는 것이 보장된다** — `build.gradle.kts` 가 `-plain.jar` 를
 # 끈다(확인: 컨테이너 안 build/libs 에 파일 하나). 둘이 되면 Docker 가 여기서

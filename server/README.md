@@ -56,8 +56,46 @@ mv server/.wikilens/state/acl-users.json     ~/.wikilens/state/   # 있으면
 ```
 
 안 옮기면 기동 로그가 `기존 궤적 로그가 없어 새로 시작합니다` 로 알립니다 — 첫 배포와
-구별되지 않으므로 그 줄이 보이면 옛 자리를 확인하세요. Docker 로 운영했다면 볼륨이
-이름으로 붙으므로 **아무것도 안 해도 됩니다**(마운트 경로만 바뀝니다).
+구별되지 않으므로 그 줄이 보이면 옛 자리를 확인하세요.
+
+#### Docker 로 운영했다면 (2026-08-12 변경)
+
+**상태·색인이 named volume 에서 호스트 `~/.wikilens` 아래로 옮겨졌습니다.** 그전에는
+볼륨이 이름으로 붙어 아무것도 안 해도 됐지만, 이제는 **한 번 꺼내야 합니다** —
+안 그러면 궤적이 옛 볼륨에 남아 고아가 됩니다:
+
+```bash
+docker compose down
+mkdir -p ~/.wikilens/state
+docker run --rm -v wikilens_wikilens-state:/s -v ~/.wikilens/state:/out alpine \
+  sh -c 'cp -a /s/trajectories.jsonl /s/acl-users.json /out/ 2>/dev/null; true'
+docker compose up -d --build
+```
+
+기동 로그의 `궤적 재생 N건` 또는 `/api/stats` 의 `trajectoryLog.replayed` 가 옮기기
+전과 같으면 성공입니다. 확인한 뒤에 옛 볼륨을 지우세요:
+
+```bash
+docker volume rm wikilens_wikilens-state wikilens_wikilens-index
+```
+
+**색인은 안 옮겨도 됩니다** — 재색인으로 복구됩니다. 궤적만 복구 불가입니다.
+
+**왜 바꿨나:** named volume 은 `rm -rf ~/.wikilens` 로 안 지워져 D15 의 "지우는 방법이
+하나" 가 거짓이었고, 무엇보다 **유일한 복구 불가 자산이 안 보이는 곳**에 있었습니다 —
+백업하려면 위 같은 `docker run` 을 쳐야 했고 `docker compose down -v` 한 번에
+사라졌습니다.
+
+**리눅스 호스트에서는 uid 를 줘야 합니다:**
+
+```bash
+WIKILENS_UID=$(id -u) WIKILENS_GID=$(id -g) docker compose up -d
+```
+
+bind mount 는 호스트 소유권을 그대로 쓰는데 이미지는 uid 10001 로 돌고 `~/.wikilens`
+는 700 이라 **traverse 조차 안 됩니다**(실측: `Permission denied`). 그러면 색인이
+0건이 되고 기동 로그에 ERROR 가 납니다. macOS 는 Docker Desktop 이 소유권을
+재매핑해서 안 줘도 됩니다 — **그래서 macOS 에서의 성공은 리눅스를 보증하지 않습니다.**
 
 ### 작업 디렉터리는 이제 상관없습니다
 
