@@ -22,10 +22,29 @@ services:
       context: ./server
     ports:
       - "8787:8787"
+    # **셋 다 호스트의 `~/.wikilens` 아래다.** 상태·색인이 named volume 이던 때는
+    # D15 의 "지우는 방법이 `rm -rf ~/.wikilens` 하나" 가 거짓이었고, 무엇보다
+    # **유일한 복구 불가 자산인 궤적이 안 보이는 곳**에 있었다 — 백업하려면
+    # `docker run --rm -v …` 를 쳐야 했고 `docker compose down -v` 한 번에 사라졌다.
     volumes:
       - ${WIKILENS_VAULT:-~/.wikilens/vault}:/home/wikilens/.wikilens/vault:ro
-      - wikilens-state:/home/wikilens/.wikilens/state
-      - wikilens-index:/home/wikilens/.wikilens/index
+      - ${WIKILENS_STATE:-~/.wikilens/state}:/home/wikilens/.wikilens/state
+      - ${WIKILENS_INDEX:-~/.wikilens/index}:/home/wikilens/.wikilens/index
+
+    # **리눅스 호스트에서는 이 값을 줘야 한다.**
+    #
+    #     WIKILENS_UID=$(id -u) WIKILENS_GID=$(id -g) docker compose up -d
+    #
+    # bind mount 는 호스트의 소유권을 그대로 쓴다. 이미지는 uid 10001 로 도는데
+    # `~/.wikilens` 는 700 이라(README 가 그렇게 만들라고 한다) **traverse 조차 안 된다**
+    # — 실측(리눅스 권한 모델): `uid=10001` 이 700/uid=502 디렉터리를 `Permission denied`.
+    # 그러면 색인이 0건이 된다(ERROR 로그는 남는다).
+    #
+    # **macOS 는 안 줘도 된다** — Docker Desktop 이 bind mount 소유권을 재매핑한다.
+    # 그래서 **이 머신에서의 통과는 리눅스를 보증하지 않는다.**
+    #
+    # 700 을 풀지 않는 이유: 공용 서버에서 다른 로컬 사용자가 위키 본문을 읽으면 안 된다.
+    user: "${WIKILENS_UID:-10001}:${WIKILENS_GID:-10001}"
     environment:
       # **기본이 잠김이다.** 안 주면 /api/admin 하위가 전부 404 — 그게 맞는 기본값이다.
       # 주려면 셸에서 export 하거나 .env 에 둔다. 이미지·compose 에 굽지 않는다.
@@ -59,6 +78,5 @@ services:
     # 갈린다. `deploy.replicas: 1` 을 적어뒀었지만 그건 기본값이라 아무것도 강제하지
     # 않는다 — 강제하는 것은 락이고, 여기 적을 것은 그 사실이다.
 
-volumes:
-  wikilens-state:
-  wikilens-index:
+# **named volume 선언이 없다.** 셋 다 호스트 경로다 — 위 `volumes:` 참고.
+# 그전 배포에서 올라온다면 옛 볼륨의 궤적을 옮길 것(`server/README.md`).
