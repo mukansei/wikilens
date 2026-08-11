@@ -32,6 +32,10 @@ STATS_ENGINE = ["ripgrep", True]
 #: 가짜 서버가 낼 ACL 토큰 상태 (겹침 수, 사용자 토큰, 페이지 토큰)
 STATS_ACL = [1, ["@public"], ["@public"]]
 
+#: 켜면 `search`·`grep` 이 **200 + 빈 결과 + `error`** 를 낸다 — 실제 서버가 쓸 수 없는
+#: 질의·패턴에 내는 모양이다(질의 길이 상한 · 정규식 문법 오류).
+REJECT = [None]
+
 class Fake(BaseHTTPRequestHandler):
     def log_message(self, *a):  # 조용히
         pass
@@ -63,7 +67,13 @@ class Fake(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(n) or b"{}")
         received.append((self.path, body))
 
-        if self.path == "/api/search":
+        if self.path == "/api/search" and REJECT[0]:
+            payload = {"query": body.get("query"), "terms": [], "lexicalCandidates": 0,
+                       "learnedHints": 0, "hits": [], "error": REJECT[0]}
+        elif self.path == "/api/grep" and REJECT[0]:
+            payload = {"pattern": body.get("pattern"), "scanned": 0, "matches": [],
+                       "truncated": False, "error": REJECT[0]}
+        elif self.path == "/api/search":
             payload = {
                 "query": body.get("query"), "terms": ["로그인"],
                 "lexicalCandidates": 3, "learnedHints": 1,
@@ -185,6 +195,47 @@ def main() -> int:
         r = rpc(proc, {"jsonrpc": "2.0", "id": 6, "method": "tools/call",
                        "params": {"name": "grep", "arguments": {"pattern": "DEPLOY_TOKEN"}}})
         check("매치 반환", "200000003" in r["result"]["content"][0]["text"])
+
+        print("\n=== 6-b. 거부 사유는 두 도구가 **똑같이** 전달한다 ===")
+        # 서버는 쓸 수 없는 질의·패턴에 200 + 빈 결과 + `error` 를 낸다. 이걸 안 읽으면
+        # "쓸 수 없는 질의" 와 "정말 결과가 없음" 이 똑같이 0건으로 보인다 — 필드가
+        # 존재하는 바로 그 이유다(`SearchResponse.error` KDoc).
+        #
+        # **실제로 한쪽만 빠져 있었다**(2026-08-11): grep 은 전달하는데 search 는 안 읽어
+        # "결과 없음. 다른 표현으로 시도하세요" 를 냈다 — 길이 때문에 거부된 질의에
+        # 재표현은 아무 도움이 안 되므로 정확히 틀린 조언이다. 둘을 묶어 잠근다.
+        REJECT[0] = "질의가 너무 깁니다 (최대 500 자)"
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 61, "method": "tools/call",
+                       "params": {"name": "search", "arguments": {"query": "가" * 600}}})
+        t = r["result"]["content"][0]["text"]
+        check("search 거부를 isError 로", r["result"].get("isError") is True, t[:60])
+        check("search 거부 사유 전달", "너무 깁니다" in t, t[:60])
+        check("search 가 재표현을 권하지 않음", "다른 표현" not in t, t[:60])
+
+        REJECT[0] = "역참조(\\1)는 쓸 수 없습니다"
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 62, "method": "tools/call",
+                       "params": {"name": "grep", "arguments": {"pattern": "(\\1)"}}})
+        t = r["result"]["content"][0]["text"]
+        check("grep 거부를 isError 로", r["result"].get("isError") is True, t[:60])
+        check("grep 거부 사유 전달", "역참조" in t, t[:60])
+        REJECT[0] = None
+
+        print("\n=== 6-c. 숫자 아닌 limit·depth 가 기본값으로 떨어진다 ===")
+        # 모델은 `limit="여덟"` 같은 값을 준다. 그대로 `int()` 하면 파이썬 예외 문자열이
+        # 응답으로 나가는데, 모델이 고칠 방법을 알 수 없어 같은 오류를 반복한다.
+        # 상한은 서버가 이미 죄므로 기본값으로 떨어뜨리는 것이 맞다.
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 63, "method": "tools/call",
+                       "params": {"name": "search",
+                                  "arguments": {"query": "로그인", "limit": "여덟"}}})
+        t = r["result"]["content"][0]["text"]
+        check("파이썬 예외가 새지 않음", "invalid literal" not in t, t[:60])
+        check("limit 기본값 8 로 전달", received[-1][1].get("limit") == 8,
+              str(received[-1][1].get("limit")))
+
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 64, "method": "tools/call",
+                       "params": {"name": "tree", "arguments": {"depth": "둘"}}})
+        check("depth 기본값 0 으로 전달", received[-1][1].get("depth") == 0,
+              str(received[-1][1].get("depth")))
 
         print("\n=== 7. tree ===")
         r = rpc(proc, {"jsonrpc": "2.0", "id": 7, "method": "tools/call",
