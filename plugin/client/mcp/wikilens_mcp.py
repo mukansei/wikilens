@@ -96,6 +96,10 @@ SERVER, SERVER_ORIGIN = _setting("WIKILENS_SERVER", "server", DEFAULT_SERVER)
 SERVER = SERVER.rstrip("/")
 USER, USER_ORIGIN = _setting("WIKILENS_USER", "user")
 TIMEOUT = _timeout()
+
+#: 세션 종료 통보 전용 타임아웃. `end_session` 의 KDoc 참고 — 종료 지연이 그대로
+#: 사용자에게 보이므로 일반 타임아웃과 분리한다. 놓쳐도 서버가 거둔다.
+END_TIMEOUT = 2.0
 SESSION = f"mcp-{uuid.uuid4().hex[:12]}"
 
 PROTOCOL = "2025-06-18"
@@ -104,14 +108,14 @@ SUPPORTED = {"2024-11-05", "2025-03-26", "2025-06-18"}
 
 # --------------------------------------------------------------- HTTP
 
-def post(path: str, payload: dict) -> dict:
+def post(path: str, payload: dict, timeout: float | None = None) -> dict:
     req = urllib.request.Request(
         f"{SERVER}{path}",
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+    with urllib.request.urlopen(req, timeout=timeout or TIMEOUT) as r:
         return json.loads(r.read() or b"{}")
 
 
@@ -358,8 +362,16 @@ def configure(argv: list[str]) -> int:
 
 
 def end_session() -> None:
+    """
+    세션 종료 통보. **일반 타임아웃을 쓰면 안 된다.**
+
+    `atexit` 에서 도는데, 서버가 TCP 는 받고 응답을 안 하는 상태(개퍼짐·과부하·방화벽
+    드롭)면 종료가 그만큼 멈춘다 — 실측: 기본 15초에서 프로세스가 15.1초 뒤에야 죽었다.
+    Claude Code 를 껐다 켤 때마다 그 시간이 그대로 얹히고 사용자에게는 이유가 안 보인다.
+    (`SessionSweeper` 가 5분마다 거두므로 놓쳐도 궤적은 확정된다.)
+    """
     try:
-        post("/api/session/end", {"sessionId": SESSION})
+        post("/api/session/end", {"sessionId": SESSION}, timeout=END_TIMEOUT)
     except Exception:  # noqa: BLE001
         pass
 
@@ -448,6 +460,21 @@ TOOLS = [
 ]
 
 
+def _int(args: dict, key: str, default: int) -> int:
+    """
+    모델이 숫자 아닌 값을 줘도 죽지 않는다.
+
+    그대로 `int()` 를 부르면 `오류: invalid literal for int() with base 10: '여덟'` 이
+    응답으로 나가는데(실측), 모델이 그걸 보고 고칠 방법을 알 수 없어 같은 오류를
+    반복한다. **상한은 서버가 이미 죄므로**(`SearchService.MAX_LIMIT`·
+    `ContentService.MAX_LIMIT`) 여기서는 기본값으로 떨어뜨리면 된다.
+    """
+    try:
+        return int(args.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
 def call_tool(name: str, args: dict) -> tuple[str, bool]:
     """(텍스트, isError) 반환."""
     # ACL 은 fail-closed 다 — userKey 가 없으면 서버가 정상적으로 빈 결과를 준다.
@@ -464,8 +491,16 @@ def call_tool(name: str, args: dict) -> tuple[str, bool]:
         if name == "search":
             r = post("/api/search", {
                 "query": args.get("query", ""), "userKey": USER,
-                "sessionId": SESSION, "limit": int(args.get("limit", 8)),
+                "sessionId": SESSION, "limit": _int(args, "limit", 8),
             })
+            # **거부 사유를 삼키면 안 된다.** 서버는 쓸 수 없는 질의에 200 + 빈 hits +
+            # `error` 를 낸다(질의 길이 상한). 이걸 안 읽으면 아래의 "다른 표현으로
+            # 시도하세요" 가 나가는데, 길이 때문에 거부된 질의에 재표현은 아무 도움이
+            # 안 되므로 **정확히 틀린 조언**이다. `grep` 이 같은 모양을 처리하는 것과 짝이다.
+            #
+            # 질의 원문은 되돌려 싣지 않는다 — 최대 500자라 모델 문맥만 먹는다.
+            if r.get("error"):
+                return (f"질의를 쓸 수 없습니다: {r['error']}", True)
             hits = r.get("hits", [])
             if not hits:
                 return ("결과 없음. 다른 표현으로 시도하거나 grep으로 리터럴 검색하세요.", False)
@@ -490,7 +525,7 @@ def call_tool(name: str, args: dict) -> tuple[str, bool]:
                 # `Controller.grep` 에 이유가 있다). 보내면 서버가 버리는데, 보내는
                 # 쪽만 보면 "기록되고 있다" 로 읽힌다.
                 "pattern": args.get("pattern", ""), "userKey": USER,
-                "limit": int(args.get("limit", 40)), "regex": bool(args.get("regex", False)),
+                "limit": _int(args, "limit", 40), "regex": bool(args.get("regex", False)),
             })
             # 패턴 자체가 거부된 경우. 이유를 안 보여주면 "쓸 수 없는 문법" 과
             # "정말 일치가 없음" 이 똑같이 0건으로 보인다.
@@ -506,7 +541,7 @@ def call_tool(name: str, args: dict) -> tuple[str, bool]:
 
         if name == "tree":
             root_id = args.get("rootId")
-            payload = {"userKey": USER, "depth": int(args.get("depth") or 0)}
+            payload = {"userKey": USER, "depth": _int(args, "depth", 0)}
             if root_id:
                 payload["rootId"] = str(root_id)
             r = post("/api/tree", payload)
