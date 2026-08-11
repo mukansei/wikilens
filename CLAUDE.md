@@ -432,14 +432,23 @@ grep 엔진 RE2 전환(D12), 두 판 우선순위(D13), 분석기 색인 시점 
    `abandonedWithHints` 로 따로 세고 `sessionFailureRate` 분모에서 뺀다. 힌트 단위
    벌점(`rejected`)은 그대로 — 안 읽혔다는 사실은 확실하다.
    **남은 약점:** `dest = reads.last()` 라는 전제 자체는 그대로다.
-4. **git source 로 실제 설치해 보기** — 저장소는 이미 올라가 있다
-   (`github.com/mukansei/wikilens`). 그런데 `pip install git+URL` 분기, 타 머신 첫 설치,
-   git source 마켓플레이스는 **여전히 미검증**이다 — **올릴 곳이 없어서가 아니라 그
-   경로로 설치해 본 적이 없어서다.** 팀 배포의 선결 조건.
-   같은 머신의 `acme-dt` 가 `github.com/example-org` 에서 설치돼 도는 걸로 보아
-   경로 자체는 실재한다 — wikilens 로 확인만 안 됐다. `--sparse` 를 쓴다면
-   `.claude-plugin plugin cli` 셋을 다 넣어야 한다(`cli/` 가 빠지면 `CLI_SOURCE` 가
-   비어 setup 이 git URL 을 되묻는 분기로 떨어진다).
+4. **git source 설치 — 밟았다(2026-08-11). 남은 것은 타 머신뿐이다.**
+   `github.com/example-org/wikilens` 에서 마켓플레이스를 등록하고 두 플러그인을
+   설치했다. 그전까지 이 저장소의 모든 "동작 확인" 은 `source=directory` 로 저장소를
+   **직접 참조**한 것이었다 — 팀이 쓸 경로는 한 번도 안 밟혔었다.
+
+   확인한 것: 소스 타입이 `git` 으로 바뀜 · 설치본 버전 일치(계약이 **내용까지** 비교) ·
+   `cli/` 가 클론에 딸려옴 · 실행 비트 보존(`.sh` 755 가 git → 클론 → 캐시 내내 유지) ·
+   **빈 홈에서 `CLI_SOURCE` 폴백이 `~/.claude/plugins/marketplaces/wikilens/cli` 를
+   찾아냄**(= 타 머신 첫 설치와 같은 조건). `--sparse` 를 쓴다면 여전히
+   `.claude-plugin plugin cli` 셋을 다 넣어야 한다 — 그 폴백이 정확히 `cli/` 를 본다.
+
+   **남은 미검증:** 다른 머신에서 `pip install` 을 끝까지 돌려보기. 이 머신에는 이미
+   CLI 가 있어 그 분기가 안 돈다.
+
+   **`.py` 스크립트는 644 이고 그게 맞다** — 스킬·커맨드가 전부 `python3 "…"` 로 부른다
+   (직접 실행하려다 `permission denied` 를 봤다). Windows 에서 셔뱅이 무의미한 것과도 맞다.
+
    **게시됐으므로 플러그인 이름은 이미 불변이다** — 개명하려면 `renames` 를 쓸 것(D9).
 
 5. **서버가 여러 대일 때 학습을 공유하기 (궤적 이벤트 전달)** — 아직 안 함.
