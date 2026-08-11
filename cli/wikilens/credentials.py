@@ -25,6 +25,7 @@ CLI 는 원래 환경변수만 읽었다. 그래서 `export` 가 없는 환경�
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -51,7 +52,6 @@ def vault_root() -> Path:
     """
     from_cfg = ""
     try:
-        import json
         cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         if isinstance(cfg, dict):
             v = cfg.get("vault")

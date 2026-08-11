@@ -54,8 +54,11 @@ class FileTrajectorySink(stateDir: Path, private val mapper: ObjectMapper) : Tra
             // **새 로그를 만들어 학습이 두 갈래로 갈린다**(실제로 겪었다 — IntelliJ 가
             // `fun main` 에서 바로 띄우면 작업 디렉터리가 저장소 루트다).
             log.warn(
-                "기존 궤적 로그가 없어 새로 시작합니다: {} — 처음이면 정상이지만, " +
-                    "재기동인데 이 줄이 보이면 작업 디렉터리가 달라져 **옛 궤적과 갈라진 것**입니다.",
+                "기존 궤적 로그가 없어 새로 시작합니다: {} — 처음이면 정상입니다. " +
+                    "재기동인데 이 줄이 보이면 **옛 궤적과 갈라진 것**입니다: 상태 디렉터리 " +
+                    "기본값이 `./.wikilens/state`(실행 디렉터리 기준)에서 `~/.wikilens/state` 로 " +
+                    "바뀌었으니(2026-08-11), 그전 배포라면 옛 자리의 trajectories.jsonl 을 " +
+                    "여기로 옮기세요. 궤적은 유일한 복구 불가 자산입니다.",
                 file,
             )
             return 0

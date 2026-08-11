@@ -44,6 +44,21 @@ wikilens sync --space <KEY>          # --root 를 안 주면 ~/.wikilens/vault
 (`config/UserConfig.kt`). **사본은 만들지 마세요** — 볼트가 둘이 되면 어느 쪽을
 색인했는지 알 수 없습니다. 기동 로그 첫 줄이 실제로 고른 경로를 찍습니다.
 
+### 그전 배포에서 올린다면 — 궤적을 옮기세요
+
+기본값이 바뀌었으므로(2026-08-11) **옛 자리의 궤적을 서버가 못 읽습니다.** 색인은
+재색인으로 복구되지만 궤적은 **유일한 복구 불가 자산**입니다:
+
+```bash
+# 옛 자리는 서버를 띄우던 작업 디렉터리 기준입니다 (server/ 또는 저장소 루트)
+mv server/.wikilens/state/trajectories.jsonl ~/.wikilens/state/
+mv server/.wikilens/state/acl-users.json     ~/.wikilens/state/   # 있으면
+```
+
+안 옮기면 기동 로그가 `기존 궤적 로그가 없어 새로 시작합니다` 로 알립니다 — 첫 배포와
+구별되지 않으므로 그 줄이 보이면 옛 자리를 확인하세요. Docker 로 운영했다면 볼륨이
+이름으로 붙으므로 **아무것도 안 해도 됩니다**(마운트 경로만 바뀝니다).
+
 ### 작업 디렉터리는 이제 상관없습니다
 
 예전에는 기본값이 `./mirror-root`·`./.wikilens/state` 처럼 **상대경로**라, IntelliJ 가
