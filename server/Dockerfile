@@ -64,8 +64,10 @@ RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin wikilens
 # `/api/health` 200).
 #
 # **`USER` 앞이어야 한다** — 뒤면 비루트라 `chown` 이 못 돈다. 계약이 순서를 검사한다.
-RUN mkdir -p /vault /state /index \
- && chown wikilens:wikilens /vault /state /index
+RUN mkdir -p /home/wikilens/.wikilens/vault \
+             /home/wikilens/.wikilens/state \
+             /home/wikilens/.wikilens/index \
+ && chown -R wikilens:wikilens /home/wikilens/.wikilens
 
 USER wikilens
 WORKDIR /app
@@ -74,20 +76,19 @@ WORKDIR /app
 # 소리내며 실패하므로 조용히 엉뚱한 것을 집을 일은 없다.
 COPY --from=build --chown=wikilens:wikilens /src/build/libs/*.jar /app/wikilens.jar
 
-# **경로를 절대경로로 못 박는다.** 기본값이 상대경로라 실행 디렉터리에 매달리는데,
-# 컨테이너에서 그건 조용히 어긋나기 좋은 자리다.
+# **경로를 환경변수로 덮지 않는다.** `application.yml` 의 기본값이 이미
+# `~/.wikilens/{vault,index,state}` 이고, 컨테이너에서 `~` 는 `/home/wikilens` 로 풀린다
+# (`USER wikilens` 라 이미지에 `HOME` 이 박힌다 — 실측). 호스트와 **같은 설정값**을 쓰면
+# "이 배포는 경로가 다르다" 를 기억할 일이 없다.
 #
-#   /vault  볼트 (읽기 전용으로 마운트해도 된다 — 서버는 읽기만 한다)
-#   /state  궤적 로그·사용자 등록. **유일한 복구 불가 자산이라 반드시 영속 볼륨.**
-#   /index  Lucene 색인. 지워도 재색인으로 복구되지만 두면 기동이 빨라진다.
+#   ~/.wikilens/vault   볼트 (읽기 전용으로 마운트해도 된다 — 서버는 읽기만 한다)
+#   ~/.wikilens/state   궤적 로그·사용자 등록. **유일한 복구 불가 자산이라 영속 볼륨.**
+#   ~/.wikilens/index   Lucene 색인. 지워도 재색인으로 복구된다.
 #
 # **`VOLUME` 선언은 일부러 안 한다.** 하면 마운트를 안 준 `docker run` 이 **익명 볼륨
-# 셋을 조용히 만든다**(실측). `/state` 가 그렇게 만들어지면 운영자는 상태가 없는 줄
-# 아는데 실제로는 어딘가에 쌓이고, `docker rm -v` 로 같이 사라진다 — 유일한 복구 불가
-# 자산에 그런 모호함을 두면 안 된다. 마운트는 `compose.yml` 이 명시한다.
-ENV WIKILENS_VAULT_ROOT=/vault \
-    WIKILENS_INDEX_DIR=/index \
-    WIKILENS_STATE_DIR=/state
+# 셋을 조용히 만든다**(실측). 그렇게 만들어진 상태 디렉터리는 운영자가 모르는 채 쌓이고
+# `docker rm -v` 로 같이 사라진다 — 유일한 복구 불가 자산에 그런 모호함을 두면 안 된다.
+# 마운트는 `compose.yml` 이 명시한다.
 
 EXPOSE 8787
 

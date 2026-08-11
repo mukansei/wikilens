@@ -660,8 +660,8 @@ check "와이어 포맷 정본이 있고 양쪽이 그것을 검사함" \
 #
 # `mkdir`·`chown` 이 `USER` **앞**이어야 한다. 뒤면 비루트라 chown 이 못 돈다.
 check "컨테이너가 마운트 지점을 소유함 (없으면 compose 기동 실패)" \
-  'grep -q "chown wikilens:wikilens /vault /state /index" server/Dockerfile \
-   && [ $(grep -n "chown wikilens:wikilens /vault" server/Dockerfile | cut -d: -f1) \
+  'grep -q "chown -R wikilens:wikilens /home/wikilens/.wikilens" server/Dockerfile \
+   && [ $(grep -n "chown -R wikilens:wikilens /home/wikilens" server/Dockerfile | cut -d: -f1) \
         -lt $(grep -n "^USER wikilens" server/Dockerfile | cut -d: -f1) ]'
 
 echo
