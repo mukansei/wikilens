@@ -37,14 +37,21 @@ Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** 팀
 
 ### 로컬판 실행 (각자, 5분)
 
+Claude Code 안에서 세 줄입니다. **저장소를 clone 할 필요가 없습니다** — 마켓플레이스가
+알아서 받아옵니다:
+
 ```
-/plugin marketplace add ./
+/plugin marketplace add https://github.com/example-org/wikilens.git
 /plugin install wikilens-local@wikilens
 /wikilens-local:setup          # 자격증명·볼트·CLI·첫 싱크까지 한 번에
 ```
 
 준비물은 **Confluence 주소와 개인 토큰(PAT)** 둘뿐입니다. 이미 볼트가 있으면 옮기지
 말고 그 경로를 등록하면 됩니다.
+
+<sub>저장소를 이미 clone 해 뒀고 그 사본으로 시험하려면 `/plugin marketplace add ./` 로
+저장소 루트를 직접 가리켜도 됩니다. 고치면서 쓸 때만 그렇게 하세요 — 설치본이 저장소를
+따라가지 않아 소스만 고치면 조용히 구버전이 돕니다.</sub>
 
 ### 서버판 실행 (관리자)
 
@@ -60,6 +67,10 @@ Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** 팀
 없습니다(`DECISIONS.md` D15). 다른 자리에 두려면 `--root` 와
 `--wikilens.vault-root` 를 **함께** 바꾸세요.
 
+**권한 시행은 기본이 꺼짐입니다**(`acl-enforced=false`). 그래서 기본 구성에서는 **서버에
+닿는 사람 전원이 서비스 계정의 권한 범위 전부를 봅니다.** 그래도 되는 팀이면 아래 세
+단계가 전부이고, 아니면 [시행을 켜세요](#권한-시행을-켜려면).
+
 ```bash
 cd <저장소 루트>
 WL=~/.wikilens/venv/bin/wikilens        # 없으면: python3 -m venv ~/.wikilens/venv &&
@@ -68,18 +79,13 @@ export CONFLUENCE_URL=https://회사.atlassian.net CONFLUENCE_TOKEN=<서비스�
 export WIKILENS_ADMIN_TOKEN=<임의의 긴 ASCII 문자열>
 
 # 1. 볼트 만들기 — 호스트에서 합니다. 컨테이너는 싱크하지 않습니다.
+#    스페이스 키는 Confluence URL 의 /spaces/<KEY>/ 자리이고, `$WL doctor` 도 목록을 냅니다.
 $WL sync --space PLATFORM --root ~/.wikilens/vault
-$WL acl                   --root ~/.wikilens/vault      # 권한 수집 (주기가 다릅니다)
 
 # 2. 서버 기동 — compose 기본값이 같은 자리라 볼트 경로를 안 줘도 됩니다
 docker compose up -d --build
 
-# 3. 사용자 등록 — 어떤 토큰을 줄지는 `wikilens acl` 출력의 토큰 목록이 알려줍니다
-curl -XPOST -H "X-WikiLens-Admin: $WIKILENS_ADMIN_TOKEN" \
-  'localhost:8787/api/admin/acl/user?userKey=alice@corp' \
-  -H 'Content-Type: application/json' -d '["@space:PLATFORM"]'
-
-# 4. 확인 — 여기서 초록이 아니면 사용자는 "문서가 없다" 로 봅니다
+# 3. 확인 — 여기서 초록이 아니면 사용자는 "문서가 없다" 로 봅니다
 WIKILENS_SERVER=http://localhost:8787 WIKILENS_USER=alice@corp \
   python3 plugin/client/mcp/wikilens_mcp.py --status
 ```
@@ -87,37 +93,60 @@ WIKILENS_SERVER=http://localhost:8787 WIKILENS_USER=alice@corp \
 사용자는 플러그인만 설치합니다 — `/plugin install wikilens-client@wikilens` 후
 `/wikilens-client:setup` 에 **서버 주소와 본인 식별자** 둘.
 
-**4번이 중요한 이유** — 이 시스템의 실패는 대부분 **에러가 아니라 0건**으로 나타나고,
+**3번이 중요한 이유** — 이 시스템의 실패는 대부분 **에러가 아니라 0건**으로 나타나고,
 0건은 "문서가 없다" 와 구별되지 않습니다:
 
 | 빠뜨리면 | 증상 | `--status` 가 하는 말 |
 |---|---|---|
-| `wikilens acl` | 전 페이지가 `@public` — **과다 노출** | — |
-| 사용자 등록 | 모든 검색 0건 | `ACL_USERS=0` |
-| 등록 토큰이 페이지 토큰과 다름 | 모든 검색 0건 | `ACL_TOKEN_OVERLAP=0` |
 | `WIKILENS_ADMIN_TOKEN` | `/api/admin` 전부 404 | 기동 로그 WARN |
-| 싱크 후 재색인 | 바뀐 권한·문서가 반영 안 됨 | `ANALYZER` 불일치 등 |
+| 싱크 후 재색인 | 바뀐 문서가 반영 안 됨 | `ANALYZER` 불일치 등 |
+| 볼트 경로가 틀림 | 검색은 되는데 **읽기만 404** | `docs>0` 인데 `pages=0` |
+| (시행을 켰다면) 사용자 등록 | 모든 검색 0건 | `ACL_USERS=0` |
+| (시행을 켰다면) 등록 토큰 ≠ 페이지 토큰 | 모든 검색 0건 | `ACL_TOKEN_OVERLAP=0` |
+
+#### 권한 시행을 켜려면
+
+**켜야 하는 경우는 이 서버에 닿는 사람들이 서비스 계정의 권한 범위를 공유하면 안 될
+때**입니다. 켜면 등록 전까지 전원이 0건입니다(fail-closed).
+
+**순서를 뒤집으면 전원이 0건이 됩니다** — 시행을 먼저 켜고 `["@public"]` 로 등록해 두면,
+나중에 `wikilens acl` 이 페이지 토큰을 `@space:<KEY>` 로 바꾸는 순간 겹치는 토큰이
+없어집니다. `--status` 가 `ACL_TOKEN_OVERLAP=0` 으로 짚습니다.
+
+```bash
+$WL acl --root ~/.wikilens/vault        # 권한 수집. sync 와 주기가 다릅니다
+WIKILENS_ACL_ENFORCED=true docker compose up -d --build
+
+# 사용자 등록 — 어떤 토큰을 줄지는 `wikilens acl` 출력의 토큰 목록이 알려줍니다
+curl -XPOST -H "X-WikiLens-Admin: $WIKILENS_ADMIN_TOKEN" \
+  'localhost:8787/api/admin/acl/user?userKey=alice@corp' \
+  -H 'Content-Type: application/json' -d '["@space:PLATFORM"]'
+```
+
+**`wikilens acl` 은 시행이 꺼져 있어도 한 가지를 바꿉니다** — 수집이 권한을 확정하지
+못한 페이지는 빈 토큰이 되어 **아무에게도 안 보입니다**(파이썬 쪽 fail-closed 를 여기서
+뒤집지 않으려는 의도된 동작입니다). 돌린 뒤 문서가 줄었다면 원인은 시행이 아니라
+수집 실패이고, 기동 로그의 `unresolved` 가 그 수를 냅니다.
 
 **자동화는 cron 한 줄입니다.** `&&` 가 필수입니다 — 실패했는데 재색인하면 반쪽
 상태가 반영됩니다:
 
 ```bash
 WL=~/.wikilens/venv/bin/wikilens
-$WL sync --root ~/.wikilens/vault && $WL acl --root ~/.wikilens/vault \
+$WL sync --root ~/.wikilens/vault \
   && curl -XPOST -H "X-WikiLens-Admin: $TOKEN" localhost:8787/api/admin/reindex
+
+# 시행을 켰다면 acl 도 사이에 넣으세요 — sync 보다 자주 돌려야 합니다
+# $WL sync --root ~/.wikilens/vault && $WL acl --root ~/.wikilens/vault && curl …
 ```
 
 cron 에서는 **절대경로가 특히 중요합니다** — cron 의 PATH 는 대개 `/usr/bin:/bin`
 입니다. 자격증명도 `export` 가 아니라 `~/.wikilens/env.sh`(600)에서 읽습니다.
 
-**첫 싱크가 끝나면 `wikilens stats` 를 보세요.** 그 수가 어느 랭킹 층이 값어치를
+**첫 싱크가 끝나면 `$WL stats` 를 보세요.** 그 수가 어느 랭킹 층이 값어치를
 하는지 알려줍니다 — 코어(미러 + grep)는 어차피 돌지만, 앵커 층은 별칭이 있어야
 일합니다. 이 개발 코퍼스(13,926건)에서는 별칭 보유 12% · 어휘 격차 1% 였습니다.
 자세한 해석은 [무엇이 실제로 값어치를 하나](#무엇이-실제로-값어치를-하나).
-
-**서버판을 켤 때 자주 걸리는 것 하나** — `wikilens acl` 을 처음 돌리면 페이지 토큰이
-`@public` 에서 `@space:<KEY>` 로 바뀌어, 그전에 `["@public"]` 로 등록한 사용자가 **전원
-0건**이 됩니다. `wikilens_mcp.py --status` 가 `ACL_TOKEN_OVERLAP=0` 으로 짚어줍니다.
 
 ---
 
@@ -133,7 +162,7 @@ cron 에서는 **절대경로가 특히 중요합니다** — cron 의 PATH 는 
 | [저장소 구조](#저장소-구조) | 어느 디렉터리가 무엇을 하나 |
 | [적용 범위](#적용-범위) | Cloud·Server/DC 양쪽 · 언어는 한국어 기본 |
 | [무엇이 실제로 값어치를 하나](#무엇이-실제로-값어치를-하나) | **층 넷을 각자 판정합니다** — 여기부터 읽어도 됩니다 |
-| [만드는 사람을 위해](#만드는-사람을-위해) | [검증 절차](#변경-후-이-넷이-통과해야-합니다) · [검증 상태](#검증-상태) · [측정 지표](#측정-지표-우선순위-순) |
+| [만드는 사람을 위해](#만드는-사람을-위해) | [검증 절차](#변경-후-이것-하나가-통과해야-합니다) · [검증 상태](#검증-상태) · [측정 지표](#측정-지표--층마다-다릅니다) |
 | [미해결](#미해결) | 아직 못 푼 것 — 배포 전에 읽으세요 |
 
 ---
@@ -286,7 +315,7 @@ flowchart TB
 ### 로컬판 — 5분
 
 ```
-/plugin marketplace add ./
+/plugin marketplace add https://github.com/example-org/wikilens.git
 /plugin install wikilens-local@wikilens
 /wikilens-local:setup
 ```
@@ -353,8 +382,9 @@ export CONFLUENCE_PREFIX=""        # Server/DC 강제
 
 ```bash
 # 서비스 계정으로 1회 싱크 (사용자별 싱크 없음 → Confluence 부하 1배)
-CONFLUENCE_TOKEN=<서비스계정> wikilens sync --space PLATFORM --root ~/.wikilens/vault
-CONFLUENCE_TOKEN=<서비스계정> wikilens acl  --root ~/.wikilens/vault   # 권한 수집 (별도 주기)
+WL=~/.wikilens/venv/bin/wikilens          # CLI 는 PATH 에 없습니다
+CONFLUENCE_TOKEN=<서비스계정> $WL sync --space PLATFORM --root ~/.wikilens/vault
+CONFLUENCE_TOKEN=<서비스계정> $WL acl  --root ~/.wikilens/vault   # 시행을 켤 때만
 
 # 권장 — Docker. 이미지가 ripgrep 을 갖고 있고 경로가 절대경로로 못 박혀 있습니다.
 export WIKILENS_ADMIN_TOKEN=<임의의 긴 ASCII 문자열>

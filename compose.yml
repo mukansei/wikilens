@@ -30,9 +30,11 @@ services:
       # **기본이 잠김이다.** 안 주면 /api/admin 하위가 전부 404 — 그게 맞는 기본값이다.
       # 주려면 셸에서 export 하거나 .env 에 둔다. 이미지·compose 에 굽지 않는다.
       WIKILENS_ADMIN_TOKEN: ${WIKILENS_ADMIN_TOKEN:-}
-      # ACL 시행. 끄면 등록 없이 전원이 전 문서를 본다 — 볼트를 싱크한 계정의 권한
-      # 범위를 이 서버에 닿는 전원이 공유해도 되는 배포에서만 맞다.
-      WIKILENS_ACL_ENFORCED: ${WIKILENS_ACL_ENFORCED:-true}
+      # ACL 시행. **앱 기본값(false)과 같아야 한다** — 여기만 true 로 두면 README 가
+      # "기본은 꺼짐" 이라고 말하는데 권장 경로(compose)로 띄운 서버만 켜진 채 떠서,
+      # 등록 전까지 전 검색이 0건이 된다. 에러가 아니라 0건이라 원인을 못 찾는다.
+      # 켜려면 `WIKILENS_ACL_ENFORCED=true docker compose up -d`.
+      WIKILENS_ACL_ENFORCED: ${WIKILENS_ACL_ENFORCED:-false}
     restart: unless-stopped
     # **복제하지 않는다.** 상태 디렉터리는 한 프로세스만 쓰고(`StateDirLock` 이 둘째
     # 기동을 거부한다), 스케일 아웃하려면 state 볼륨을 나눠야 하는데 그러면 학습이
