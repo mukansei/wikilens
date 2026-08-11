@@ -301,6 +301,14 @@ class ConfluenceClient:
 
 # ---------------------------------------------------------------- 상태
 
+def _now_cursor() -> str:
+    """
+    CQL `lastModified` 비교에 쓰는 시각. **이음매로 빼둔 이유는 테스트가 시계를 잡기
+    위해서다** — 이 값이 언제 읽히느냐가 곧 증분 싱크의 정확성이다.
+    """
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+
 def _load_state(root: Path) -> dict:
     p = layout.sync_state_path(root)
     if p.exists():
@@ -446,6 +454,14 @@ def sync(root: Path, client: ConfluenceClient, spaces: list,
     report.resumed_from = state.get("partial")
     started = time.time()
     cursor = state.get("cursor")
+    # **다음 커서를 스캔 **전에** 잡는다.**
+    #
+    # 끝나고 잡으면 스캔이 도는 동안 수정된 페이지가 유실된다 — 이미 지나갔거나 아직
+    # 안 온 상태인데 다음 싱크는 `lastModified > 끝시각` 으로 묻기 때문이다. 그 페이지가
+    # 또 수정될 때까지 영영 안 온다. 13,933건 볼트면 그 창이 수십 분이다.
+    #
+    # 겹치는 쪽 대가는 없다 — 재수신은 `_ingest` 가 버전으로 걸러 `unchanged` 가 된다.
+    next_cursor = _now_cursor()
     since_checkpoint = 0
 
     for space in spaces:
@@ -498,7 +514,7 @@ def sync(root: Path, client: ConfluenceClient, spaces: list,
                 del state["pages"][pid]
                 report.removed.append(pid)
 
-    state["cursor"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    state["cursor"] = next_cursor
     state["partial"] = None
     _save_state(root, state)
     report.elapsed_s = time.time() - started
