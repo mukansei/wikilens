@@ -59,9 +59,10 @@ Claude Code 안에서 세 줄입니다. **저장소를 clone 할 필요가 없�
 
 **사용자는 Confluence 자격증명이 필요 없습니다.** 서비스 계정 하나로 한 번 싱크합니다.
 
-**전제 셋:** 아래 명령은 저장소 루트에서 돕니다(`compose.yml` 과 프록시 경로가
-상대경로입니다). CLI 는 `~/.wikilens/venv` 에 깔려 **PATH 에 없습니다** — 아래처럼
-절대경로로 부르거나 `WL=~/.wikilens/venv/bin/wikilens` 로 별칭을 잡으세요.
+**전제 셋:** **운영자는 저장소가 필요합니다** — `compose.yml`·`cli/`·MCP 프록시가 전부
+저장소 안에 있고 아래 경로가 그것에 상대적입니다(사용자는 플러그인만 설치하므로 해당
+없습니다). CLI 는 `~/.wikilens/venv` 에 깔려 **PATH 에 없습니다** — 아래처럼 절대경로로
+부르거나 `WL=~/.wikilens/venv/bin/wikilens` 로 별칭을 잡으세요.
 
 그리고 **볼트는 `~/.wikilens/vault` 입니다.** 로컬판·서버판·`compose.yml` 이 전부 이
 자리를 기본으로 봅니다 — 지우는 방법이 `rm -rf ~/.wikilens` 하나로 유지되고, 서버가
@@ -74,9 +75,11 @@ Claude Code 안에서 세 줄입니다. **저장소를 clone 할 필요가 없�
 단계가 전부이고, 아니면 [시행을 켜세요](#권한-시행을-켜려면).
 
 ```bash
-cd <저장소 루트>
-WL=~/.wikilens/venv/bin/wikilens        # 없으면: python3 -m venv ~/.wikilens/venv &&
-                                        #         ~/.wikilens/venv/bin/pip install ./cli
+git clone https://github.com/example-org/wikilens.git && cd wikilens
+
+python3 -m venv ~/.wikilens/venv && ~/.wikilens/venv/bin/pip install ./cli
+WL=~/.wikilens/venv/bin/wikilens        # 이 자리는 PATH 에 없습니다 (D15)
+
 export CONFLUENCE_URL=https://회사.atlassian.net CONFLUENCE_TOKEN=<서비스계정 PAT>
 export WIKILENS_ADMIN_TOKEN=<임의의 긴 ASCII 문자열>
 
@@ -336,6 +339,7 @@ flowchart TB
 <summary><b>플러그인 없이 CLI 만</b> — cron·서버 운영자용</summary>
 
 ```bash
+git clone https://github.com/example-org/wikilens.git && cd wikilens
 python3 -m venv ~/.wikilens/venv && ~/.wikilens/venv/bin/pip install ./cli
 
 mkdir -p ~/.wikilens && chmod 700 ~/.wikilens
@@ -385,8 +389,12 @@ export CONFLUENCE_PREFIX=""        # Server/DC 강제
 ### 서버판 — 운영자
 
 ```bash
+# 운영자는 저장소가 필요합니다 — compose.yml · cli/ · MCP 프록시가 그 안에 있습니다
+git clone https://github.com/example-org/wikilens.git && cd wikilens
+python3 -m venv ~/.wikilens/venv && ~/.wikilens/venv/bin/pip install ./cli
+WL=~/.wikilens/venv/bin/wikilens          # 이 자리는 PATH 에 없습니다
+
 # 서비스 계정으로 1회 싱크 (사용자별 싱크 없음 → Confluence 부하 1배)
-WL=~/.wikilens/venv/bin/wikilens          # CLI 는 PATH 에 없습니다
 CONFLUENCE_TOKEN=<서비스계정> $WL sync --space PLATFORM --root ~/.wikilens/vault
 CONFLUENCE_TOKEN=<서비스계정> $WL acl  --root ~/.wikilens/vault   # 시행을 켤 때만
 
