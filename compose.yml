@@ -11,7 +11,7 @@
 # 서버는 그걸 가질 이유가 없다(가지면 "위키에 쓰기 금지" 가 설계 보장에서 규율로
 # 내려간다). 호스트의 cron 이 돌리고 끝나면 재색인을 부른다:
 #
-#   wikilens sync --root ~/wiki && wikilens acl --root ~/wiki \
+#   wikilens sync --root ~/.wikilens/vault && wikilens acl --root ~/.wikilens/vault \
 #     && curl -XPOST -H "X-WikiLens-Admin: $TOKEN" localhost:8787/api/admin/reindex
 #
 #   `&&` 가 필수다 — 실패했는데 재색인하면 반쪽 상태가 반영된다.
@@ -23,7 +23,7 @@ services:
     ports:
       - "8787:8787"
     volumes:
-      - ${WIKILENS_VAULT:-~/wiki}:/vault:ro
+      - ${WIKILENS_VAULT:-~/.wikilens/vault}:/vault:ro
       - wikilens-state:/state
       - wikilens-index:/index
     environment:

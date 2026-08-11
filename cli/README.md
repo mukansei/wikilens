@@ -40,8 +40,8 @@ export CONFLUENCE_URL=https://mycompany.atlassian.net
 export CONFLUENCE_EMAIL=me@mycompany.com     # Cloud만. Server/DC는 생략
 export CONFLUENCE_TOKEN=...                   # 개인 API 토큰 또는 PAT
 
-wikilens --root ~/wiki sync --space PLATFORM --space ENG
-wikilens --root ~/wiki stats
+wikilens --root ~/.wikilens/vault sync --space PLATFORM --space ENG
+wikilens --root ~/.wikilens/vault stats
 ```
 
 **`export` 는 그 셸에서만 삽니다.** 그래서 CLI 는 환경변수가 없으면
@@ -68,7 +68,7 @@ printf 'export CONFLUENCE_URL=%s\nexport CONFLUENCE_TOKEN=%s\n' "$CONFLUENCE_URL
 ### `acl` — 서버판을 쓸 때만
 
 ```bash
-wikilens --root ~/wiki acl
+wikilens --root ~/.wikilens/vault acl
 ```
 
 페이지별 읽기 권한을 `mirror/acl/acl.json` 에 모읍니다. **`sync` 와 분리돼 있고 더
@@ -91,7 +91,7 @@ wikilens --root ~/wiki acl
 "전 페이지 비공개" 로 읽습니다.
 
 ```bash
-wikilens --root ~/wiki acl && curl -XPOST -H "X-WikiLens-Admin: $TOKEN" .../api/admin/reindex
+wikilens --root ~/.wikilens/vault acl && curl -XPOST -H "X-WikiLens-Admin: $TOKEN" .../api/admin/reindex
 ```
 
 `&&` 가 중요합니다 — 실패했는데 재색인하면 반쪽 권한이 반영됩니다.
@@ -99,7 +99,7 @@ wikilens --root ~/wiki acl && curl -XPOST -H "X-WikiLens-Admin: $TOKEN" .../api/
 ### 도입 판단
 
 ```console
-$ wikilens --root ~/wiki stats
+$ wikilens --root ~/.wikilens/vault stats
 페이지 13926개
   별칭 보유 1720 (12%)
   고아 후보 12206 (88%)

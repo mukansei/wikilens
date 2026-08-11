@@ -33,7 +33,7 @@ ERROR  볼트에서 문서를 하나도 못 읽었습니다: …/server/mirror-r
 볼트가 아직 없으면 먼저 만듭니다(`cli/README.md` 참고):
 
 ```bash
-wikilens sync --space <KEY> --root ~/wiki
+wikilens sync --space <KEY> --root ~/.wikilens/vault
 ```
 
 설정 파일을 안 쓰는 배포에서는 경로를 명시합니다 — **명시가 항상 이깁니다**:
@@ -42,7 +42,7 @@ wikilens sync --space <KEY> --root ~/wiki
 --wikilens.vault-root=/srv/wikilens/mirror
 ```
 
-심링크(`ln -s ~/wiki server/mirror-root`)도 여전히 동작합니다. 어느 방법을 쓰든
+심링크(`ln -s ~/.wikilens/vault server/mirror-root`)도 여전히 동작합니다. 어느 방법을 쓰든
 **사본은 만들지 마세요** — 볼트가 둘이 되면 어느 쪽을 색인했는지 알 수 없습니다.
 기동 로그 첫 줄이 실제로 고른 경로를 찍습니다.
 
@@ -219,7 +219,7 @@ Description:
 
 ```bash
 export WIKILENS_ADMIN_TOKEN=<임의의 긴 ASCII 문자열>
-WIKILENS_VAULT=~/wiki docker compose up -d --build
+WIKILENS_VAULT=~/.wikilens/vault docker compose up -d --build
 ```
 
 `compose.yml` 이 저장소 루트에 있습니다. **요점은 볼륨 셋입니다** — 이미지에는 코드만
@@ -240,7 +240,7 @@ WIKILENS_VAULT=~/wiki docker compose up -d --build
 내려갑니다 — `DECISIONS.md` D22). 호스트 cron 이 돌리고 끝나면 재색인을 부릅니다:
 
 ```bash
-wikilens sync --root ~/wiki && wikilens acl --root ~/wiki \
+wikilens sync --root ~/.wikilens/vault && wikilens acl --root ~/.wikilens/vault \
   && curl -XPOST -H "X-WikiLens-Admin: $TOKEN" localhost:8787/api/admin/reindex
 ```
 
