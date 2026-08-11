@@ -5,7 +5,7 @@
 build/
 .gradle/
 
-# **볼트 심링크.** `mirror-root` 는 ~/wiki 로 가는 링크다(gitignore 대상).
+# **볼트 심링크.** `mirror-root` 는 볼트(`~/.wikilens/vault`)로 가는 링크다(gitignore 대상).
 # 컨텍스트에 들어가면 위키 본문 전체가 데몬으로 전송되고, 최악의 경우 이미지에 구워진다.
 mirror-root
 .wikilens/

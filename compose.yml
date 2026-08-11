@@ -36,6 +36,24 @@ services:
       # 켜려면 `WIKILENS_ACL_ENFORCED=true docker compose up -d`.
       WIKILENS_ACL_ENFORCED: ${WIKILENS_ACL_ENFORCED:-false}
     restart: unless-stopped
+
+    # **이 한도가 없으면 이미지의 `-XX:MaxRAMPercentage=75` 가 아무것도 안 막는다.**
+    # JVM 은 cgroup 한도를 보는데 그게 없으면 호스트 전체를 기준으로 잡는다 — 실측:
+    # 한도 없이 띄운 컨테이너의 `MaxHeapSize` 가 6.18GB(호스트 7.7GB 의 75%)였다.
+    # 다른 워크로드와 공유하는 서버에서 힙이 거기까지 자라면 남을 밀어낸다.
+    #
+    # 2g → 힙 상한 1.5g. 실측 기준선이 **빈 코퍼스 254MB** 이고, 궤적 100만 건이
+    # 힙 80MB 다(CLAUDE.md). Lucene 색인은 mmap 이라 힙 밖이고 page cache 로 회수된다.
+    # **코퍼스가 크거나 OOMKill 이 나면 올린다** — `WIKILENS_MEM_LIMIT=4g docker compose up -d`.
+    mem_limit: ${WIKILENS_MEM_LIMIT:-2g}
+
+    # 상주 서버라 로그가 무한히 쌓인다. 기동 로그를 진단에 쓰는 구조이므로 통째로
+    # 끄지는 않고 회전만 시킨다 — 30MB 면 재기동 여러 번을 덮는다.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     # **복제하지 않는다.** 상태 디렉터리는 한 프로세스만 쓰고(`StateDirLock` 이 둘째
     # 기동을 거부한다), 스케일 아웃하려면 state 볼륨을 나눠야 하는데 그러면 학습이
     # 갈린다. `deploy.replicas: 1` 을 적어뒀었지만 그건 기본값이라 아무것도 강제하지
