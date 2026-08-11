@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -422,7 +423,21 @@ def main() -> int:
         st2 = subprocess.run([sys.executable, str(PROXY), "--status"],
                              capture_output=True, text=True, env=none_home)
         check("설정 안 한 상태를 default 로 표시", "(default)" in st2.stdout, st2.stdout[:200])
-        check("USER 없으면 0 이 아닌 종료코드", st2.returncode != 0, str(st2.returncode))
+
+        # **이 검사는 가짜 서버를 봐야 한다.** 위 `st2` 는 기본 주소(8787)를 보는데,
+        # 개발 머신에 실서버가 떠 있으면 그쪽에 붙는다 — 그 서버가 ACL 을 안 켰으면
+        # `USER` 가 없어도 종료코드가 **정당하게 0** 이라 이 검사가 뒤집힌다.
+        # 실제로 그렇게 깨졌고, 그전까지 통과하던 이유는 8787 이 비어 있어서
+        # **도달 실패**로 2 가 나온 것이었다 — 이름이 말하는 것을 한 번도 안 재고 있었다.
+        # 조건은 둘이다: `USER` 없음 **그리고** 시행 켜짐(`aclEnforced` 기본 True).
+        nouser = subprocess.run([sys.executable, str(PROXY), "--status"],
+                                capture_output=True, text=True,
+                                env={**clean, "HOME": tempfile.mkdtemp(prefix="wl-proxy-nouser-"),
+                                     "WIKILENS_SERVER": f"http://127.0.0.1:{PORT}"})
+        check("USER 없으면 0 이 아닌 종료코드", nouser.returncode != 0,
+              f"rc={nouser.returncode} {nouser.stdout[:200]}")
+        check("USER 없음을 이유로 말함",
+              "USER 가 없어" in nouser.stdout, nouser.stdout[:250])
 
         # 핵심은 '주소를 안 넣었다'와 '서버가 죽었다'의 구분이다. 주소를 넣어둔 채
         # 죽은 서버를 보면 그 안내가 **나오면 안 된다.**
@@ -433,6 +448,39 @@ def main() -> int:
         st3 = subprocess.run([sys.executable, str(PROXY), "--status"],
                              capture_output=True, text=True, env=dict(clean, HOME=dead_home))
         check("서버 다운을 도달 실패로 보고", "REACHABLE=no" in st3.stdout, st3.stdout[:200])
+        check("아무도 안 듣는 것을 그렇게 말함",
+              "아무도 듣고 있지 않습니다" in st3.stdout, st3.stdout[:200])
+
+        # **`기동 중` 과 `고장` 이 같은 줄이면 안 된다.** 컨테이너는 포트 포워딩이
+        # 앱보다 먼저 열려서, 색인하는 동안 TCP 는 붙고 응답 없이 끊긴다(13,933건에서
+        # 실제로 겪었다). 그때 나오는 예외가 `http.client.RemoteDisconnected` 이고
+        # 그건 `ConnectionResetError` 의 서브클래스다 — 여기서 요청을 끝까지 읽고
+        # 닫아(FIN) 정확히 그 예외를 만든다.
+        hush = socket.socket()
+        hush.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        hush.bind(("127.0.0.1", 0))
+        hush.listen(1)
+        hush_port = hush.getsockname()[1]
+
+        def _accept_then_close():
+            try:
+                conn, _ = hush.accept()
+                while b"\r\n\r\n" not in conn.recv(4096):
+                    pass
+                conn.close()
+            except OSError:
+                pass
+
+        threading.Thread(target=_accept_then_close, daemon=True).start()
+        st4 = subprocess.run([sys.executable, str(PROXY), "--status"],
+                             capture_output=True, text=True,
+                             env=dict(clean, WIKILENS_SERVER=f"http://127.0.0.1:{hush_port}"))
+        hush.close()
+        check("응답 없이 끊기는 것을 '기동 중' 으로 구별",
+              "기동 중" in st4.stdout, st4.stdout[:250])
+        check("기동 중과 서버 다운이 다른 안내",
+              ("아무도 듣고 있지 않습니다" in st3.stdout)
+              and ("아무도 듣고 있지 않습니다" not in st4.stdout), st4.stdout[:250])
 
         # --- 13. 잘못된 설정에 죽지 않기 (코드 리뷰에서 나온 결함) ------------
         #

@@ -16,6 +16,7 @@ import json
 import os
 import pathlib
 import signal
+import socket
 import sys
 import urllib.error
 import urllib.request
@@ -125,6 +126,39 @@ def get(path: str) -> dict:
         return json.loads(r.read() or b"{}")
 
 
+def unreachable_hint(e: Exception) -> str:
+    """
+    왜 못 닿았는지 — **원인마다 다음 걸음이 다르다.**
+
+    특히 `기동 중` 과 `고장` 이 예전에는 같은 줄이었다. 컨테이너로 띄우면 Docker 의
+    포트 포워딩이 앱보다 **먼저** 열리므로, 색인하는 동안 TCP 는 붙고 HTTP 응답 없이
+    끊긴다 — 13,933건에서 실제로 그랬다. 운영자는 `docker logs` 를 따로 봐야 그게
+    정상 기동인지 알 수 있었다.
+
+    예외 타입은 실측으로 갈랐다(추측하면 안 잡힌다):
+
+        아무도 안 들음      URLError / reason=ConnectionRefusedError
+        응답 없이 끊김      ConnectionResetError — `http.client.RemoteDisconnected`
+                            가 그 서브클래스라 FIN(정상 종료)·RST 둘 다 여기로 온다
+        붙었는데 무응답     TimeoutError
+        주소를 못 풂        URLError / reason=gaierror
+    """
+    if isinstance(e, ConnectionResetError):
+        return ("서버가 **기동 중**일 수 있습니다 — 포트는 열렸는데 아직 응답하지 않습니다.\n"
+                "  큰 코퍼스는 색인에 수 분 걸립니다. 잠시 뒤 다시 확인하세요.\n"
+                "  계속 이러면 운영자가 기동 로그를 봐야 합니다 (docker compose logs).")
+    if isinstance(e, TimeoutError):
+        return ("붙었는데 응답이 없습니다 — 기동 중이거나 서버가 막혀 있습니다.\n"
+                "  운영자가 기동 로그와 부하를 확인해야 합니다.")
+    reason = getattr(e, "reason", None)
+    if isinstance(reason, ConnectionRefusedError):
+        return ("그 주소에서 **아무도 듣고 있지 않습니다** — 서버가 안 떴거나 주소가 틀렸습니다.\n"
+                "  운영자에게 서버가 떠 있는지, 주소·포트가 맞는지 확인하세요.")
+    if isinstance(reason, socket.gaierror):
+        return ("주소를 풀지 못했습니다 — 호스트 이름이 틀렸거나 DNS/VPN 문제입니다.")
+    return ""
+
+
 def status() -> int:
     """
     설정과 서버 상태를 한 번에 진단한다 (로컬판 `vault_status.py` 에 대응).
@@ -142,6 +176,9 @@ def status() -> int:
         print("REACHABLE=yes")
     except Exception as e:  # noqa: BLE001
         print(f"REACHABLE=no ({e})")
+        hint = unreachable_hint(e)
+        if hint:
+            print(f"\n{hint}")
         if SERVER_ORIGIN == "default":
             print("\n서버 주소를 설정한 적이 없어 기본값(로컬)을 보고 있습니다.")
             print("  운영자에게 받은 주소를 넣으세요:")
