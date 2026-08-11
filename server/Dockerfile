@@ -15,8 +15,22 @@
 # Gradle 과 JDK 전체(약 700MB)를 런타임에 들고 있을 이유가 없다. 빌드 산출물은
 # fat jar 하나뿐이라 JRE 만 있으면 된다.
 
+# ### 베이스 이미지를 digest 로 고정한다
+#
+# 태그만 쓰면 Temurin 이 패치를 올리는 순간 **같은 커밋이 다른 이미지를 낸다** — 어제
+# 되던 빌드가 오늘 깨져도 저장소에는 아무 변경이 없어 원인을 찾을 데가 없다.
+#
+# **멀티아키텍처 인덱스의 digest 다**(플랫폼별 manifest digest 가 아니다). 후자를 박으면
+# 그 아키텍처에서만 돌고 arm64 호스트에서 `no matching manifest` 로 죽는다.
+#
+# 갱신은 손으로 한다 — CVE 대응이 필요하면 아래로 digest 를 다시 받아 바꾸고,
+# 그 커밋이 곧 "언제 무엇으로 올렸나" 의 기록이 된다:
+#
+#     docker buildx imagetools inspect eclipse-temurin:25-jre --format '{{.Manifest.Digest}}'
+
 # ---------- 1단계: 빌드 ----------
-FROM eclipse-temurin:25-jdk AS build
+# eclipse-temurin:25-jdk = 25.0.3_9 (2026-08-04)
+FROM eclipse-temurin:25-jdk@sha256:12e44624adee6808a36d962717e1656e0afeeeff5a100f9cb00e0136513558f0 AS build
 WORKDIR /src
 
 # 래퍼와 빌드 스크립트를 먼저 복사해 **의존성 다운로드를 레이어로 굳힌다** —
@@ -34,7 +48,11 @@ COPY src ./src
 RUN ./gradlew --no-daemon bootJar -x test
 
 # ---------- 2단계: 실행 ----------
-FROM eclipse-temurin:25-jre
+# eclipse-temurin:25-jre = 25.0.3_9 (2026-08-04)
+FROM eclipse-temurin:25-jre@sha256:f19dbf0a22d0b3658fda48ce7d7181df05ad14bda151dd5ad12cc09d1451c70e
+# **apt 패키지는 버전을 고정하지 않는다** — 베이스가 digest 로 고정돼 있으므로 apt
+# 저장소 스냅샷도 사실상 같이 굳고, 여기에 `=버전` 을 박으면 그 버전이 저장소에서
+# 내려간 날 빌드가 깨진다(우분투는 보안 업데이트로 옛 버전을 치운다).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ripgrep curl \
  && rm -rf /var/lib/apt/lists/*
