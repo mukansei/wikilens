@@ -37,9 +37,9 @@ echo "교차 언어 계약"
 # (실측: 1번째 자리 1.93 bit vs 9번째 3.32 bit, 앞2/앞4 최대 378개 vs 뒤2 37개). 한쪽만 앞으로
 # 되돌리면 서버가 파일을 못 찾는데 에러는 안 난다.
 check "샤딩 규칙 Python/Kotlin/플러그인 일치(뒤에서 자름), Kotlin 정의처 1곳(Layout.kt)" \
-  'grep -q "SHARD_DEPTH = 1" cli/wikilens/layout.py && grep -q "SHARD_DEPTH = 1" plugin/local/scripts/vault_status.py && grep -qF "takeLast(SHARD_WIDTH)" server/src/main/kotlin/dev/wikilens/vault/Layout.kt && [ $(grep -rl "fun relPagePath" server/src/main/kotlin | wc -l) -eq 1 ]'
+  'grep -q "SHARD_DEPTH = 1" cli/wikilens/layout.py && grep -q "SHARD_DEPTH = 1" plugin/local/scripts/vault_status.py && grep -qF "takeLast(SHARD_WIDTH)" server/src/main/kotlin/io/wikilens/vault/Layout.kt && [ $(grep -rl "fun relPagePath" server/src/main/kotlin | wc -l) -eq 1 ]'
 check "사전확률 클램프 양쪽 동일 (0.05, 0.85)" \
-  'grep -q "PRIOR_CEIL = 0.85" server/src/main/kotlin/dev/wikilens/learn/Reliability.kt && grep -q "PRIOR_FLOOR, PRIOR_CEIL = 0.05, 0.85" cli/wikilens/scoring_reference.py'
+  'grep -q "PRIOR_CEIL = 0.85" server/src/main/kotlin/io/wikilens/learn/Reliability.kt && grep -q "PRIOR_FLOOR, PRIOR_CEIL = 0.05, 0.85" cli/wikilens/scoring_reference.py'
 # `ALIASES.md` 한 줄에 스페이스가 들어간다. 여러 스페이스를 싱크하면 같은 낱말이
 # 여러 영역에서 걸리는데, 줄에 스페이스가 없으면 grep 결과만 보고는 구분이 안 된다
 # (경로도 스페이스로 안 나뉜다 — 샤딩은 페이지 ID 만 쓴다).
@@ -67,7 +67,7 @@ check "Kotlin EB 기대값이 scoring_reference.py 산출과 1e-6 이내" \
   '(cd cli && ../.venv/bin/python -c "
 import re,pathlib
 from wikilens.scoring_reference import eb_lower
-src=pathlib.Path(\"../server/src/test/kotlin/dev/wikilens/learn/LearnLayerTest.kt\").read_text()
+src=pathlib.Path(\"../server/src/test/kotlin/io/wikilens/learn/LearnLayerTest.kt\").read_text()
 cases=re.findall(r\"Triple\((\d+),\s*(\d+),\s*([\d.]+)\)\s*to\s*([\d.]+)\", src)
 assert cases, \"LearnLayerTest 에서 EB 기대값을 못 찾았다\"
 for h,m,p,exp in cases:
@@ -77,11 +77,11 @@ for h,m,p,exp in cases:
 check "canonical_json 결정적 직렬화" \
   'grep -q "sort_keys=True, ensure_ascii=False" cli/wikilens/models.py'
 check "ancestors 스키마 Python↔Kotlin 일치 (sync.py 가 쓰고 VaultReader 가 같은 키로 읽음)" \
-  'grep -qF "\"ancestors\": ancestors" cli/wikilens/sync.py && grep -qF "meta[\"ancestors\"]" server/src/main/kotlin/dev/wikilens/vault/VaultReader.kt'
+  'grep -qF "\"ancestors\": ancestors" cli/wikilens/sync.py && grep -qF "meta[\"ancestors\"]" server/src/main/kotlin/io/wikilens/vault/VaultReader.kt'
 check "Gate LOCALIZATION 폴백 임계값 Python/Kotlin 일치 (8토큰)" \
-  'grep -qF ".size <= 8" server/src/main/kotlin/dev/wikilens/learn/Gate.kt && grep -qF "len(query.strip().split()) <= 8" cli/wikilens/scoring_reference.py'
+  'grep -qF ".size <= 8" server/src/main/kotlin/io/wikilens/learn/Gate.kt && grep -qF "len(query.strip().split()) <= 8" cli/wikilens/scoring_reference.py'
 check "RATIONALE 마커 '배경' Python/Kotlin 양쪽 존재" \
-  'grep -qF "\"배경\"" server/src/main/kotlin/dev/wikilens/learn/Gate.kt && grep -qF "\"배경\"" cli/wikilens/scoring_reference.py'
+  'grep -qF "\"배경\"" server/src/main/kotlin/io/wikilens/learn/Gate.kt && grep -qF "\"배경\"" cli/wikilens/scoring_reference.py'
 
 echo "빌드 구조"
 # 학습 레이어는 프레임워크와 분리돼 있어야 한다. EB·게이트·궤적은 순수 알고리즘이고,
@@ -90,13 +90,13 @@ echo "빌드 구조"
 # 강제했는데, JUnit 이 같은 35개 검증을 모두 흡수해 2026-08-05 제거했다.
 # 계약 자체는 이 grep 이 계속 지킨다.)
 check "learn/ 에 Spring·Lucene 의존 없음 (순수 알고리즘 유지)" \
-  '! grep -rqE "import (org\.springframework|org\.apache\.lucene)" server/src/main/kotlin/dev/wikilens/learn/'
+  '! grep -rqE "import (org\.springframework|org\.apache\.lucene)" server/src/main/kotlin/io/wikilens/learn/'
 check "src/main 에 main() 하나뿐 (bootJar mainClass 해석 충돌 방지)" \
   '[ $(grep -rl "^fun main" server/src/main/kotlin | wc -l) -eq 1 ]'
 
 echo "보안·설계 불변식"
 check "권한 없음은 404 (403 은 존재를 알림)" \
-  'grep -q "HttpStatus.NOT_FOUND" server/src/main/kotlin/dev/wikilens/api/Controller.kt'
+  'grep -q "HttpStatus.NOT_FOUND" server/src/main/kotlin/io/wikilens/api/Controller.kt'
 check "detect_prefix 가 401/403 을 '찾음'으로 취급" \
   'grep -q "status_code in (401, 403)" cli/wikilens/sync.py'
 check "훅 없음 (서버가 읽기를 직접 관측하므로 훅이 불필요)" \
@@ -248,8 +248,8 @@ check "두 스킬이 같은 우선순위를 말함 (서버판 우선 · 배타�
 # 이 검사도 함께 옮겼다 — **계약이 파일 경로를 grep 하므로 파일을 나눌 때 계약도
 # 고쳐야 한다**(실제로 이 분할에서 빨개졌다).
 check "세 경로가 대소문자를 똑같이 무시함 (로컬 Grep -i · JVM RE2 · rg -i)" \
-  'grep -q "Re2.compile(q.pattern, Re2.CASE_INSENSITIVE)" server/src/main/kotlin/dev/wikilens/service/JvmGrepEngine.kt \
-   && grep -q "ignoreCase = true" server/src/main/kotlin/dev/wikilens/service/JvmGrepEngine.kt \
+  'grep -q "Re2.compile(q.pattern, Re2.CASE_INSENSITIVE)" server/src/main/kotlin/io/wikilens/service/JvmGrepEngine.kt \
+   && grep -q "ignoreCase = true" server/src/main/kotlin/io/wikilens/service/JvmGrepEngine.kt \
    && ! grep -n "Grep(" plugin/local/skills/search/SKILL.md | grep -qv -- "-i=true"'
 
 # 모델에게 지시하는 파일 다섯(스킬 2 · 커맨드 2 · 레퍼런스 1)은 독자가 같으므로 문체도
@@ -288,7 +288,7 @@ keys = [kebab(m) for m in re.findall(r\"^\\s*val (\\w+):\", kt, re.M)]
 # 주석 줄은 안 친다 — \"# analyzer: korean\" 은 적힌 것이 아니다.
 missing = [k for k in keys if not re.search(r\"^[ ]*\" + k + r\":\", yml, re.M)]
 sys.exit(1 if missing else 0)
-" server/src/main/kotlin/dev/wikilens/config/WikiLensProperties.kt server/src/main/kotlin/dev/wikilens/config/LearnProps.kt server/src/main/resources/application.yml\'
+" server/src/main/kotlin/io/wikilens/config/WikiLensProperties.kt server/src/main/kotlin/io/wikilens/config/LearnProps.kt server/src/main/resources/application.yml\'
 
 
 # 자격증명 파일 경로를 아는 곳은 **파이썬 둘뿐**이어야 한다 — CLI(`credentials.py`)와
@@ -314,7 +314,7 @@ check "자격증명 경로 해석처가 파이썬 둘뿐 (래퍼는 조립하지
 check "볼트 설정 키가 세 곳에서 같음 (config.json 의 \"vault\")" \
   'grep -q "cfg.get(\"vault\")" plugin/local/scripts/vault_status.py \
    && grep -q "cfg\[\"vault\"\] = str(vault)" plugin/local/scripts/setup_vault.py \
-   && grep -q "VAULT_KEY = \"vault\"" server/src/main/kotlin/dev/wikilens/config/UserConfig.kt'
+   && grep -q "VAULT_KEY = \"vault\"" server/src/main/kotlin/io/wikilens/config/UserConfig.kt'
 
 # 폴백이 걸리는지 판단하려면 "사용자가 값을 줬는가"를 알아야 하는데 Spring 은 기본값과
 # 명시값을 구분해주지 않는다. 상수와 yml 이 갈리면 **명시로 준 기본 경로가 폴백을 타서**
@@ -324,12 +324,12 @@ check "볼트 설정 키가 세 곳에서 같음 (config.json 의 \"vault\")" \
 # 결정적이 됐다 — 실측: 문서 3건 색인·검색 정상인데 **read 는 전부 404**.
 check "볼트 경로 해석처가 한 곳 (VaultLocator — 갈리면 검색은 되고 읽기만 404)" \
   '[ "$(grep -rl "props\.vaultRoot" server/src/main/kotlin | wc -l | tr -d " ")" = "1" ] \
-   && grep -q "props.vaultRoot" server/src/main/kotlin/dev/wikilens/vault/VaultLocator.kt \
-   && grep -q "locator.root" server/src/main/kotlin/dev/wikilens/service/ContentService.kt \
-   && grep -q "locator.root" server/src/main/kotlin/dev/wikilens/service/IndexingService.kt'
+   && grep -q "props.vaultRoot" server/src/main/kotlin/io/wikilens/vault/VaultLocator.kt \
+   && grep -q "locator.root" server/src/main/kotlin/io/wikilens/service/ContentService.kt \
+   && grep -q "locator.root" server/src/main/kotlin/io/wikilens/service/IndexingService.kt'
 
 check "서버 볼트 기본값이 상수와 application.yml 에서 같음 (폴백 판정 근거)" \
-  'grep -q "DEFAULT_VAULT_ROOT = \"./mirror-root\"" server/src/main/kotlin/dev/wikilens/config/WikiLensProperties.kt \
+  'grep -q "DEFAULT_VAULT_ROOT = \"./mirror-root\"" server/src/main/kotlin/io/wikilens/config/WikiLensProperties.kt \
    && grep -q "^  vault-root: ./mirror-root$" server/src/main/resources/application.yml'
 
 # CLI 위치를 정해진 자리 하나로 고정한 뒤로 "설치했는데 어디 있는지 찾는" 단계가 없어졌다.
@@ -371,41 +371,41 @@ check "두 판 모두 dict 아닌 설정을 견딤 (유효한 JSON 이 곧 쓸 �
 # **갈리는지 모르는 채로 두기** 와 **갈리면 빨개지게 하기** 중 후자를 골랐다. 그 장치가
 # `GrepEngineParityTest` 다 — 없어지면 두 경로가 조용히 갈라진다.
 check "두 grep 엔진의 답을 대조하는 테스트가 있음 (대소문자·ACL 포함)" \
-  '[ -f server/src/test/kotlin/dev/wikilens/service/GrepEngineParityTest.kt ] \
-   && grep -q "두 엔진이 같은 매치를 낸다" server/src/test/kotlin/dev/wikilens/service/GrepEngineParityTest.kt \
-   && grep -q "대소문자를 무시한다" server/src/test/kotlin/dev/wikilens/service/GrepEngineParityTest.kt \
-   && grep -q "목록 밖을 내보내지 않는다" server/src/test/kotlin/dev/wikilens/service/GrepEngineParityTest.kt'
+  '[ -f server/src/test/kotlin/io/wikilens/service/GrepEngineParityTest.kt ] \
+   && grep -q "두 엔진이 같은 매치를 낸다" server/src/test/kotlin/io/wikilens/service/GrepEngineParityTest.kt \
+   && grep -q "대소문자를 무시한다" server/src/test/kotlin/io/wikilens/service/GrepEngineParityTest.kt \
+   && grep -q "목록 밖을 내보내지 않는다" server/src/test/kotlin/io/wikilens/service/GrepEngineParityTest.kt'
 
 # **엔진은 ACL 을 몰라야 한다.** 권한 해석이 엔진마다 갈리면 한쪽이 조용히 더 보여준다 —
 # `AclRegistry` 에 스위치를 한 곳만 둔 것과 같은 이유다. 거르는 것은 ContentService 다.
 check "grep 엔진이 ACL 을 직접 보지 않음 (호출부가 이미 거른 목록만 받는다)" \
   '! grep -lE "AclRegistry|canSee|tokensFor" \
-      server/src/main/kotlin/dev/wikilens/service/JvmGrepEngine.kt \
-      server/src/main/kotlin/dev/wikilens/service/RipgrepEngine.kt'
+      server/src/main/kotlin/io/wikilens/service/JvmGrepEngine.kt \
+      server/src/main/kotlin/io/wikilens/service/RipgrepEngine.kt'
 
 # `--no-config` 이 없으면 운영자의 `~/.ripgreprc` 가 플래그를 얹어 **같은 질의가 머신마다
 # 다른 답**을 낸다. `-i` 는 두 판이 함께 지키는 대소문자 계약이다.
 check "ripgrep 이 사용자 환경을 안 받고 대소문자를 무시함 (--no-config · -i)" \
-  '[ "$(grep -cE "^ *add\(\"--no-config\"\)" server/src/main/kotlin/dev/wikilens/service/RipgrepEngine.kt)" = "1" ] \
-   && [ "$(grep -cE "^ *add\(\"--no-ignore\"\)" server/src/main/kotlin/dev/wikilens/service/RipgrepEngine.kt)" = "1" ] \
-   && [ "$(grep -cE "^ *add\(\"-i\"\)" server/src/main/kotlin/dev/wikilens/service/RipgrepEngine.kt)" = "1" ]'
+  '[ "$(grep -cE "^ *add\(\"--no-config\"\)" server/src/main/kotlin/io/wikilens/service/RipgrepEngine.kt)" = "1" ] \
+   && [ "$(grep -cE "^ *add\(\"--no-ignore\"\)" server/src/main/kotlin/io/wikilens/service/RipgrepEngine.kt)" = "1" ] \
+   && [ "$(grep -cE "^ *add\(\"-i\"\)" server/src/main/kotlin/io/wikilens/service/RipgrepEngine.kt)" = "1" ]'
 
 # 관리 API 가 열려 있으면 서버에 닿는 누구나 `acl/user` 로 **스스로 권한을 부여**한다 —
 # 권한을 아무리 정확히 수집해도 이게 열려 있으면 의미가 없다. 기본이 "열림" 이면
 # 조용히 열린 채 배포되므로 **잠김이 기본**이어야 하고, 거부는 404 여야 한다(403 은
 # 엔드포인트의 존재를 알린다 — `read` 와 같은 규칙).
 check "관리 API 가 기본 잠김이고 경로로 잠김 (엔드포인트마다 세지 않는다)" \
-  'grep -q "val adminToken: String = \"\"" server/src/main/kotlin/dev/wikilens/config/WikiLensProperties.kt \
+  'grep -q "val adminToken: String = \"\"" server/src/main/kotlin/io/wikilens/config/WikiLensProperties.kt \
    && grep -q "^  admin-token: \"\"$" server/src/main/resources/application.yml \
-   && grep -q "ADMIN_PATHS = \"/api/admin/\*\*\"" server/src/main/kotlin/dev/wikilens/api/AdminGuardConfig.kt \
-   && grep -q "addInterceptor(guard).addPathPatterns(ADMIN_PATHS)" server/src/main/kotlin/dev/wikilens/api/AdminGuardConfig.kt \
-   && ! grep -rq "guard.check" server/src/main/kotlin/dev/wikilens/api/Controller.kt'
+   && grep -q "ADMIN_PATHS = \"/api/admin/\*\*\"" server/src/main/kotlin/io/wikilens/api/AdminGuardConfig.kt \
+   && grep -q "addInterceptor(guard).addPathPatterns(ADMIN_PATHS)" server/src/main/kotlin/io/wikilens/api/AdminGuardConfig.kt \
+   && ! grep -rq "guard.check" server/src/main/kotlin/io/wikilens/api/Controller.kt'
 
 # `mirror/acl/acl.json` 은 CLI 가 쓰고 Kotlin 이 읽는 **파일로만 이어진 계약**이다.
 # 갈리면 서버가 파일을 못 읽어 전 페이지가 `@public` 폴백이 된다 — 조용한 과다 노출.
 check "ACL 파일 경로·형식이 Python 과 Kotlin 에서 같음 (mirror/acl/*.json)" \
   'grep -q "root / \"mirror\" / \"acl\"" cli/wikilens/acl.py \
-   && grep -q "resolve(\"mirror\").resolve(\"acl\")" server/src/main/kotlin/dev/wikilens/vault/VaultReader.kt'
+   && grep -q "resolve(\"mirror\").resolve(\"acl\")" server/src/main/kotlin/io/wikilens/vault/VaultReader.kt'
 
 # 조회 실패를 "제한 없음" 으로 뭉개면 **못 읽은 페이지가 공개로 적힌다.** 네트워크 오류
 # 한 번이 노출로 이어지면 안 된다 — 실패는 옛 값을 지키고, 처음 보는 페이지는 뺀다.
@@ -424,9 +424,9 @@ check "ACL 상속이 못 읽은 조상에서 멈춤 (계속 올라가면 자식�
 # 사용자 등록이 메모리 전용이면 재기동마다 전원이 사라지고, 그 상태가 "문서가 없다"와
 # 구별되지 않는다(조용히 실패 10·12번).
 check "사용자 등록이 재기동을 넘음 (상태 디렉터리에 원자적으로 저장)" \
-  '[ -f server/src/main/kotlin/dev/wikilens/acl/UserStore.kt ] \
-   && grep -q "ATOMIC_MOVE" server/src/main/kotlin/dev/wikilens/acl/UserStore.kt \
-   && grep -q "store?.save(byUser)" server/src/main/kotlin/dev/wikilens/acl/AclRegistry.kt'
+  '[ -f server/src/main/kotlin/io/wikilens/acl/UserStore.kt ] \
+   && grep -q "ATOMIC_MOVE" server/src/main/kotlin/io/wikilens/acl/UserStore.kt \
+   && grep -q "store?.save(byUser)" server/src/main/kotlin/io/wikilens/acl/AclRegistry.kt'
 
 # `~/.wikilens/` 는 **두 판이 공유**하고 안에 토큰(`env.sh`)이 든다. 만드는 경로가 셋인데
 # (템플릿의 umask 077 · 로컬판 setup · 서버판 --configure) 한 곳이라도 `mkdir()` 기본값을
@@ -450,18 +450,18 @@ check "사용자에게 건네는 셸 명령이 경로를 인용함 (홈에 공�
 # 각자 분기하면 한 곳이 빠져 **반쪽으로 열린다** — 겉으로는 정상이라 아무도 모른다.
 # 소비자는 스위치의 존재를 몰라야 하고 `tokensFor`·`canSee` 만 거쳐야 한다.
 check "ACL 시행 스위치가 한 곳뿐 (소비자는 스위치를 모른다)" \
-  '! git grep -lE "isEnforced|aclEnforced" -- server/src/main/kotlin/dev/wikilens/service \
-        server/src/main/kotlin/dev/wikilens/index server/src/main/kotlin/dev/wikilens/vault'
+  '! git grep -lE "isEnforced|aclEnforced" -- server/src/main/kotlin/io/wikilens/service \
+        server/src/main/kotlin/io/wikilens/index server/src/main/kotlin/io/wikilens/vault'
 
 # 기본값이 꺼짐이면 **조용히 열린 채** 배포된다. 조용히 빈손인 쪽이 낫다 — 그건 눈에 띈다.
 check "ACL 시행 기본값이 켜짐 (상수와 application.yml 이 함께)" \
-  'grep -q "val aclEnforced: Boolean = true" server/src/main/kotlin/dev/wikilens/config/WikiLensProperties.kt \
+  'grep -q "val aclEnforced: Boolean = true" server/src/main/kotlin/io/wikilens/config/WikiLensProperties.kt \
    && grep -q "^  acl-enforced: true$" server/src/main/resources/application.yml'
 
 # 꺼두면 계속 말해야 한다 — 기동 로그 한 번으로는 재기동 뒤 아무도 모른다.
 check "ACL 시행이 꺼진 것이 기동·stats·--status 세 곳에서 보임" \
-  'grep -q "ACL 시행이 꺼져 있습니다" server/src/main/kotlin/dev/wikilens/WikiLensApplication.kt \
-   && grep -q "aclEnforced" server/src/main/kotlin/dev/wikilens/api/Controller.kt \
+  'grep -q "ACL 시행이 꺼져 있습니다" server/src/main/kotlin/io/wikilens/WikiLensApplication.kt \
+   && grep -q "aclEnforced" server/src/main/kotlin/io/wikilens/api/Controller.kt \
    && grep -q "ACL_ENFORCED" plugin/client/mcp/wikilens_mcp.py'
 
 # 권한이 좁은 사용자는 상위 후보가 전부 안 보일 때 **힌트가 통째로 0** 이 된다 —
@@ -469,31 +469,31 @@ check "ACL 시행이 꺼진 것이 기동·stats·--status 세 곳에서 보임"
 # 어휘 결과에서 이미 겪은 실패다(조용히 실패 8번: "take 를 필터 뒤로"). 지금은 전 페이지가
 # @public 이라 안 보이고 **ACL 수집이 들어오는 순간** 나타난다.
 check "서빙 못 할 힌트를 자르기 전에 거름 (권한 + 존재)" \
-  'grep -q "visible: (String) -> Boolean" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
-   && grep -q "if (!visible(pid))" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
-   && grep -qE "store\.hints\(.*limit\) \{ pid ->" server/src/main/kotlin/dev/wikilens/service/SearchService.kt \
-   && grep -q "acl.canSee(tokens, pid) && index.metaOf(pid) != null" server/src/main/kotlin/dev/wikilens/service/SearchService.kt'
+  'grep -q "visible: (String) -> Boolean" server/src/main/kotlin/io/wikilens/learn/TrajectoryStore.kt \
+   && grep -q "if (!visible(pid))" server/src/main/kotlin/io/wikilens/learn/TrajectoryStore.kt \
+   && grep -qE "store\.hints\(.*limit\) \{ pid ->" server/src/main/kotlin/io/wikilens/service/SearchService.kt \
+   && grep -q "acl.canSee(tokens, pid) && index.metaOf(pid) != null" server/src/main/kotlin/io/wikilens/service/SearchService.kt'
 
 # 궤적에 남기는 것은 권한 **범위**(토큰 해시)이지 신원이 아니다. userKey 가 들어가면
 # "누가 무엇을 검색했나" 가 영구 기록으로 남는데 그건 이 도구가 지금 안 하는 일이고,
 # 해결하려는 문제(권한 폭에 따른 학습 오염)는 범위만 알면 풀린다.
 check "궤적이 신원이 아니라 권한 범위를 남김 (userKey 필드 없음)" \
-  'grep -q "val scope: String" server/src/main/kotlin/dev/wikilens/learn/Trajectory.kt \
-   && ! grep -q "userKey" server/src/main/kotlin/dev/wikilens/learn/Trajectory.kt \
-   && grep -q "MessageDigest" server/src/main/kotlin/dev/wikilens/acl/AclRegistry.kt'
+  'grep -q "val scope: String" server/src/main/kotlin/io/wikilens/learn/Trajectory.kt \
+   && ! grep -q "userKey" server/src/main/kotlin/io/wikilens/learn/Trajectory.kt \
+   && grep -q "MessageDigest" server/src/main/kotlin/io/wikilens/acl/AclRegistry.kt'
 
 # Lucene write.lock 은 재색인 동안만 잡힌다. 그 밖의 시간에 둘째 프로세스가 붙으면
 # 각자 다른 포스팅을 들고 같은 궤적 로그에 쓴다 — 갈림이 재기동 전까지 안 드러난다.
 check "상태 디렉터리 단일 쓰기 보증 (락 + 읽을 수 있는 기동 실패)" \
-  '[ -f server/src/main/kotlin/dev/wikilens/learn/StateDirLock.kt ] \
-   && grep -q "stateDirLock" server/src/main/kotlin/dev/wikilens/WikiLensApplication.kt \
+  '[ -f server/src/main/kotlin/io/wikilens/learn/StateDirLock.kt ] \
+   && grep -q "stateDirLock" server/src/main/kotlin/io/wikilens/WikiLensApplication.kt \
    && grep -q "FailureAnalyzer" server/src/main/resources/META-INF/spring.factories'
 
 # 로그 쓰기가 실패해도 메모리 학습은 계속되므로, 갈라지고 있다는 사실 자체를 밖으로
 # 내야 한다. 예전에는 WARN 한 줄이 전부라 재기동 때까지 아무도 몰랐다.
 check "궤적 로그 상태가 stats 와 --status 에 드러남 (쓰기 실패·재생 누락·증가)" \
-  'grep -q "fun status()" server/src/main/kotlin/dev/wikilens/learn/FileTrajectorySink.kt \
-   && grep -q "trajectoryLog" server/src/main/kotlin/dev/wikilens/api/Controller.kt \
+  'grep -q "fun status()" server/src/main/kotlin/io/wikilens/learn/FileTrajectorySink.kt \
+   && grep -q "trajectoryLog" server/src/main/kotlin/io/wikilens/api/Controller.kt \
    && grep -q "trajectoryLog" plugin/client/mcp/wikilens_mcp.py \
    && grep -q "writeFailures" plugin/client/mcp/wikilens_mcp.py \
    && grep -q "replaySkipped" plugin/client/mcp/wikilens_mcp.py'
@@ -501,9 +501,9 @@ check "궤적 로그 상태가 stats 와 --status 에 드러남 (쓰기 실패·
 # 20명 팀이면 7년치) 아무도 안 보면 기동이 조용히 느려진다 — 임계에서 알리는 것이
 # 그것을 대신한다. 근거는 DECISIONS.md D17.
 check "궤적 로그 증가가 임계에서 경고됨 (압축 대신 관측)" \
-  'grep -q "const val SLOW_REPLAY_MILLIS" server/src/main/kotlin/dev/wikilens/learn/FileTrajectorySink.kt \
-   && grep -q "replayMillis > SLOW_REPLAY_MILLIS" server/src/main/kotlin/dev/wikilens/learn/FileTrajectorySink.kt \
-   && grep -q "log.warn" server/src/main/kotlin/dev/wikilens/learn/FileTrajectorySink.kt'
+  'grep -q "const val SLOW_REPLAY_MILLIS" server/src/main/kotlin/io/wikilens/learn/FileTrajectorySink.kt \
+   && grep -q "replayMillis > SLOW_REPLAY_MILLIS" server/src/main/kotlin/io/wikilens/learn/FileTrajectorySink.kt \
+   && grep -q "log.warn" server/src/main/kotlin/io/wikilens/learn/FileTrajectorySink.kt'
 
 # 검증 명령 목록을 아는 곳이 둘이었다 — CLAUDE.md 와 IntelliJ 실행 구성. 갈리면 한쪽만
 # 돌리는 사람이 생기고 그건 조용하다. `check.sh` 가 정본이고 나머지는 그것을 부른다.
@@ -531,24 +531,24 @@ check "개발용 venv 를 아는 두 곳이 같고, 없을 때 만드는 법이 
 # 페이지를 **일부러 생략**하는데(fail-closed), 서버가 없는 항목을 @public 으로 채우면
 # 그것이 fail-open 으로 뒤집힌다. 구별해야 하는 것은 "수집한 적 없음"과 "없는 항목"이다.
 check "acl.json 에 없는 페이지가 공개로 바뀌지 않음 (Python 의 생략은 fail-closed 다)" \
-  'grep -q "Map<String, List<String>>?" server/src/main/kotlin/dev/wikilens/vault/VaultReader.kt \
-   && grep -q "aclByPage == null -> listOf(PUBLIC)" server/src/main/kotlin/dev/wikilens/vault/VaultReader.kt \
-   && grep -q "emptyList<String>().also { unresolved++ }" server/src/main/kotlin/dev/wikilens/vault/VaultReader.kt \
+  'grep -q "Map<String, List<String>>?" server/src/main/kotlin/io/wikilens/vault/VaultReader.kt \
+   && grep -q "aclByPage == null -> listOf(PUBLIC)" server/src/main/kotlin/io/wikilens/vault/VaultReader.kt \
+   && grep -q "emptyList<String>().also { unresolved++ }" server/src/main/kotlin/io/wikilens/vault/VaultReader.kt \
    && grep -q "unresolved" cli/wikilens/acl.py'
 
 # 본문 스캔 경로가 둘이다. 어느 쪽으로 처리됐는지가 밖에서 안 보이면 답이 왜 다른지
 # 물을 수도 없다 — 기동 로그는 콘솔 전용이라 로그를 못 보는 운영자에게 안 닿는다.
 check "어느 grep 엔진인지 stats 와 --status 에 드러남" \
-  'grep -q "val engineName" server/src/main/kotlin/dev/wikilens/service/ContentService.kt \
-   && grep -q "\"grepEngine\" to content.engineName" server/src/main/kotlin/dev/wikilens/api/Controller.kt \
+  'grep -q "val engineName" server/src/main/kotlin/io/wikilens/service/ContentService.kt \
+   && grep -q "\"grepEngine\" to content.engineName" server/src/main/kotlin/io/wikilens/api/Controller.kt \
    && grep -q "GREP_ENGINE=" plugin/client/mcp/wikilens_mcp.py'
 
 # grep 은 죄고 있었는데 search 만 안 죄고 있었다. 500 두 경로(0 이하 · 곱셈 오버플로우)
 # 보다 나쁜 것은 **서빙한 힌트가 궤적 로그에 영구히 남는다**는 것이다 — append-only 이고
 # 유일한 복구 불가 자산이라 한 요청이 수천 개를 적어 넣을 수 있으면 안 된다.
 check "클라이언트가 주는 limit 을 두 경로 모두 상한으로 죔 (search·grep)" \
-  'grep -q "req.limit.coerceIn(1, MAX_LIMIT)" server/src/main/kotlin/dev/wikilens/service/SearchService.kt \
-   && grep -q "limit.coerceIn(1, MAX_LIMIT)" server/src/main/kotlin/dev/wikilens/service/ContentService.kt'
+  'grep -q "req.limit.coerceIn(1, MAX_LIMIT)" server/src/main/kotlin/io/wikilens/service/SearchService.kt \
+   && grep -q "limit.coerceIn(1, MAX_LIMIT)" server/src/main/kotlin/io/wikilens/service/ContentService.kt'
 
 # `acl` 은 페이지마다 낱개 조회를 해서 이 프로젝트에서 API 를 가장 세게 쓴다. 429 를
 # 못 견디면 곧 "조회 실패" 이고, 전부 실패한 결과를 쓰면 서버가 그것을 **전 페이지
@@ -563,46 +563,46 @@ check "429 백오프가 모든 GET 에 걸리고, 전부 실패하면 acl.json �
 # sessionId — 에 상한이 없으면 한 요청이 무한정 적어 넣는다. `limit` 과 `MAX_PATTERN` 만
 # 죄고 이 둘은 안 죄던 것이 **같은 판단의 비대칭**이었다.
 check "로그로 흘러가는 것에 상한이 있음 (질의·항·sessionId·세션 수)" \
-  'grep -q "const val MAX_QUERY" server/src/main/kotlin/dev/wikilens/service/SearchService.kt \
-   && grep -q "keywords.take(MAX_KEYWORDS)" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
-   && grep -q "sessionId.length > MAX_SESSION_ID" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
-   && grep -q "sessions.size >= MAX_SESSIONS" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt'
+  'grep -q "const val MAX_QUERY" server/src/main/kotlin/io/wikilens/service/SearchService.kt \
+   && grep -q "keywords.take(MAX_KEYWORDS)" server/src/main/kotlin/io/wikilens/learn/TrajectoryStore.kt \
+   && grep -q "sessionId.length > MAX_SESSION_ID" server/src/main/kotlin/io/wikilens/learn/TrajectoryStore.kt \
+   && grep -q "sessions.size >= MAX_SESSIONS" server/src/main/kotlin/io/wikilens/learn/TrajectoryStore.kt'
 
 # `LOCALIZATION 만 간선 생성` 은 계약으로 잠겨 있는데, 그 게이트가 실제로 무엇을 걸러내는지
 # 밖에서 볼 방법이 없었다. UNKNOWN 이 거의 0 이면 게이트는 사실상 항등함수다.
 check "게이트의 종류 분포가 stats 와 --status 에 드러남" \
-  'grep -q "\"byKind\" to QueryKind.entries" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
+  'grep -q "\"byKind\" to QueryKind.entries" server/src/main/kotlin/io/wikilens/learn/TrajectoryStore.kt \
    && grep -q "QUERY_KINDS=" plugin/client/mcp/wikilens_mcp.py'
 
 # 문턱 판정을 cdf 1회로 바꿨다(실측 5~18배). 빠른 길과 정확한 길이 어긋나면 **서빙 여부가
 # 조용히 달라진다** — 검색은 정상으로 보이고 힌트만 다르게 나온다. 커버리지 축이 특히
 # 중요하다: 실제 판정은 `ebLower * c >= 문턱` 이라 페이지별 문턱이 `문턱 / c` 다.
 check "빠른 문턱 판정이 이분법과 대조됨 (커버리지 축 포함)" \
-  'grep -q "fun meetsThreshold" server/src/main/kotlin/dev/wikilens/learn/Reliability.kt \
-   && grep -q "Reliability.meetsThreshold" server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt \
-   && grep -q "for (c in listOf" server/src/test/kotlin/dev/wikilens/learn/ReliabilityThresholdTest.kt'
+  'grep -q "fun meetsThreshold" server/src/main/kotlin/io/wikilens/learn/Reliability.kt \
+   && grep -q "Reliability.meetsThreshold" server/src/main/kotlin/io/wikilens/learn/TrajectoryStore.kt \
+   && grep -q "for (c in listOf" server/src/test/kotlin/io/wikilens/learn/ReliabilityThresholdTest.kt'
 
 # 거부된 질의는 검색이 아예 안 돈 것이라 관측할 것이 없다. 관측하면 세션 객체가 생기고
 # `sinceStart` 의 원시 계측이 클라이언트 오류로 오염된다. 결과 0건과는 다르다 —
 # 그건 진짜 시도이고 일부러 센다.
 check "거부된 질의는 궤적으로 관측하지 않음 (0건과는 다르다)" \
-  'grep -q "if (res.error != null) return res" server/src/main/kotlin/dev/wikilens/api/Controller.kt'
+  'grep -q "if (res.error != null) return res" server/src/main/kotlin/io/wikilens/api/Controller.kt'
 
 # 성능 측정이 실코퍼스에 매달리면 두 가지가 무너진다: 그 머신 밖에서는 검증이 안 되고
 # (테스트가 통째로 건너뛴다), 나온 값이 소프트웨어가 아니라 그 위키에 대한 사실이 된다.
 # 실제로 그렇게 적힌 상수 하나가 2배 틀린 채로 설계 결정의 근거가 돼 있었다.
 check "성능 측정이 합성 볼트로 재현됨 (실코퍼스 없이도 돈다)" \
-  '[ -f server/src/test/kotlin/dev/wikilens/SyntheticVault.kt ] \
-   && grep -q "SyntheticVault" server/src/test/kotlin/dev/wikilens/service/RipgrepBudgetTest.kt \
-   && grep -q "SyntheticVault" server/src/test/kotlin/dev/wikilens/service/GrepScaleTest.kt \
-   && ! grep -q "System.getProperty(\"user.home\")" server/src/test/kotlin/dev/wikilens/service/RipgrepBudgetTest.kt'
+  '[ -f server/src/test/kotlin/io/wikilens/SyntheticVault.kt ] \
+   && grep -q "SyntheticVault" server/src/test/kotlin/io/wikilens/service/RipgrepBudgetTest.kt \
+   && grep -q "SyntheticVault" server/src/test/kotlin/io/wikilens/service/GrepScaleTest.kt \
+   && ! grep -q "System.getProperty(\"user.home\")" server/src/test/kotlin/io/wikilens/service/RipgrepBudgetTest.kt'
 
 # `canSee` 는 조건이 둘인데(등록됐나 + 토큰이 겹치나) 진단이 첫째만 보고 있었다.
 # 둘째는 `wikilens acl` 을 처음 돌리면 **반드시** 걸린다 — 페이지 토큰이 @public 에서
 # @space:<KEY> 로 바뀌면서 기존 등록이 전부 안 맞게 된다. 등록·색인은 멀쩡하다.
 check "토큰이 안 겹치는 상태가 stats 와 --status 에 드러남" \
-  'grep -q "fun tokenOverlap" server/src/main/kotlin/dev/wikilens/acl/AclRegistry.kt \
-   && grep -q "\"aclTokenOverlap\" to acl.tokenOverlap()" server/src/main/kotlin/dev/wikilens/api/Controller.kt \
+  'grep -q "fun tokenOverlap" server/src/main/kotlin/io/wikilens/acl/AclRegistry.kt \
+   && grep -q "\"aclTokenOverlap\" to acl.tokenOverlap()" server/src/main/kotlin/io/wikilens/api/Controller.kt \
    && grep -q "aclTokenOverlap" plugin/client/mcp/wikilens_mcp.py'
 
 # Windows 는 인터프리터 이름이 python·py 라 python3 를 박으면 서버판 사용자가 전혀 못
@@ -631,7 +631,7 @@ check "래퍼가 파이썬 이름을 고정하지 않음 (Windows)" \
 # 것을 잡았다 — 실제 서버가 절대 안 내는 모양을 테스트하고 있었다.)
 check "와이어 포맷 정본이 있고 양쪽이 그것을 검사함" \
   '[ -f contract/wire-format.json ] \
-   && grep -q "wire-format.json" server/src/test/kotlin/dev/wikilens/api/WireFormatTest.kt \
+   && grep -q "wire-format.json" server/src/test/kotlin/io/wikilens/api/WireFormatTest.kt \
    && grep -q "wire-format.json" plugin/tests/test_mcp_proxy.py'
 
 # 컨테이너가 비루트로 도는데 마운트 지점이 이미지에 없으면, Docker 가 새 named volume 을

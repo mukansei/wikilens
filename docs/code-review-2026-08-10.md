@@ -201,7 +201,7 @@ betaCdf 1회 = 0.200 us  →  ebLower 대비 23.6배  (리플렉션 포함이라
 
 #### 재현 방법
 
-`server/src/test/kotlin/dev/wikilens/learn/` 에 임시 JUnit 클래스를 만들어
+`server/src/test/kotlin/io/wikilens/learn/` 에 임시 JUnit 클래스를 만들어
 `./gradlew test --tests '*<이름>*' -i` 로 돌리고 `println` 을 grep 합니다. 프로브가 한 일:
 
 1. `Reliability.ebLower(i%7, i%3, 0.3)` 을 10만 회 (워밍 2만 회 뒤)

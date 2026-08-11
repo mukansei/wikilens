@@ -9,7 +9,7 @@
 ## 문제
 
 `TrajectoryStore`는 학습 신호를 **항(term) 문자열 단위**로 누적한다
-(`postings: term -> pageId -> (hits, misses)`, `server/src/main/kotlin/dev/wikilens/learn/TrajectoryStore.kt`).
+(`postings: term -> pageId -> (hits, misses)`, `server/src/main/kotlin/io/wikilens/learn/TrajectoryStore.kt`).
 Acme 실데이터로 오늘 실측한 두 갭이 전부 이 표현 방식에서 나온다:
 
 1. **진짜 동의어 무력화** — "행사 정책 문서 어디서 볼 수 있어?"는 "이벤트
@@ -114,7 +114,7 @@ CLAUDE.md의 "절대 깨면 안 되는 계약" 표에 다음 행이 있다:
 
 이 원칙 자체를 벡터 기반으로 대체하는 것이므로, 채택 시 **이 표를 명시적으로
 갱신**해야 한다 — 조용히 우회하면 안 된다. `shared_contract.sh`에 이 계약을
-직접 검사하는 항목은 없지만(문서로만 존재), `server/src/test/kotlin/dev/wikilens/learn/LearnLayerTest.kt`의
+직접 검사하는 항목은 없지만(문서로만 존재), `server/src/test/kotlin/io/wikilens/learn/LearnLayerTest.kt`의
 "표현이 달라도 신뢰도 합산" 테스트 케이스는 이 변경에 맞춰 다시 설계해야 한다.
 
 ## 검증 계획 (채택 여부 판단용)

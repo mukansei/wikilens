@@ -22,7 +22,7 @@
     "",
     "## 이 파일을 누가 검사하나",
     "",
-    "- `server/src/test/kotlin/dev/wikilens/api/WireFormatTest.kt` — DTO 를 앱과 같은",
+    "- `server/src/test/kotlin/io/wikilens/api/WireFormatTest.kt` — DTO 를 앱과 같은",
     "  설정으로 직렬화해 키를 대조한다.",
     "- `plugin/tests/test_mcp_proxy.py` — 가짜 서버가 **내보낸** payload 의 키를 대조한다.",
     "",

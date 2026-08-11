@@ -1,4 +1,4 @@
 # 기동 실패를 읽을 수 있는 형태로 내는 분석기. 없으면 락 충돌 메시지가
 # 빈 생성 실패 스택 세 겹에 파묻힌다 — 기동 로그를 진단에 쓰는 구조와 어긋난다.
 org.springframework.boot.diagnostics.FailureAnalyzer=\
-dev.wikilens.StateDirLockFailureAnalyzer
+io.wikilens.StateDirLockFailureAnalyzer
