@@ -37,6 +37,7 @@ class VaultReader(private val mapper: ObjectMapper) {
         val aclByPage = readAcl(root)
 
         var unresolved = 0
+        val unreadable = mutableListOf<String>()
         val result = pages.map { (pid, meta) ->
             // **"수집한 적 없음" 과 "수집했는데 이 페이지가 없음" 은 다르다.**
             // 전자는 ACL 이전의 볼트라 전부 공개가 맞고, 후자는 Python `collect` 이
@@ -51,7 +52,7 @@ class VaultReader(private val mapper: ObjectMapper) {
                 title = meta["title"]?.toString().orEmpty(),
                 space = meta["space"]?.toString().orEmpty(),
                 path = VaultLayout.relPagePath(pid),
-                body = readBody(root, pid),
+                body = readBody(root, pid, unreadable),
                 anchors = anchors[pid].orEmpty(),
                 aclTokens = tokens,
                 ancestors = readAncestors(meta),
@@ -59,6 +60,15 @@ class VaultReader(private val mapper: ObjectMapper) {
         }
         // 맵을 갈아끼운다 — 페이지마다 넣기만 하면 사라진 페이지가 남는다.
         acl.replacePages(result.associate { it.id to it.aclTokens })
+        if (unreadable.isNotEmpty()) {
+            // 관대한 디코더로도 못 읽었다 — 권한 문제이거나 파일이 통째로 깨졌다.
+            // 본문이 빈 채 색인되므로 제목·앵커로만 찾히고, 조용하면 "본문 없는
+            // 페이지" 와 구별되지 않는다.
+            log.warn(
+                "{}건은 본문을 읽지 못해 **빈 채로 색인됩니다** (제목·앵커로만 찾힙니다): {}",
+                unreadable.size, unreadable.take(MAX_REPORTED),
+            )
+        }
         if (unresolved > 0) {
             // 조용하면 "문서가 없다" 와 구별되지 않는다(조용히 실패 10번). 수집을 다시
             // 돌리면 대개 해소되므로 무엇을 하라는 말까지 같이 낸다.
@@ -127,10 +137,29 @@ class VaultReader(private val mapper: ObjectMapper) {
         return out
     }
 
-    private fun readBody(root: Path, pid: String): String {
+    /**
+     * 본문. **[VaultText] 를 쓴다 — `Files.readString` 이 아니다.**
+     *
+     * 그쪽은 디코더가 `REPORT` 라 깨진 바이트 하나에 `MalformedInputException` 을 던지고,
+     * 여기서 그것을 빈 문자열로 삼키면 **그 페이지가 색인에서만 사라진다** — `grep` 은
+     * 찾고 `read` 는 서빙하는데 `search` 만 못 찾는 갈린 상태가 된다(실측 2026-08-12).
+     * `VaultText` 의 "세 소비자" 목록에 색인 경로가 빠져 있었다.
+     *
+     * 읽기 실패는 여전히 빈 본문으로 두되 **센다** — 조용하면 "본문 없는 페이지" 와
+     * 구별되지 않는다.
+     */
+    private fun readBody(root: Path, pid: String, failures: MutableList<String>): String {
         val f = root.resolve(VaultLayout.relPagePath(pid))
-        return if (Files.exists(f)) runCatching { Files.readString(f) }.getOrDefault("") else ""
+        if (!Files.exists(f)) return ""
+        return runCatching { VaultText.reader(f).use { it.readText() } }
+            .onFailure { failures.add(pid) }
+            .getOrDefault("")
     }
 
-    companion object { const val PUBLIC = "@public" }
+    companion object {
+        const val PUBLIC = "@public"
+
+        /** 경고에 실을 페이지 ID 표본 수. 전부 실으면 대량 실패 시 로그가 터진다. */
+        private const val MAX_REPORTED = 20
+    }
 }
