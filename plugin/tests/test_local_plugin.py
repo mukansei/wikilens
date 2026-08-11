@@ -77,6 +77,26 @@ def test_corrupt_config_falls_back_instead_of_crashing(tmp_path):
     assert status(tmp_path)["vault"] == str(tmp_path / ".wikilens" / "vault")
 
 
+@pytest.mark.parametrize("bad", ['123', '["a"]', '{"p":"x"}', 'true', 'null'])
+def test_non_string_config_value_falls_back_instead_of_crashing(tmp_path, bad):
+    """
+    **`_config()` 가 dict 를 보장해도 그 안의 값 타입은 아무도 안 봤다.**
+
+    `{"vault": 123}` 한 줄이면 `Path(123)` 이 `TypeError` 를 내고 스크립트가 통째로
+    죽는다 — 스킬은 `VAULT=` 대신 traceback 을 받는데 **그 분기가 없어 검색이 아예 안
+    된다.** 게다가 종료 코드가 0 이라 부르는 쪽이 실패를 감지할 수도 없다(실측).
+
+    손으로 고치는 파일이라 따옴표 빠진 숫자가 실제로 들어온다. 같은 파일을 읽는 다른
+    둘은 이미 견딘다 — MCP 프록시는 `str(v)`, Kotlin `UserConfig` 는 `isTextual`.
+    **로컬판만 빠져 있었다.**
+    """
+    (tmp_path / ".wikilens").mkdir()
+    (tmp_path / ".wikilens" / "config.json").write_text(
+        '{"vault": %s}' % bad, encoding="utf-8")
+    # 죽지 않고 기본 경로로 떨어져야 한다 — 그러면 STATUS 가 왜 빈 볼트인지 말해준다.
+    assert status(tmp_path)["vault"] == str(tmp_path / ".wikilens" / "vault")
+
+
 # --------------------------------------------------------------- 상태 판정
 
 def test_missing_vault(tmp_path):
