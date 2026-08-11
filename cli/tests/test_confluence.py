@@ -48,6 +48,8 @@ class FakeConfluence(BaseHTTPRequestHandler):
     auth_ok = True
     pages: list = []
     page_size = 2
+    #: 검색 요청마다 부르는 훅. 테스트가 시계를 미는 데 쓴다.
+    on_search = None
     rate_limit_once = False
     _limited = False
     referenced_pages: dict = {}   # (space, title) -> item, --follow-refs 낱개 조회용
@@ -118,11 +120,23 @@ class FakeConfluence(BaseHTTPRequestHandler):
                 self.send_response(429)
                 self.send_header("Retry-After", "0")
                 self.end_headers(); return
+            # **요청마다 시계를 민다.** 싱크가 도는 동안 시간이 흐르는 것을 흉내내야
+            # 커서를 언제 잡는지가 결과로 드러난다.
+            if type(self).on_search:
+                type(self).on_search()
             start = int(q.get("start", ["0"])[0])
             size = type(self).page_size
-            chunk = type(self).pages[start:start + size]
+            # **`lastModified >` 를 실제로 거른다.** 안 거르면 증분 싱크의 정확성을
+            # 재현할 수 없다 — 커서를 어떻게 잡든 전부 다시 받으므로 늘 통과한다.
+            pool = type(self).pages
+            lm = re.search(r'lastModified > "([^"]*)"', cql)
+            if lm:
+                cutoff = lm.group(1).replace(" ", "T")
+                pool = [p for p in pool
+                        if (p.get("version") or {}).get("when", "")[:len(cutoff)] > cutoff]
+            chunk = pool[start:start + size]
             body = {"results": chunk}
-            if start + size < len(type(self).pages):
+            if start + size < len(pool):
                 body["_links"] = {
                     "next": f"{type(self).prefix}/rest/api/content/search?start={start+size}"
                 }
@@ -268,8 +282,66 @@ def test_sync_survives_rate_limit(server, tmp_path):
 
 
 def test_second_sync_skips_unchanged(server, tmp_path):
+    """
+    두 번째 싱크는 아무것도 다시 받지 않는다.
+
+    **`unchanged == 5` 를 더는 단언하지 않는다.** 가짜 서버가 `lastModified >` 를
+    거르게 되면서(실물이 하는 일이다) 애초에 서버가 안 돌려주기 때문이다 —
+    예전 값은 실물 동작이 아니라 **가짜의 느슨함**을 재고 있었다. `_ingest` 의
+    unchanged 분기는 아래 테스트가 따로 덮는다.
+    """
     c = ConfluenceClient(server, BasicAuth("me@corp", "tok"))
     sync(tmp_path, c, ["PLATFORM"])
+    rep = sync(tmp_path, c, ["PLATFORM"])
+    assert rep.fetched == 0
+
+
+def test_cursor_is_taken_before_the_scan(server, tmp_path, monkeypatch):
+    """
+    **싱크가 도는 동안 수정된 페이지를 다음 싱크가 받아야 한다.**
+
+    커서를 스캔이 **끝난 뒤** 잡으면, 그 사이에 수정된 페이지는 이미 지나갔거나
+    아직 안 온 상태인데 다음 싱크가 `lastModified > 끝시각` 으로 물으므로 **영영
+    유실된다** — 그 페이지가 또 수정될 때까지. 13,933건 볼트면 그 창이 수십 분이다.
+
+    시계를 검색 요청마다 10분씩 민다: 싱크 #1 은 10:00 에 시작해 10:30 쯤 끝난다.
+    그 중간(10:15)에 수정된 페이지를 싱크 #2 가 받는지 본다.
+
+      커서를 시작에 잡으면  10:00  →  10:15 > 10:00  →  받는다
+      커서를 끝에 잡으면    10:30  →  10:15 > 10:30  →  못 받는다
+    """
+    import wikilens.sync as m
+
+    clock = {"t": 0}
+    monkeypatch.setattr(m, "_now_cursor", lambda: f"2026-08-01 10:{clock['t']:02d}")
+    FakeConfluence.on_search = lambda: clock.__setitem__("t", min(clock["t"] + 10, 50))
+
+    c = ConfluenceClient(server, BasicAuth("me@corp", "tok"))
+    assert sync(tmp_path, c, ["PLATFORM"]).fetched == 5
+
+    # 싱크 #1 이 도는 **중간**에 수정된 페이지 하나.
+    FakeConfluence.pages[0]["version"] = {"number": 2, "when": "2026-08-01T10:15:00.000Z"}
+
+    clock["t"] = 0   # 싱크 #2 도 같은 시각대에서 시작한다
+    rep = sync(tmp_path, c, ["PLATFORM"])
+    assert rep.fetched == 1, (
+        "싱크 중 수정된 페이지를 놓쳤다 — 커서를 스캔이 끝난 뒤 잡고 있다"
+    )
+
+
+def test_redelivered_page_with_same_version_is_unchanged(server, tmp_path):
+    """
+    커서 이후로 넘어왔는데 버전이 그대로면 다시 안 받는다.
+
+    커서가 분 단위로 절삭되므로 실물에서도 경계의 페이지가 다시 넘어온다 —
+    그때 `_ingest` 가 버전을 보고 걸러야 한다. 위 테스트가 서버 필터에 가려
+    못 보게 된 분기다.
+    """
+    c = ConfluenceClient(server, BasicAuth("me@corp", "tok"))
+    sync(tmp_path, c, ["PLATFORM"])
+    # 커서보다 뒤로 밀어 서버 필터를 통과시키되 버전은 그대로 둔다.
+    for p in FakeConfluence.pages:
+        p["version"] = {**p["version"], "when": "2099-01-01T00:00:00.000Z"}
     rep = sync(tmp_path, c, ["PLATFORM"])
     assert rep.fetched == 0 and rep.unchanged == 5
 
