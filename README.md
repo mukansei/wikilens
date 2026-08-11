@@ -38,7 +38,9 @@ Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** 팀
 ### 로컬판 실행 (각자, 5분)
 
 Claude Code 안에서 세 줄입니다. **저장소를 clone 할 필요가 없습니다** — 마켓플레이스가
-알아서 받아옵니다:
+알아서 받아옵니다. 다만 **비공개 저장소라 `example-org` 조직 접근 권한과 git
+자격증명이 먼저 있어야 합니다**(`gh auth login` 또는 credential helper). 없으면 첫 줄이
+인증을 물으며 멈춥니다:
 
 ```
 /plugin marketplace add https://github.com/example-org/wikilens.git
@@ -313,6 +315,8 @@ flowchart TB
 ## 시작하기
 
 ### 로컬판 — 5분
+
+비공개 저장소라 **git 자격증명이 먼저** 있어야 합니다(`gh auth login`).
 
 ```
 /plugin marketplace add https://github.com/example-org/wikilens.git
