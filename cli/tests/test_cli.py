@@ -49,7 +49,9 @@ def test_unknown_subcommand_is_rejected():
     (["--root", "/A", "build"], "/A"),          # 최상위
     (["build", "--root", "/B"], "/B"),          # 서브커맨드 뒤 — 예전엔 파싱 에러였다
     (["--root", "/A", "build", "--root", "/B"], "/B"),   # 뒤가 이긴다
-    (["build"], "."),                            # 기본값이 살아 있다
+    # 기본값은 정본에서 온다 — 예전엔 `.`(현재 디렉터리)라 저장소 안에서 `sync` 를
+    # 돌리면 거기에 볼트가 생겼다. 값 자체를 박지 않는다(정본이 바뀌면 함께 움직인다).
+    (["build"], None),                           # 기본값이 살아 있다
 ])
 def test_root_is_accepted_on_both_sides(argv, expected, monkeypatch):
     """
@@ -67,7 +69,11 @@ def test_root_is_accepted_on_both_sides(argv, expected, monkeypatch):
 
     monkeypatch.setattr("wikilens.cli._cmd_build", spy)
     main(argv)
-    assert seen["root"] == expected
+    if expected is None:
+        from wikilens import credentials
+        assert seen["root"] == str(credentials.vault_root())
+    else:
+        assert seen["root"] == expected
 
 
 @pytest.mark.parametrize("argv", [["-v", "build"], ["build", "-v"], ["build", "--verbose"]])

@@ -16,8 +16,16 @@ data class WikiLensProperties(
      * `vault` 로 폴백한다([UserConfig]) — **명시로 준 값은 폴백하지 않는다.**
      */
     val vaultRoot: String = DEFAULT_VAULT_ROOT,
-    val indexDir: String = "./.wikilens/index",
-    val stateDir: String = "./.wikilens/state",
+    /**
+     * 색인·상태도 **홈 아래**다. 예전에는 `./.wikilens/…` 라 실행 디렉터리에 매여 있었고,
+     * 그래서 IntelliJ 가 `fun main` 에서 띄우면 저장소 루트에, `gradlew bootRun` 은
+     * `server/` 에 만들었다 — **같은 서버가 작업 디렉터리에 따라 다른 궤적 로그를 썼다**
+     * (실측). 궤적은 유일한 복구 불가 자산이라 그 갈림이 가장 비싸다.
+     *
+     * Docker 는 `/vault`·`/index`·`/state` 를 환경변수로 덮는다(`Dockerfile`).
+     */
+    val indexDir: String = "~/.wikilens/index",
+    val stateDir: String = "~/.wikilens/state",
     /**
      * 본문 분석기: `korean`(기본) · `english` · `standard`.
      *
@@ -50,6 +58,6 @@ data class WikiLensProperties(
          * 명시값을 구분해주지 않는다. 상수로 두고 같은지 비교하는 것이 그 구분을 얻는
          * 방법이다. `application.yml` 에도 같은 값이 있고 계약이 일치를 검사한다.
          */
-        const val DEFAULT_VAULT_ROOT = "./mirror-root"
+        const val DEFAULT_VAULT_ROOT = "~/.wikilens/vault"
     }
 }

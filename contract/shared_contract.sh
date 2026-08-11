@@ -300,7 +300,7 @@ sys.exit(1 if missing else 0)
 # 갈리면 래퍼가 소싱한 파일과 CLI 가 읽는 파일이 달라 **자격증명이 있는데 없다고 죽는다**
 # (macOS JDK 의 `user.home` vs `HOME` 과 같은 실패 — 조용히 실패 20번).
 check "자격증명 경로 해석처가 파이썬 둘뿐 (래퍼는 조립하지 않고 물어본다)" \
-  'grep -q "Path.home() / \".wikilens\" / \"env.sh\"" cli/wikilens/credentials.py \
+  'grep -qE "^(ENV_PATH = CONFIG_DIR|CONFIG_DIR = Path.home\(\) / \".wikilens\")" cli/wikilens/credentials.py \
    && grep -q "^ENV_PATH = CONFIG_DIR / \"env.sh\"" plugin/local/scripts/vault_status.py \
    && grep -q "\-\-env-path" plugin/local/scripts/vault_status.py \
    && grep -q "vault_status.py\" --env-path" plugin/local/scripts/wikilens_cli.sh \
@@ -329,8 +329,14 @@ check "볼트 경로 해석처가 한 곳 (VaultLocator — 갈리면 검색은 
    && grep -q "locator.root" server/src/main/kotlin/io/wikilens/service/IndexingService.kt'
 
 check "서버 볼트 기본값이 상수와 application.yml 에서 같음 (폴백 판정 근거)" \
-  'grep -q "DEFAULT_VAULT_ROOT = \"./mirror-root\"" server/src/main/kotlin/io/wikilens/config/WikiLensProperties.kt \
-   && grep -q "^  vault-root: ./mirror-root$" server/src/main/resources/application.yml'
+  'python3 -c "
+import re, pathlib, sys
+kt = pathlib.Path(\"server/src/main/kotlin/io/wikilens/config/WikiLensProperties.kt\").read_text()
+yml = pathlib.Path(\"server/src/main/resources/application.yml\").read_text()
+m = re.search(r\"DEFAULT_VAULT_ROOT = .(\\S+).\", kt)
+y = re.search(r\"^  vault-root: (\\S+)$\", yml, re.M)
+sys.exit(0 if m and y and m.group(1) == y.group(1) else 1)
+"'
 
 # CLI 위치를 정해진 자리 하나로 고정한 뒤로 "설치했는데 어디 있는지 찾는" 단계가 없어졌다.
 # 되돌아오면 그 자리를 아는 곳이 둘이 되어(`vault_status` 와 문서) 조용히 갈린다.

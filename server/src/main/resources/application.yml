@@ -45,9 +45,9 @@ server:
 
 wikilens:
   # Python `wikilens sync` 가 만든 미러 루트 (서비스 계정으로 1회 싱크)
-  vault-root: ./mirror-root
-  index-dir: ./.wikilens/index
-  state-dir: ./.wikilens/state
+  vault-root: ~/.wikilens/vault
+  index-dir: ~/.wikilens/index
+  state-dir: ~/.wikilens/state
 
   # /api/admin/* 공유 토큰. **비어 있으면 관리 API 가 전부 404.**
   #

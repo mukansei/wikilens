@@ -3,6 +3,7 @@ package io.wikilens
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.wikilens.acl.AclRegistry
 import io.wikilens.acl.UserStore
+import io.wikilens.config.UserConfig
 import io.wikilens.config.WikiLensProperties
 import io.wikilens.index.AnalyzerKind
 import io.wikilens.index.LuceneIndex
@@ -108,5 +109,10 @@ class WikiLensApplication {
         }
     }
 
-    private fun abs(p: String): Path = Path.of(p).toAbsolutePath().normalize()
+    /**
+     * 경로 해석은 [UserConfig.resolve] 하나를 지난다 — **`~` 확장이 거기 있다.**
+     * 기본값이 `~/.wikilens/…` 인데 Spring 도 JVM 도 `~` 를 안 풀어서, 여기서 안 거치면
+     * 실행 디렉터리 밑에 `~` 라는 디렉터리가 생긴다.
+     */
+    private fun abs(p: String): Path = UserConfig.resolve(p)
 }
