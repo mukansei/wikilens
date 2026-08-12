@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import pathlib
+import signal
 import subprocess
 import sys
 import time
@@ -110,9 +111,20 @@ def trajectory_count() -> int:
 def run_once(argv: list[str]) -> dict:
     env = dict(os.environ, WIKILENS_SERVER=SERVER, WIKILENS_USER="eval")
     t = time.perf_counter()
+    # **프로세스 그룹으로 띄운다.** `subprocess.run(timeout=)` 은 `claude` 만 죽이고
+    # 그 자식(MCP 프록시 등)은 남긴다(실측: 타임아웃 뒤 자식 2개 잔존). 90세션에서
+    # 몇 번만 나도 프록시가 쌓여 다음 세션의 측정에 섞인다.
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, env=env, start_new_session=True)
     try:
-        p = subprocess.run(argv, capture_output=True, text=True, env=env, timeout=900)
+        out, err = proc.communicate(timeout=900)
     except subprocess.TimeoutExpired:
+        # 그룹 전체에 신호를 보낸다 — 자식까지 정리된다.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            proc.kill()
+        proc.communicate()
         return {"error": "timeout 900s", "seconds": time.perf_counter() - t}
     wall = time.perf_counter() - t
     # **도구 호출을 세려면 스트림을 봐야 한다.** 최종 JSON 에는 `num_turns` 밖에 없고
@@ -121,7 +133,7 @@ def run_once(argv: list[str]) -> dict:
     # 파일을 안 보는지는 도구 이름으로만 확인된다.
     tools: list[str] = []
     d = None
-    for line in p.stdout.splitlines():
+    for line in out.splitlines():
         try:
             ev = json.loads(line)
         except json.JSONDecodeError:
@@ -133,7 +145,7 @@ def run_once(argv: list[str]) -> dict:
         elif ev.get("type") == "result":
             d = ev
     if d is None:
-        return {"error": (p.stderr or p.stdout or "빈 출력")[:200], "seconds": wall}
+        return {"error": (err or out or "빈 출력")[:200], "seconds": wall}
 
     u = d.get("usage", {})
     text = str(d.get("result", ""))
