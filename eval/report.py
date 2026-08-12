@@ -56,6 +56,25 @@ def rank_table(rows: list) -> None:
         print("  " + g[:22].ljust(24) + "".join(x.rjust(18) for x in cells))
 
 
+def stage_note(rows: list) -> None:
+    """
+    로컬판이 **어느 단계에서** 찾았나. `BODY` 는 약한 증거다 — `rank.py` 가 정답을
+    찾을 때까지 내려가는데 실제 에이전트는 앞 단계에서 멈출 수 있기 때문이다.
+    """
+    rs = [r for r in rows if r.harness == "rank" and r.case.startswith("B") and r.hit]
+    if not rs:
+        return
+    by = {}
+    for r in rs:
+        st = r.extra.get("stage", "?")
+        by[st] = by.get(st, 0) + 1
+    tail = by.get("TREE", 0) + by.get("BODY", 0)
+    print(f"\n  로컬판 적중 단계: {by}")
+    if tail:
+        print(f"    → TREE·BODY 로 내려가 찾은 {tail}건은 **낙관적**이다 — "
+              "실제 에이전트는 ALIASES 에서 멈출 수 있다")
+
+
 def cost_table(rows: list, md: bool) -> None:
     """비용 — 실제 세션에서 실제 토큰. 시뮬레이션이 아니다."""
     rs = [r for r in rows if r.harness == "agent"]
@@ -175,6 +194,12 @@ def isolation(rows: list) -> None:
             bad.append(f"{case}: 누출 {stray}")
         if missing:
             bad.append(f"{case}: {need} 를 한 번도 안 씀 — 그 방식을 잰 게 아니다")
+    # **검색 없이 맞혔으면 검색을 잰 게 아니다.** 모델이 사전 지식으로 답할 수 있고,
+    # 그러면 그 세션은 볼트가 없어도 같은 결과를 낸다.
+    noop = [r for r in rs if r.hit and r.calls == 0]
+    if noop:
+        print(f"  ★ 도구를 한 번도 안 쓰고 맞힌 세션 {len(noop)}건 — "
+              "사전 지식으로 답한 것이라 검색을 잰 게 아니다")
     if bad:
         print("  ★ 격리가 깨졌다 — 이 측정은 무효다: " + " · ".join(bad))
 
@@ -263,6 +288,7 @@ def main() -> int:
         print("  ★ 형상이 섞여 있다 — 코드가 바뀐 전후를 한 표에 넣고 있다")
 
     rank_table(rows)
+    stage_note(rows)
     cost_table(rows, a.md)
     if not a.md:
         isolation(rows)
