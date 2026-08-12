@@ -68,7 +68,7 @@ def cost_table(rows: list, md: bool) -> None:
 
     print(f"\n## 비용 (실제 세션 {len(rs)}건)\n" if md
           else f"\n=== 비용 (실제 세션 {len(rs)}건) ===")
-    head = ["케이스", "적중", "토큰 중앙값 [IQR]", "턴", "세션 시간"]
+    head = ["케이스", "적중", "토큰 중앙값 [IQR]", "호출", "턴", "세션 시간"]
     if md:
         print("| " + " | ".join(head) + " |")
         print("|" + "|".join(["---"] * len(head)) + "|")
@@ -77,12 +77,16 @@ def cost_table(rows: list, md: bool) -> None:
     for case, v in by.items():
         m = summarize([float(r.tokens) for r in v])
         dists[case] = m
+        # **호출 수가 비용의 실제 동인이다** — 왕복 하나하나가 지연과 토큰을 함께
+        # 쓴다. 기록만 하고 안 보여주면 잰 뜻이 없다.
+        calls = summarize([float(r.calls) for r in v])
         cells = [case, f"{sum(r.hit for r in v)}/{len(v)}",
                  f"{m['median']:,.0f} [{m['q1']:,.0f}~{m['q3']:,.0f}]",
+                 f"{calls['median']:.0f}",
                  f"{summarize([float(r.turns) for r in v])['median']:.0f}",
                  f"{summarize([r.seconds for r in v])['median']:.0f}s"]
         print(("| " + " | ".join(cells) + " |") if md
-              else "  " + "  ".join(c.ljust(w) for c, w in zip(cells, [11, 7, 28, 5, 9])))
+              else "  " + "  ".join(c.ljust(w) for c, w in zip(cells, [11, 7, 28, 5, 5, 9])))
 
     # **말할 수 없는 것을 말하지 않는다.** "표본이 모자라 모른다" 와 "겹쳐서 못 가린다"
     # 는 다른 상태다 — 뭉치면 리포트가 늘 같은 문장을 뱉어 정보가 0 이 된다.
@@ -102,6 +106,43 @@ def cost_table(rows: list, md: bool) -> None:
             print(f"\n{msg}" if md else f"\n  {msg}")
     print(f"\n총 비용 ${sum(r.cost for r in rs):.2f}" if md
           else f"  총 비용 ${sum(r.cost for r in rs):.2f}")
+
+
+#: 케이스별로 **보여야 하는** 도구. 벗어나면 격리가 깨진 것이다.
+EXPECTED = {"A 원시grep": ("Bash", "Read", "Grep", "Glob", "ToolSearch"),
+            "B 로컬판": ("Bash", "Read", "Grep", "Glob", "Skill", "ToolSearch"),
+            "C 서버판": ("mcp__", "Skill", "ToolSearch", "Read")}
+
+
+def isolation(rows: list) -> None:
+    """
+    **격리가 실제로 먹혔나.** 도구 이름을 기록하는 이유가 이것이다 — 숫자만 보면
+    결함을 못 본다(실측: B 가 서버판 MCP 를 쓰고 있었는데 답도 맞고 토큰도 그럴듯했다).
+
+    A·B 에 `mcp__` 가 나오거나 A 에 `Skill` 이 나오면 설치본이 샌 것이다.
+    """
+    rs = [r for r in rows if r.harness == "agent" and r.extra.get("tools")]
+    if not rs:
+        return
+    print("\n=== 격리 검증 (실제로 쓴 도구) ===")
+    bad = []
+    for case in CASE_ORDER:
+        v = [r for r in rs if r.case == case]
+        if not v:
+            continue
+        used = {}
+        for r in v:
+            for t in r.extra["tools"]:
+                k = "mcp__…" if t.startswith("mcp__") else t
+                used[k] = used.get(k, 0) + 1
+        ok = EXPECTED.get(case, ())
+        stray = [t for t in used if not any(t.startswith(p) for p in ok)]
+        mark = "✗ 누출" if stray else "○"
+        print(f"  {case:11} {mark} {used}")
+        if stray:
+            bad.append(f"{case}: {stray}")
+    if bad:
+        print("  ★ 격리가 깨졌다 — 이 측정은 무효다: " + " · ".join(bad))
 
 
 def wrong_answers(rows: list) -> None:
@@ -159,6 +200,7 @@ def main() -> int:
     rank_table(rows)
     cost_table(rows, a.md)
     if not a.md:
+        isolation(rows)
         wrong_answers(rows)
         learning_curve(rows)
     return 0
