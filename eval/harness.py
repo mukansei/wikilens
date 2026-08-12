@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import pathlib
 import subprocess
+from datetime import datetime
 import statistics
 from dataclasses import asdict, dataclass, field, fields
 
@@ -43,6 +44,11 @@ def provenance() -> tuple[str, bool]:
 #: 프로세스당 한 번만 푼다 — 측정마다 `git` 을 부르면 그것이 측정에 섞인다.
 COMMIT, DIRTY = provenance()
 
+#: 볼트 문서 수. 코퍼스가 달라지면 grep 비용도 랭킹도 달라지므로 결과에 남긴다.
+#: 세는 데 1초쯤 걸리므로 여기서 한 번만 한다.
+CORPUS = len(list((pathlib.Path.home() / ".wikilens" / "vault" / "mirror" / "pages")
+                  .rglob("*.md"))) if (pathlib.Path.home() / ".wikilens" / "vault").exists() else 0
+
 
 @dataclass
 class Record:
@@ -69,6 +75,14 @@ class Record:
     #: 측정 당시의 코드 형상. **더러운 트리면 재현 불가**이므로 함께 남긴다.
     commit: str = ""
     dirty: bool = False
+    #: **언제 쟀나.** 형상이 같아도 서버·모델·코퍼스는 그 사이에 바뀔 수 있고,
+    #: 그때 시각만이 두 측정의 선후를 말해준다.
+    ts: str = ""
+    #: **어느 모델이었나.** 비용의 최대 변수인데 응답의 `modelUsage` 에 있는 것을
+    #: 안 쓰고 있었다. 모델이 바뀌면 토큰·턴이 통째로 달라져 비교가 무효다.
+    model: str = ""
+    #: **볼트가 어떤 상태였나.** 문서 수가 다르면 grep 비용도 랭킹도 달라진다.
+    corpus: int = 0
 
     warmup: bool = False    # 참이면 통계에서 뺀다 — 아래 참고
     error: str = ""
@@ -85,6 +99,8 @@ def record(**kw) -> Record:
     """
     kw.setdefault("commit", COMMIT)
     kw.setdefault("dirty", DIRTY)
+    kw.setdefault("ts", datetime.now().astimezone().isoformat(timespec="seconds"))
+    kw.setdefault("corpus", CORPUS)
     return make(**kw)
 
 
