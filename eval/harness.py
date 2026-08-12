@@ -33,7 +33,6 @@ class Record:
     answer: str = ""        # 실제로 답한 것 — 틀렸을 때 무엇과 헷갈렸는지가 신호다
     rank: int = -1          # 정답이 결과 몇 위였나(정적 측정만). 못 찾으면 -1
 
-    chars: int = 0          # 컨텍스트에 들어간 문자 수(정적)
     tokens: int = 0         # 실제 토큰(에이전트)
     cost: float = 0.0       # USD(에이전트)
     turns: int = 0
@@ -66,14 +65,15 @@ def make(**kw) -> Record:
 
 
 def load(path: pathlib.Path) -> list[Record]:
+    """
+    **옛 스키마를 읽을 수 있어야 한다.** 필드를 하나 지우자 예전 결과가 통째로
+    `unexpected keyword argument` 로 안 읽혔다 — 돈을 쓴 측정이 스키마 변화에
+    인질이 되면 안 된다. `make()` 와 같은 규칙으로 모르는 키는 `extra` 로 보낸다.
+    """
     if not path.exists():
         return []
-    out = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            d = json.loads(line)
-            out.append(Record(**d))
-    return out
+    return [make(**json.loads(line))
+            for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def done_keys(path: pathlib.Path) -> set[tuple]:
