@@ -27,7 +27,10 @@ import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 VAULT = pathlib.Path.home() / ".wikilens" / "vault"
-SERVER = "http://127.0.0.1:8787"
+#: **`agent.py` 와 같은 격리 서버를 본다.** 운영(:8787)을 보면 그쪽 궤적이 섞여
+#: 두 하네스가 다른 조건의 C 를 재게 된다(실측: 운영에 궤적 4건이 있었다).
+#: `setup.sh up` 이 띄운다.
+SERVER = "http://127.0.0.1:8790"
 
 sys.path.insert(0, str(HERE))
 from harness import Writer, make  # noqa: E402
@@ -73,6 +76,10 @@ def local(q: str, gold: str) -> tuple[int, str, str]:
 
 
 def server(q: str, gold: str) -> tuple[int, str, str]:
+    """
+    서버 검색. **궤적을 안 남긴다** — `sessionId` 를 안 보내므로 이 측정 자체가
+    학습을 오염시키지 않는다.
+    """
     req = urllib.request.Request(
         SERVER + "/api/search",
         data=json.dumps({"query": q, "userKey": "eval", "limit": 20}).encode(),
@@ -95,6 +102,16 @@ def main() -> int:
 
     groups = [g for g in GROUPS
               if a.groups is None or any(g[0].startswith(p) for p in a.groups)]
+
+    # **도달 못 하면 여기서 멈춘다.** 그냥 두면 첫 질의에서 raw URLError 로 죽어
+    # "서버를 안 띄웠다" 를 알기 어렵다.
+    try:
+        urllib.request.urlopen(SERVER + "/api/health", timeout=5).read()
+    except Exception as e:  # noqa: BLE001
+        print(f"  ✗ {SERVER} 에 못 닿는다 ({e}) — `eval/setup.sh up` 을 먼저 돌릴 것",
+              file=sys.stderr)
+        return 2
+
     out = HERE / "results" / a.out
     # **`--groups` 를 줬을 때 파일을 통째로 지우면 안 된다** — 다른 그룹의 앞선 측정이
     # 조용히 사라진다. 이번에 다시 잴 그룹의 줄만 걷어낸다.
