@@ -59,6 +59,14 @@ def rank_table(rows: list) -> None:
 def cost_table(rows: list, md: bool) -> None:
     """비용 — 실제 세션에서 실제 토큰. 시뮬레이션이 아니다."""
     rs = [r for r in rows if r.harness == "agent"]
+    # **0 토큰 세션은 측정이 아니다.** `error` 는 없는데 토큰이 0 이면 무언가 잘못
+    # 끝난 것이고(모델 미상, 도구 0회), 그것이 중앙값에 섞이면 값이 반토막 난다
+    # (실측: 0 과 20만이 섞여 중앙값 10만). 세되 통계에서는 뺀다.
+    dud = [r for r in rs if r.tokens == 0]
+    rs = [r for r in rs if r.tokens > 0]
+    if dud:
+        print(f"\n  ! 토큰 0 인 세션 {len(dud)}건은 통계에서 뺐다 "
+              "(무언가 잘못 끝난 것이다 — 결과 파일에는 남아 있다)")
     if not rs:
         return
     by = {}

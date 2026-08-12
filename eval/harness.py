@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import pathlib
 import subprocess
+import sys
 from datetime import datetime
 import statistics
 from dataclasses import asdict, dataclass, field, fields
@@ -128,11 +129,25 @@ def load(path: pathlib.Path) -> list[Record]:
     """
     if not path.exists():
         return []
-    # **읽을 때는 형상을 채우지 않는다.** `record()` 로 안 만들어진 옛 줄에 지금
-    # 형상을 넣으면 **그때 잰 것처럼 보인다** — 실제로 그렇게 찍혀 60건이 지금
-    # 태그를 달았다. 기록이 없으면 없다고 말해야 한다.
-    return [make(**{"commit": "(기록 없음)", **json.loads(line)})
-            for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    out = []
+    for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            # **깨진 줄 하나가 파일 전체를 막으면 안 된다.** 프로세스가 쓰다 죽으면
+            # 마지막 줄이 반토막으로 남는데(실측), 그대로 두면 `done_keys` 가 죽어
+            # **이어받기가 통째로 막힌다** — 다시 돌리면 처음부터고 그만큼 돈을
+            # 두 번 쓴다. 세션당 $0.5 다.
+            print(f"  ! {path.name}:{i} 줄이 깨져 건너뛴다 (쓰다 중단된 것으로 보인다)",
+                  file=sys.stderr)
+            continue
+        # **읽을 때는 형상을 채우지 않는다.** `record()` 로 안 만들어진 옛 줄에 지금
+        # 형상을 넣으면 **그때 잰 것처럼 보인다** — 실제로 그렇게 찍혀 60건이 지금
+        # 태그를 달았다. 기록이 없으면 없다고 말해야 한다.
+        out.append(make(**{"commit": "(기록 없음)", **d}))
+    return out
 
 
 def done_keys(path: pathlib.Path) -> set[tuple]:
