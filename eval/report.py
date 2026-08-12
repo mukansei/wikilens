@@ -39,21 +39,32 @@ def collect() -> list:
 
 
 def rank_table(rows: list) -> None:
-    """순위 — 랭커가 있는 둘만. 원시 grep 은 랭커가 없어 대상이 아니다."""
+    """
+    도달 — **A 와 B·C 는 단위가 다르다.**
+
+    B·C 는 정답이 몇 위인지, A 는 grep 후보 **몇 건 중 하나**인지다(`stage == "GREP"`).
+    같은 열에 놓되 단위를 표기한다 — 400건 중 하나와 1위는 전혀 다른 상태이고,
+    그것을 뭉개면 A 가 실제보다 잘하는 것처럼 읽힌다.
+    """
     rs = [r for r in rows if r.harness == "rank"]
     if not rs:
         return
-    print("\n=== 순위 (정답이 몇 위에 오나) ===")
+    print("\n=== 도달 (정답을 몇 위 / 후보 몇 건 중에) ===")
     cases = [c for c in CASE_ORDER if any(r.case == c for r in rs)]
-    print("  " + "그룹".ljust(24) + "".join(c.rjust(18) for c in cases))
+    print("  " + "그룹".ljust(22) + "".join(c.rjust(19) for c in cases))
     for g in sorted({r.group for r in rs}):
         cells = []
         for c in cases:
             v = [r for r in rs if r.group == g and r.case == c]
             found = sorted(r.rank for r in v if r.rank > 0)
-            cells.append(f"{len(found)}/{len(v)} 중앙 {found[len(found)//2]}위"
+            unit = "건중" if any(r.extra.get("stage") == "GREP" for r in v) else "위"
+            cells.append(f"{len(found)}/{len(v)} 중앙 {found[len(found)//2]}{unit}"
                          if found else f"0/{len(v)}  —")
-        print("  " + g[:22].ljust(24) + "".join(x.rjust(18) for x in cells))
+        print("  " + g[:20].ljust(22) + "".join(x.rjust(19) for x in cells))
+    grep = [r for r in rs if r.extra.get("stage") == "GREP" and r.rank > 0]
+    if grep:
+        med = sorted(r.rank for r in grep)[len(grep)//2]
+        print(f"  ※ 원시 grep 의 숫자는 순위가 아니라 **후보 수**다 — 중앙값 {med}건 중 하나.")
 
 
 def stage_note(rows: list) -> None:
@@ -73,6 +84,27 @@ def stage_note(rows: list) -> None:
     if tail:
         print(f"    → TREE·BODY 로 내려가 찾은 {tail}건은 **낙관적**이다 — "
               "실제 에이전트는 ALIASES 에서 멈출 수 있다")
+
+
+def coverage(rows: list) -> None:
+    """
+    **어느 그룹이 몇 칸 찼나.** 형상·모델·코퍼스는 검사하면서 **무엇을 쟀는지**는 안
+    봤다 — 시험 실행의 잔류 세션 하나가 본 측정에 섞여 있었는데(G04 한 건) 리포트가
+    그것을 못 짚었다. 부분 측정은 "어디까지 쟀나" 가 곧 결과의 범위다.
+    """
+    rs = [r for r in rows if r.harness == "agent"]
+    if not rs:
+        return
+    per = {}
+    for r in rs:
+        per.setdefault(r.group, set()).add((r.qi, r.case))
+    full = 3 * 3   # 질의 3 × 케이스 3
+    print("\n=== 커버리지 (에이전트 측정) ===")
+    for g in sorted(per):
+        n = len(per[g])
+        bar = "█" * n + "·" * (full - n)
+        flag = "" if n == full else ("  ← 부분" if n > 1 else "  ← 조각, 다른 실행의 잔류일 수 있다")
+        print(f"  {g[:22]:24} {bar} {n}/{full}{flag}")
 
 
 def cost_table(rows: list, md: bool) -> None:
@@ -289,6 +321,7 @@ def main() -> int:
 
     rank_table(rows)
     stage_note(rows)
+    coverage(rows)
     cost_table(rows, a.md)
     if not a.md:
         isolation(rows)
