@@ -197,6 +197,18 @@ def main() -> int:
     if a.md:
         print("# 측정 결과\n\n> **`eval/report.py` 가 생성한다.** 손으로 고치지 말 것.\n"
               "> 질의는 [`queries.py`](queries.py), 방법은 [`README.md`](README.md).")
+    # **어느 형상에서 잰 값인가.** 섞여 있으면 그대로 비교하면 안 된다 — 코드가
+    # 바뀐 전후를 한 표에 넣는 셈이다.
+    shapes = {}
+    for r in rows:
+        k = (r.commit or "?", r.dirty)
+        shapes[k] = shapes.get(k, 0) + 1
+    print("\n=== 형상 ===")
+    for (c, d), n in sorted(shapes.items(), key=lambda x: -x[1]):
+        print(f"  {c:28} {'더러운 트리 ← 재현 불가' if d else '':24} {n:>4}건")
+    if len(shapes) > 1:
+        print("  ★ 형상이 섞여 있다 — 코드가 바뀐 전후를 한 표에 넣고 있다")
+
     rank_table(rows)
     cost_table(rows, a.md)
     if not a.md:

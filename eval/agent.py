@@ -33,7 +33,7 @@ VAULT = pathlib.Path.home() / ".wikilens" / "vault"
 SERVER = "http://127.0.0.1:8790"
 
 sys.path.insert(0, str(HERE))
-from harness import Writer, done_keys, make  # noqa: E402
+from harness import COMMIT, DIRTY, Writer, done_keys, record  # noqa: E402
 from queries import GROUPS  # noqa: E402
 
 #: 벤치가 재려는 것은 **볼트 검색**이지 웹 검색이나 위임이 아니다.
@@ -77,6 +77,21 @@ def case_c(q: str) -> list[str]:
 
 
 CASES = [("A 원시grep", case_a), ("B 로컬판", case_b), ("C 서버판", case_c)]
+
+
+def server_image() -> str:
+    """
+    C 케이스 서버가 **실제로 도는 이미지**. 소스 커밋만으로는 부족하다 — 고치고 다시
+    안 지으면 옛 이미지가 돈다(이 저장소에서 실제로 겪었다). 결과에 남겨야 나중에
+    "그 측정은 어느 서버였나" 를 답할 수 있다.
+    """
+    try:
+        out = subprocess.run(
+            ["docker", "inspect", "wikilens-eval", "--format", "{{.Image}}"],
+            capture_output=True, text=True, timeout=10).stdout.strip()
+        return out.replace("sha256:", "")[:12] or "unknown"
+    except Exception:  # noqa: BLE001
+        return "unknown"
 
 
 def trajectory_count() -> int:
@@ -233,6 +248,10 @@ def main() -> int:
     print(f"  서버 학습량 {t0}건 → **{mode}** 실험"
           + ("  ← C 만 이전 회차를 물려받는다(비대칭)" if mode == "warm" else "") + "\n")
 
+    image = server_image()
+    print(f"  형상: {COMMIT}{' (더러운 트리 — 재현 불가)' if DIRTY else ''}"
+          f" · 서버 이미지 {image}\n")
+
     spent = 0.0
     with Writer(out) as w:
         if a.warmup:
@@ -249,7 +268,7 @@ def main() -> int:
                     return 0
                 r = run_once(builder(g0[3][0]))
                 spent += r.get("cost", 0.0)
-                w.write(make(harness="agent", case=cname, group=g0[0], qi=0,
+                w.write(record(harness="agent", case=cname, group=g0[0], qi=0,
                              query=g0[3][0], gold=g0[1], rep=-1, warmup=True,
                              hit=(r.get("answer") == g0[1]), **r))
                 print(f"  [워밍] {cname:10} ${r.get('cost',0):.3f}")
@@ -269,12 +288,13 @@ def main() -> int:
                 before = trajectory_count() if cname.startswith("C") else -1
                 r = run_once(builder(q))
                 spent += r.get("cost", 0.0)
-                rec = make(harness="agent", case=cname, group=name, qi=qi,
+                rec = record(harness="agent", case=cname, group=name, qi=qi,
                            query=q, gold=gold, rep=rep,
                            hit=(r.get("answer") == gold),
                            # **이 측정 시점에 서버가 들고 있던 학습량.**
                            # warm 에서 회차가 갈수록 늘고, cold 면 0 근처다.
-                           trajectories=before, pattern=a.pattern, **r)
+                           trajectories=before, pattern=a.pattern,
+                           server_image=image, **r)
                 w.write(rec)
                 print(f"  {name[:3]} q{qi} r{rep} {cname:10} "
                       f"{'○' if rec.hit else '✗'} {rec.tokens:>8,}tok · "

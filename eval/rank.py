@@ -33,7 +33,7 @@ VAULT = pathlib.Path.home() / ".wikilens" / "vault"
 SERVER = "http://127.0.0.1:8790"
 
 sys.path.insert(0, str(HERE))
-from harness import Writer, make  # noqa: E402
+from harness import Writer, record  # noqa: E402
 from queries import GROUPS  # noqa: E402
 
 #: 모델이 질의에서 버리는 말. **없으면 로컬판에 불공정하다** — 구어체는 앞 두 낱말이
@@ -130,7 +130,7 @@ def main() -> int:
                     # **결정적이라 한 번만 잰다.** 반복해도 같은 값이고, 복제하면
                     # 3건이 9건처럼 보여 표본 수를 부풀린다.
                     r, stage, ans = fn(q, gold)
-                    w.write(make(harness="rank", case=cname, group=name, qi=qi,
+                    w.write(record(harness="rank", case=cname, group=name, qi=qi,
                                  query=q, gold=gold, rep=0, hit=(r > 0),
                                  rank=r, answer=ans, stage=stage))
                     cells.append(f"{cname} {'%2d위' % r if r > 0 else ' 밖 '}"

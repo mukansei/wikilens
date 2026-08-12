@@ -10,11 +10,38 @@ from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 import statistics
 from dataclasses import asdict, dataclass, field, fields
 
 HERE = pathlib.Path(__file__).resolve().parent
 RESULTS = HERE / "results"
+
+
+def _git(*args: str) -> str:
+    try:
+        return subprocess.run(["git", "-C", str(HERE.parent), *args],
+                              capture_output=True, text=True, timeout=10).stdout.strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def provenance() -> tuple[str, bool]:
+    """
+    **어느 형상에서 잰 값인가.** 결과만 남고 코드가 바뀌면 그 수치는 복원 불가가 된다 —
+    이 저장소가 `13,921건 2.44초` 로 한 번 겪은 일이다(`CLAUDE.md` 의 grep 예산 항목).
+
+    태그가 붙어 있으면 태그를, 아니면 짧은 커밋을 쓴다. **더러운 트리는 표시한다** —
+    커밋 해시만 남기면 "그 커밋에서 나온 값" 처럼 읽히는데 사실이 아니다.
+    """
+    tag = _git("describe", "--tags", "--exact-match")
+    ref = tag or _git("rev-parse", "--short", "HEAD") or "unknown"
+    dirty = bool(_git("status", "--porcelain"))
+    return ref, dirty
+
+
+#: 프로세스당 한 번만 푼다 — 측정마다 `git` 을 부르면 그것이 측정에 섞인다.
+COMMIT, DIRTY = provenance()
 
 
 @dataclass
@@ -39,6 +66,10 @@ class Record:
     calls: int = 0          # 도구 호출 수(정적)
     seconds: float = 0.0
 
+    #: 측정 당시의 코드 형상. **더러운 트리면 재현 불가**이므로 함께 남긴다.
+    commit: str = ""
+    dirty: bool = False
+
     warmup: bool = False    # 참이면 통계에서 뺀다 — 아래 참고
     error: str = ""
     extra: dict = field(default_factory=dict)
@@ -46,6 +77,15 @@ class Record:
     def key(self) -> tuple:
         """이어받기용 식별자. 이 조합이 이미 있으면 다시 안 돈다."""
         return (self.harness, self.case, self.group, self.qi, self.rep)
+
+
+def record(**kw) -> Record:
+    """
+    **새 측정 하나.** 지금 형상을 박아 넣는다 — 이 값이 결과의 재현 근거다.
+    """
+    kw.setdefault("commit", COMMIT)
+    kw.setdefault("dirty", DIRTY)
+    return make(**kw)
 
 
 def make(**kw) -> Record:
@@ -72,7 +112,10 @@ def load(path: pathlib.Path) -> list[Record]:
     """
     if not path.exists():
         return []
-    return [make(**json.loads(line))
+    # **읽을 때는 형상을 채우지 않는다.** `record()` 로 안 만들어진 옛 줄에 지금
+    # 형상을 넣으면 **그때 잰 것처럼 보인다** — 실제로 그렇게 찍혀 60건이 지금
+    # 태그를 달았다. 기록이 없으면 없다고 말해야 한다.
+    return [make(**{"commit": "(기록 없음)", **json.loads(line)})
             for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
