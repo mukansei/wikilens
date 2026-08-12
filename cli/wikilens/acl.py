@@ -181,7 +181,7 @@ def collect(root: Path, client, verbose: bool = False, sleep_s: float = 0.0) -> 
 
     tmp = out_path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(result, ensure_ascii=False, indent=0, sort_keys=True),
-                   encoding="utf-8")
+                   encoding="utf-8", newline="\n")
     tmp.replace(out_path)
     rep.elapsed_s = time.time() - started
     return rep

@@ -328,7 +328,7 @@ def _save_state(root: Path, state: dict) -> None:
     p = layout.ensure_parent(layout.sync_state_path(root))
     tmp = p.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, ensure_ascii=False, sort_keys=True, indent=1) + "\n",
-                   encoding="utf-8")
+                   encoding="utf-8", newline="\n")
     tmp.replace(p)      # 원자적 교체. 쓰다 죽어도 이전 상태가 온전하다
 
 
@@ -359,7 +359,8 @@ def _ingest(item: dict, root: Path, state: dict, fallback_space: str, full: bool
         return "unchanged"
 
     body = ((item.get("body") or {}).get("storage") or {}).get("value", "")
-    layout.ensure_parent(layout.raw_path(root, pid)).write_text(body, encoding="utf-8")
+    layout.ensure_parent(layout.raw_path(root, pid)).write_text(
+        body, encoding="utf-8", newline="\n")
 
     # 루트부터 직속 부모까지 순서대로. TREE.md(계층 목차)를 만드는 데만 쓴다 —
     # 앵커 색인과는 완전히 분리된 별도 신호다(부모 제목을 앵커처럼 섞으면
