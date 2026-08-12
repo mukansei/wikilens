@@ -80,8 +80,12 @@ def done_keys(path: pathlib.Path) -> set[tuple]:
     """
     **이어받기.** 90세션이 세션당 $0.53 이라, 중간에 죽었을 때 처음부터 다시 도는 것은
     돈으로 물어야 하는 실수다. 이미 끝난 조합은 건너뛴다.
+
+    **워밍은 세지 않는다.** 그것은 버리는 측정이고 `rep=-1` 로 들어오는데, 포함하면
+    그 키가 "끝난 것" 이 되어 나중에 같은 자리를 재려 할 때 조용히 건너뛴다.
+    실패한 것도 세지 않는다 — 다시 돌려야 하는 자리다.
     """
-    return {r.key() for r in load(path) if not r.error}
+    return {r.key() for r in load(path) if not r.error and not r.warmup}
 
 
 class Writer:
