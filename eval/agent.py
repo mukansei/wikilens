@@ -116,12 +116,56 @@ def run_once(argv: list[str]) -> dict:
     }
 
 
+def plan(groups: list, reps: int, pattern: str) -> list[tuple]:
+    """
+    측정 순서를 만든다. **warm 실험에서 이 순서가 곧 가설이다.**
+
+    학습 발동 조건을 먼저 계산해 뒀다(2026-08-12, 이 코퍼스):
+
+      - 정답의 **사전확률이 전부 상한 0.85 에 붙는다.** BM25 점수가 13% 폭으로
+        압축돼 있어 `score/top` 정규화가 변별을 못 한다 — 10위 문서도 0.85 다.
+        그래서 `ebLower(1,0,0.85)=0.62` 로 **1회 관측이면 문턱(0.45)을 넘는다.**
+      - 다만 서빙되려면 `rel = 0.62 × c >= 0.45`, 즉 **커버리지 c >= 0.73** 이다.
+      - 그룹 안 세 표현의 **항 겹침이 0~3개**(질의 항은 4~8개)라 c 가 0.17~0.43 이다.
+
+    **예측: 정확 반복만 발동하고 표현 전이는 안 된다.** 세 순서가 그것을 가른다.
+
+      spread    회차마다 전 질의를 한 번씩 — 현재 기본. 섞여서 원인 분리가 안 된다
+      repeat    같은 질의를 연속 N회 — **c=1.0** 이라 2회차부터 힌트가 서빙돼야 한다
+      transfer  q0 를 N-1회 학습시킨 뒤 q1·q2 를 한 번씩 — **c 가 낮아 안 될 것이다**
+
+    transfer 가 예측을 깨고 성공하면 그것대로 중요하다(항이 적은 질의는 겹침 하나가
+    c 를 크게 올린다 — G08 은 q0 항이 4개뿐이다).
+    """
+    out = []
+    if pattern == "spread":
+        for rep in range(reps):
+            for g in groups:
+                for qi in range(len(g[3])):
+                    out.append((g, qi, rep))
+    elif pattern == "repeat":
+        for g in groups:
+            for qi in range(len(g[3])):
+                for rep in range(reps):
+                    out.append((g, qi, rep))
+    else:  # transfer
+        for g in groups:
+            for rep in range(reps - 1):      # q0 로 학습
+                out.append((g, 0, rep))
+            for qi in (1, 2):                # 다른 표현으로 시험
+                out.append((g, qi, reps - 1))
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--groups", nargs="*", default=None, help="예: G01 G05 (기본 전체)")
     ap.add_argument("--reps", type=int, default=3,
                     help="같은 조건 반복. **1 이면 통계를 못 낸다** — 변동이 7배다")
     ap.add_argument("--budget", type=float, default=20.0, help="USD 상한. 넘으면 멈춘다")
+    ap.add_argument("--pattern", choices=["spread", "repeat", "transfer"],
+                    default="spread",
+                    help="질의 순서. warm 실험에서 무엇을 재는지가 이것으로 갈린다")
     ap.add_argument("--warmup", action="store_true",
                     help="케이스마다 버리는 1회를 먼저 돈다(MCP 첫 호출 오버헤드 분리)")
     ap.add_argument("--out", default="agent.jsonl")
@@ -139,8 +183,8 @@ def main() -> int:
         print("  해당 그룹 없음", file=sys.stderr)
         return 2
 
-    total = len(groups) * 3 * len(CASES) * a.reps
-    print(f"  대상 {len(groups)}그룹 × 3질의 × {len(CASES)}케이스 × {a.reps}회 = {total}세션")
+    total = len(plan(groups, a.reps, a.pattern)) * len(CASES)
+    print(f"  대상 {len(groups)}그룹 · {a.pattern} 순서 · {len(CASES)}케이스 = {total}세션")
     t0 = trajectory_count()
     mode = "warm" if t0 > 0 else ("cold" if t0 == 0 else "서버 없음")
     print(f"  예산 ${a.budget:.0f} (세션당 파일럿 평균 $0.53 → 예상 ${total*0.53:.0f})")
@@ -169,31 +213,31 @@ def main() -> int:
                 print(f"  [워밍] {cname:10} ${r.get('cost',0):.3f}")
             print()
 
-        for rep in range(a.reps):
-            for name, gold, _title, queries in groups:
-                for qi, q in enumerate(queries):
-                    for cname, builder in CASES:
-                        k = ("agent", cname, name, qi, rep)
-                        if k in done:
-                            continue
-                        if spent >= a.budget:
-                            print(f"\n  ★ 예산 ${a.budget:.0f} 도달 — 여기서 멈춘다 "
-                                  f"(이어받으려면 같은 명령을 다시)")
-                            return 0
-                        before = trajectory_count() if cname.startswith("C") else -1
-                        r = run_once(builder(q))
-                        spent += r.get("cost", 0.0)
-                        rec = make(harness="agent", case=cname, group=name, qi=qi,
-                                   query=q, gold=gold, rep=rep,
-                                   hit=(r.get("answer") == gold),
-                                   # **이 측정 시점에 서버가 들고 있던 학습량.**
-                                   # warm 에서 회차가 갈수록 늘고, cold 면 0 근처다.
-                                   trajectories=before, **r)
-                        w.write(rec)
-                        print(f"  {name[:3]} q{qi} r{rep} {cname:10} "
-                              f"{'○' if rec.hit else '✗'} {rec.tokens:>8,}tok · "
-                              f"{rec.turns:>2}턴 · ${rec.cost:.3f} · {rec.seconds:>5.1f}s "
-                              f"→ {rec.answer or rec.error[:28]}   [누적 ${spent:.2f}]")
+        for g, qi, rep in plan(groups, a.reps, a.pattern):
+            name, gold, _title, queries = g
+            q = queries[qi]
+            for cname, builder in CASES:
+                k = ("agent", cname, name, qi, rep)
+                if k in done:
+                    continue
+                if spent >= a.budget:
+                    print(f"\n  ★ 예산 ${a.budget:.0f} 도달 — 여기서 멈춘다 "
+                          f"(이어받으려면 같은 명령을 다시)")
+                    return 0
+                before = trajectory_count() if cname.startswith("C") else -1
+                r = run_once(builder(q))
+                spent += r.get("cost", 0.0)
+                rec = make(harness="agent", case=cname, group=name, qi=qi,
+                           query=q, gold=gold, rep=rep,
+                           hit=(r.get("answer") == gold),
+                           # **이 측정 시점에 서버가 들고 있던 학습량.**
+                           # warm 에서 회차가 갈수록 늘고, cold 면 0 근처다.
+                           trajectories=before, pattern=a.pattern, **r)
+                w.write(rec)
+                print(f"  {name[:3]} q{qi} r{rep} {cname:10} "
+                      f"{'○' if rec.hit else '✗'} {rec.tokens:>8,}tok · "
+                      f"{rec.turns:>2}턴 · ${rec.cost:.3f} · {rec.seconds:>5.1f}s "
+                      f"→ {rec.answer or rec.error[:28]}   [누적 ${spent:.2f}]")
     print(f"\n  총 ${spent:.2f} · 결과 {out}")
     return 0
 
