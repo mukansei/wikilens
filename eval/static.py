@@ -28,7 +28,7 @@ SERVER = "http://127.0.0.1:8787"
 USER = "eval"
 
 sys.path.insert(0, str(HERE))
-from harness import Record, Writer  # noqa: E402
+from harness import Writer, make  # noqa: E402
 from queries import GROUPS  # noqa: E402
 
 #: 모델이 질의에서 버리는 말. **이게 없으면 로컬판에 불공정하다** — 구어체는 앞 두
@@ -153,7 +153,14 @@ def main() -> int:
     groups = [g for g in GROUPS
               if a.groups is None or any(g[0].startswith(p) for p in a.groups)]
     out = HERE / "results" / a.out
-    out.unlink(missing_ok=True)     # 정적 측정은 싸다 — 이어받기 없이 매번 새로
+    # 정적 측정은 싸므로 이어받기 없이 다시 돈다. **다만 `--groups` 를 줬을 때
+    # 파일을 통째로 지우면 안 된다** — 다른 그룹을 앞서 잰 결과가 조용히 사라진다.
+    # 이번에 다시 잴 그룹의 줄만 걷어내고 나머지는 남긴다.
+    if out.exists():
+        names = {g[0] for g in groups}
+        kept = [ln for ln in out.read_text(encoding="utf-8").splitlines()
+                if ln.strip() and json.loads(ln).get("group") not in names]
+        out.write_text(("\n".join(kept) + "\n") if kept else "", encoding="utf-8")
 
     # **워밍이 반복보다 중요하다.** 1회만 워밍했을 때 서버를 3~4배 느리게 쟀다(JIT).
     for _ in range(3):
@@ -171,7 +178,7 @@ def main() -> int:
                     best = None
                     for rep in range(a.reps):
                         r = fn(q, gold)
-                        rec = Record(harness="static", case=cname, group=name, qi=qi,
+                        rec = make(harness="static", case=cname, group=name, qi=qi,
                                      query=q, gold=gold, rep=rep, **r)
                         w.write(rec)
                         if best is None or rec.seconds < best.seconds:

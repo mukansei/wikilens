@@ -32,7 +32,7 @@ VAULT = pathlib.Path.home() / ".wikilens" / "vault"
 SERVER = "http://127.0.0.1:8790"
 
 sys.path.insert(0, str(HERE))
-from harness import Record, Writer, done_keys  # noqa: E402
+from harness import Writer, done_keys, make  # noqa: E402
 from queries import GROUPS  # noqa: E402
 
 #: 셋 다 막는다 — 벤치가 재려는 것은 **볼트 검색**이지 웹 검색이나 위임이 아니다.
@@ -139,11 +139,9 @@ def main() -> int:
             for cname, builder in CASES:
                 r = run_once(builder(g0[3][0]))
                 spent += r.get("cost", 0.0)
-                w.write(Record(harness="agent", case=cname, group=g0[0], qi=0,
-                               query=g0[3][0], gold=g0[1], rep=-1, warmup=True,
-                               hit=(r.get("answer") == g0[1]), **{
-                                   k: v for k, v in r.items() if k != "answer"},
-                               answer=r.get("answer", "")))
+                w.write(make(harness="agent", case=cname, group=g0[0], qi=0,
+                             query=g0[3][0], gold=g0[1], rep=-1, warmup=True,
+                             hit=(r.get("answer") == g0[1]), **r))
                 print(f"  [워밍] {cname:10} ${r.get('cost',0):.3f}")
             print()
 
@@ -160,11 +158,9 @@ def main() -> int:
                             return 0
                         r = run_once(builder(q))
                         spent += r.get("cost", 0.0)
-                        rec = Record(harness="agent", case=cname, group=name, qi=qi,
-                                     query=q, gold=gold, rep=rep,
-                                     hit=(r.get("answer") == gold),
-                                     **{k2: v for k2, v in r.items() if k2 != "answer"},
-                                     answer=r.get("answer", ""))
+                        rec = make(harness="agent", case=cname, group=name, qi=qi,
+                                   query=q, gold=gold, rep=rep,
+                                   hit=(r.get("answer") == gold), **r)
                         w.write(rec)
                         print(f"  {name[:3]} q{qi} r{rep} {cname:10} "
                               f"{'○' if rec.hit else '✗'} {rec.tokens:>8,}tok · "

@@ -17,7 +17,7 @@ import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from harness import RESULTS, load, overlaps, summarize  # noqa: E402
+from harness import RESULTS, load, overlaps, summarize, too_few  # noqa: E402
 
 CASE_ORDER = ["A 원시grep", "B 로컬판", "C 서버판"]
 
@@ -44,8 +44,6 @@ def fmt(s: dict, unit: str = "") -> str:
 
 
 def emit(rows: list, md: bool) -> None:
-    bar = "|" if md else " "
-
     for harness, metric, unit in (("static", "chars", "자"), ("agent", "tokens", "tok")):
         groups = by_case(rows, harness)
         if not groups:
@@ -74,12 +72,21 @@ def emit(rows: list, md: bool) -> None:
                   else "  " + "  ".join(c.ljust(w) for c, w in
                                         zip(cells, [11, 7, 30, 9, 7])))
 
-        # **겹치면 우열을 말하지 않는다.** 이 한 줄이 이 리포트의 요점이다.
+        # **말할 수 없는 것을 말하지 않는다.** 이 블록이 이 리포트의 요점이다.
+        # "표본이 모자라 모른다" 와 "겹쳐서 못 가린다" 는 다른 상태다 — 뭉치면
+        # 리포트가 늘 같은 문장을 뱉어 정보가 0 이 된다.
         pairs = [(a, b) for i, a in enumerate(dists) for b in list(dists)[i + 1:]]
-        amb = [f"{a} ↔ {b}" for a, b in pairs if overlaps(dists[a], dists[b])]
-        if amb:
-            msg = ("**IQR 이 겹쳐 우열을 주장할 수 없는 쌍:** " + " · ".join(amb))
-            print(f"\n{msg}" if md else f"\n  {msg}")
+        thin = [f"{a} ↔ {b}" for a, b in pairs if too_few(dists[a], dists[b])]
+        amb = [f"{a} ↔ {b}" for a, b in pairs
+               if not too_few(dists[a], dists[b]) and overlaps(dists[a], dists[b])]
+        clear = [f"{a} ↔ {b}" for a, b in pairs
+                 if not too_few(dists[a], dists[b]) and not overlaps(dists[a], dists[b])]
+        for label, items in (("표본 부족(<4)이라 판단 보류", thin),
+                             ("**IQR 이 겹쳐 우열을 주장할 수 없음**", amb),
+                             ("IQR 이 분리돼 차이를 말할 수 있음", clear)):
+            if items:
+                msg = f"{label}: " + " · ".join(items)
+                print(f"\n{msg}" if md else f"\n  {msg}")
 
         if harness == "agent":
             cost = sum(r.cost for r in rows if r.harness == "agent")
