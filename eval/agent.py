@@ -36,8 +36,29 @@ sys.path.insert(0, str(HERE))
 from harness import Writer, done_keys, make  # noqa: E402
 from queries import GROUPS  # noqa: E402
 
-#: 셋 다 막는다 — 벤치가 재려는 것은 **볼트 검색**이지 웹 검색이나 위임이 아니다.
-COMMON_DENY = "WebFetch,WebSearch,Task,Edit,Write,NotebookEdit"
+#: 벤치가 재려는 것은 **볼트 검색**이지 웹 검색이나 위임이 아니다.
+BASE_DENY = ["WebFetch", "WebSearch", "Task", "Edit", "Write", "NotebookEdit"]
+
+#: 서버판 MCP 도구. **A·B 에서 막아야 한다.**
+#:
+#: `--plugin-dir` 는 플러그인을 **추가**할 뿐 사용자 레벨 설치본을 끄지 않는다.
+#: 그래서 `wikilens-client` 가 설치돼 있으면 A·B 세션에도 이 도구들이 보이고,
+#: 실제로 **B 가 이것을 썼다**(실측: `mcp__…__search`·`grep`·`read` 각 1회).
+#: 그러면 B 와 C 가 같은 것을 재게 되어 비교가 통째로 무효다.
+MCP_TOOLS = [f"mcp__plugin_wikilens-client_wiki__{t}"
+             for t in ("search", "read", "grep", "tree")]
+
+#: 스킬. **A 에서 막아야 한다** — 설치된 `wikilens-local` 스킬이 A 세션에도 보이는데
+#: (실측), 그 스킬은 `~/.wikilens/config.json` 을 읽어 **진짜 볼트**를 가리킨다.
+#: 힌트 없는 볼트를 준 격리가 그 한 줄로 무력화된다.
+SKILL_TOOL = ["Skill"]
+
+
+def deny(*extra: list[str]) -> str:
+    out = list(BASE_DENY)
+    for e in extra:
+        out += e
+    return ",".join(out)
 
 ASK = ("찾은 문서의 페이지 ID(숫자)만 마지막 줄에 `ANSWER=<id>` 형식으로 답하세요. "
        "못 찾으면 `ANSWER=none`.")
@@ -48,21 +69,24 @@ def case_a(q: str) -> list[str]:
     return ["claude", "-p",
             f"위키 볼트가 {NOHINT} 에 있습니다. 마크다운 문서 13,933개가 "
             f"mirror/pages/ 아래 샤딩돼 있습니다.\n\n질문: {q}\n\n{ASK}",
-            "--output-format", "json", "--disallowed-tools", COMMON_DENY,
+            "--output-format", "stream-json", "--verbose",
+            "--disallowed-tools", deny(MCP_TOOLS, SKILL_TOOL),
             "--add-dir", str(NOHINT)]
 
 
 def case_b(q: str) -> list[str]:
     """로컬판 — 스킬 + 네이티브 grep. **MCP 가 아니다**(D8)."""
     return ["claude", "-p", f"질문: {q}\n\n{ASK}",
-            "--output-format", "json", "--disallowed-tools", COMMON_DENY,
+            "--output-format", "stream-json", "--verbose",
+            "--disallowed-tools", deny(MCP_TOOLS),
             "--plugin-dir", str(REPO / "plugin" / "local"), "--add-dir", str(VAULT)]
 
 
 def case_c(q: str) -> list[str]:
     """서버판 — MCP 도구 4개."""
     return ["claude", "-p", f"질문: {q}\n\n{ASK}",
-            "--output-format", "json", "--disallowed-tools", COMMON_DENY,
+            "--output-format", "stream-json", "--verbose",
+            "--disallowed-tools", deny(),
             "--plugin-dir", str(REPO / "plugin" / "client")]
 
 
@@ -90,9 +114,24 @@ def run_once(argv: list[str]) -> dict:
     except subprocess.TimeoutExpired:
         return {"error": "timeout 900s", "seconds": time.perf_counter() - t}
     wall = time.perf_counter() - t
-    try:
-        d = json.loads(p.stdout)
-    except json.JSONDecodeError:
+    # **도구 호출을 세려면 스트림을 봐야 한다.** 최종 JSON 에는 `num_turns` 밖에 없고
+    # 그것은 도구 호출 수가 아니다(실측: 도구 2회인데 num_turns 는 3). 무엇보다
+    # **어느 도구를 썼는지**가 격리 검증이다 — C 가 MCP 를 정말 쓰는지, A 가 힌트
+    # 파일을 안 보는지는 도구 이름으로만 확인된다.
+    tools: list[str] = []
+    d = None
+    for line in p.stdout.splitlines():
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if ev.get("type") == "assistant":
+            for c in ev.get("message", {}).get("content", []):
+                if c.get("type") == "tool_use":
+                    tools.append(c.get("name", "?"))
+        elif ev.get("type") == "result":
+            d = ev
+    if d is None:
         return {"error": (p.stderr or p.stdout or "빈 출력")[:200], "seconds": wall}
 
     u = d.get("usage", {})
@@ -111,8 +150,12 @@ def run_once(argv: list[str]) -> dict:
         "turns": d.get("num_turns", 0),
         "seconds": wall,
         "error": "" if not d.get("is_error") else str(d.get("result", ""))[:120],
+        # **질의 연산 수와 그 종류.** 왕복 하나하나가 지연과 토큰을 함께 쓰므로
+        # 이것이 비용의 실제 동인이다. 이름까지 남기는 것은 격리 검증용이다.
+        "calls": len(tools),
         "extra": {"out_tokens": u.get("output_tokens", 0),
-                  "cache_read": u.get("cache_read_input_tokens", 0)},
+                  "cache_read": u.get("cache_read_input_tokens", 0),
+                  "tools": tools},
     }
 
 
