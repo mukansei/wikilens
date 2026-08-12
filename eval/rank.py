@@ -8,8 +8,10 @@
 흉내내면 시뮬레이션을 측정처럼 보이게 할 뿐이다(예전에 그렇게 만들었다가 두 하네스가
 같은 표 모양으로 나와 4자리 차이 나는 지연을 비교로 읽게 됐다).
 
-**A 원시 grep 은 대상이 아니다** — 랭커가 없어서 순위라는 개념이 성립하지 않는다.
-파일명 순으로 훑을 뿐이고, 그 비용은 `agent.py` 가 잰다.
+**A 원시 grep 은 순위가 없다 — 대신 "후보에 들어는 있나" 를 잰다.** 랭커가 없으니
+몇 위인지는 물을 수 없지만, 그 문서가 grep 결과에 **포함되기는 하는지**는 같은 30개
+질의로 잴 수 있다. 그것이 A 의 도달률이고, 함께 남기는 **후보 수**가 그 도달의 값을
+말한다 — 정답이 400건 중 하나로 섞여 있으면 닿았다고 보기 어렵다.
 
 싸고($0) 결정적이라 **랭킹을 건드릴 때마다 돌릴 자리**다. 오답 열이 진단을 낸다 —
 G01 에서 서버가 정답(41KB) 대신 2KB·0KB·6KB 를 고르는 것이 그렇게 드러났고,
@@ -86,6 +88,31 @@ def local(q: str, gold: str) -> tuple[int, str, str]:
     return -1, "none", first or "none"
 
 
+def rawgrep(q: str, gold: str) -> tuple[int, str, str]:
+    """
+    원시 grep 의 도달 — **순위가 아니라 포함 여부**다.
+
+    반환하는 `rank` 는 순위가 아니라 **후보 수**다(찾았을 때만, 못 찾으면 -1).
+    리포트가 그것을 그대로 순위처럼 쓰면 안 되므로 `stage` 에 `GREP` 을 남겨
+    구별한다 — 400건 중 하나로 섞인 것과 1위는 전혀 다른 상태다.
+    """
+    ts = picks(q) or [q.split()[0]]
+    pat = f"{ts[0]}.*{ts[1]}|{ts[1]}.*{ts[0]}" if len(ts) > 1 else ts[0]
+    out = subprocess.run(["rg", "-l", "-i", "--", pat, str(VAULT / "mirror" / "pages")],
+                         capture_output=True, text=True, errors="replace").stdout.split()
+    if not out:
+        # 교집합이 0 이면 한 낱말로 후퇴한다 — 스킬이 가르치는 것과 같은 순서다.
+        out = subprocess.run(["rg", "-l", "-i", "--", ts[0], str(VAULT / "mirror" / "pages")],
+                             capture_output=True, text=True, errors="replace").stdout.split()
+    for f in out:
+        if gold in f:
+            return len(out), "GREP", gold
+    if not out:
+        return -1, "GREP", "none"
+    m = _PID.search(out[0])
+    return -1, "GREP", (m.group(1) if m else "none")
+
+
 def server(q: str, gold: str) -> tuple[int, str, str]:
     """
     서버 검색. **궤적을 안 남긴다** — `sessionId` 를 안 보내므로 이 측정 자체가
@@ -102,7 +129,7 @@ def server(q: str, gold: str) -> tuple[int, str, str]:
     return -1, "search", (ids[0] if ids else "none")
 
 
-CASES = [("B 로컬판", local), ("C 서버판", server)]
+CASES = [("A 원시grep", rawgrep), ("B 로컬판", local), ("C 서버판", server)]
 
 
 def main() -> int:
