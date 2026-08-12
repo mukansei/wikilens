@@ -21,6 +21,7 @@ import pathlib
 import subprocess
 import sys
 import time
+import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parent
@@ -66,6 +67,19 @@ def case_c(q: str) -> list[str]:
 
 
 CASES = [("A 원시grep", case_a), ("B 로컬판", case_b), ("C 서버판", case_c)]
+
+
+def trajectory_count() -> int:
+    """
+    **모드를 사람이 아니라 서버에 묻는다.** `--mode warm` 같은 플래그를 받으면
+    `setup.sh` 를 cold 로 띄워놓고 warm 이라 적는 일이 생긴다 — 결과 파일이
+    거짓말을 하면 나중에 구별할 방법이 없다.
+    """
+    try:
+        with urllib.request.urlopen(SERVER + "/api/stats", timeout=10) as r:
+            return int(json.loads(r.read()).get("trajectories", 0))
+    except Exception:  # noqa: BLE001
+        return -1
 
 
 def run_once(argv: list[str]) -> dict:
@@ -127,7 +141,11 @@ def main() -> int:
 
     total = len(groups) * 3 * len(CASES) * a.reps
     print(f"  대상 {len(groups)}그룹 × 3질의 × {len(CASES)}케이스 × {a.reps}회 = {total}세션")
-    print(f"  예산 ${a.budget:.0f} (세션당 파일럿 평균 $0.53 → 예상 ${total*0.53:.0f})\n")
+    t0 = trajectory_count()
+    mode = "warm" if t0 > 0 else ("cold" if t0 == 0 else "서버 없음")
+    print(f"  예산 ${a.budget:.0f} (세션당 파일럿 평균 $0.53 → 예상 ${total*0.53:.0f})")
+    print(f"  서버 학습량 {t0}건 → **{mode}** 실험"
+          + ("  ← C 만 이전 회차를 물려받는다(비대칭)" if mode == "warm" else "") + "\n")
 
     spent = 0.0
     with Writer(out) as w:
@@ -162,11 +180,15 @@ def main() -> int:
                             print(f"\n  ★ 예산 ${a.budget:.0f} 도달 — 여기서 멈춘다 "
                                   f"(이어받으려면 같은 명령을 다시)")
                             return 0
+                        before = trajectory_count() if cname.startswith("C") else -1
                         r = run_once(builder(q))
                         spent += r.get("cost", 0.0)
                         rec = make(harness="agent", case=cname, group=name, qi=qi,
                                    query=q, gold=gold, rep=rep,
-                                   hit=(r.get("answer") == gold), **r)
+                                   hit=(r.get("answer") == gold),
+                                   # **이 측정 시점에 서버가 들고 있던 학습량.**
+                                   # warm 에서 회차가 갈수록 늘고, cold 면 0 근처다.
+                                   trajectories=before, **r)
                         w.write(rec)
                         print(f"  {name[:3]} q{qi} r{rep} {cname:10} "
                               f"{'○' if rec.hit else '✗'} {rec.tokens:>8,}tok · "

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # 에이전트 벤치(`agent.py`)에 필요한 격리 환경을 만든다/치운다.
 #
-#   ./setup.sh up     준비
-#   ./setup.sh down   정리
+#   ./setup.sh up cold   준비 (기본) — 궤적을 비운다. 검색 엔진 자체를 잰다
+#   ./setup.sh up warm   준비        — 궤적을 유지한다. 학습 효과를 잰다
+#   ./setup.sh down      정리
 #
 # **격리가 이 벤치의 전제다.** 둘을 만든다:
 #
@@ -19,8 +20,13 @@ VAULT="$HOME/.wikilens/vault"
 PORT=8790
 NAME=wikilens-eval
 
+MODE="${2:-cold}"
+
 case "${1:-up}" in
 up)
+  if [ "$MODE" != "cold" ] && [ "$MODE" != "warm" ]; then
+    echo "usage: $0 up [cold|warm]" >&2; exit 2
+  fi
   # A 케이스 볼트.
   #
   # **하드링크로 복사한다 — 심링크를 쓰면 격리가 새어 나간다.** 심링크는 실제 볼트를
@@ -37,14 +43,26 @@ up)
 
   # C 케이스 서버 — 이미지는 운영과 같은 것을 쓰되 상태만 격리.
   #
-  # **상태를 매번 비운다.** 안 그러면 `up` 을 다시 부를 때 앞 실행의 궤적이 남아
-  # **C 케이스만 학습을 물려받는다**(실측: 재실행 후 궤적 1건 잔존). 벤치의 전제가
-  # "세 방식이 같은 조건" 인데 회차마다 한쪽이 유리해지면 비교가 무너진다.
+  # **궤적을 비울지가 곧 무엇을 재느냐다.**
   #
-  # 학습 효과를 **재려면** 그때는 일부러 남겨야 한다 — 그건 다른 실험이고,
-  # `srv-state` 를 직접 다루면 된다.
+  #   cold(기본)  매번 비움 — **검색 엔진 자체**를 잰다(BM25+앵커 대 grep).
+  #               학습이 없으므로 세 방식이 같은 출발선에 선다.
+  #   warm        누적      — **학습이 값어치를 하나**를 잰다. 서버판의 존재 이유가
+  #               "세션을 넘어 쌓이는 학습" 이므로, 이것을 안 재면 C 를 절반만 재는
+  #               것이다. 회차가 갈수록 C 의 순위·토큰이 나아지면 그것이 증거다.
+  #
+  # **둘 다 필요하다.** warm 만 재면 서버판이 이겨도 그것이 형태소 분석 덕인지 학습
+  # 덕인지 못 가린다. cold 와의 차이가 곧 학습의 기여분이다.
+  #
+  # **warm 은 비대칭이다** — C 만 이전 회차를 물려받고 A·B 는 매번 처음부터다.
+  # 그것이 학습 층의 설계 그대로이지만(A·B 에는 학습이 아예 없다), 리포트가 그
+  # 사실을 밝혀야 한다.
   docker rm -f "$NAME" >/dev/null 2>&1 || true
-  rm -rf "$HERE/srv-state" "$HERE/srv-index"
+  if [ "$MODE" = "warm" ] && [ -d "$HERE/srv-state" ]; then
+    echo "  [warm] 궤적 유지: $(wc -l < "$HERE/srv-state/trajectories.jsonl" 2>/dev/null || echo 0)건"
+  else
+    rm -rf "$HERE/srv-state" "$HERE/srv-index"
+  fi
   mkdir -p "$HERE/srv-state" "$HERE/srv-index"
   if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
     echo "  ✗ 포트 $PORT 를 이미 누가 쓰고 있다 — 그대로 두면 벤치가 **엉뚱한 서버**를 잰다" >&2
@@ -73,5 +91,5 @@ down)
   echo "  정리 완료 (results/ 는 남긴다)"
   ;;
 *)
-  echo "usage: $0 [up|down]" >&2; exit 2 ;;
+  echo "usage: $0 [up [cold|warm]|down]" >&2; exit 2 ;;
 esac

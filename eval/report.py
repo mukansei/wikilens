@@ -140,6 +140,35 @@ def wrong_answers(rows: list) -> None:
         print(f"  {g[:20]:22} {c:11} → {tag:12} ×{n}")
 
 
+def learning_curve(rows: list) -> None:
+    """
+    **warm 실험에서 학습이 실제로 일하나.**
+
+    C 케이스만 회차를 거듭할수록 서버가 궤적을 더 들고 있다. 학습이 값어치를 한다면
+    **순위가 올라가고 토큰이 줄어야** 한다 — 안 그러면 이 코퍼스에서 그 층은 값이
+    없다는 뜻이고, 그것도 유효한 결과다(저장소의 "각 층은 스스로 증명한다").
+
+    `trajectories` 가 전부 0 이면 cold 실험이라 이 절을 내지 않는다.
+    """
+    c = [r for r in rows if r.case.startswith("C")
+         and r.extra.get("trajectories", -1) > 0]
+    if not c:
+        return
+    print("\n=== 학습 곡선 (warm · C 케이스) ===")
+    print("  회차별로 서버가 들고 있던 궤적 수와 그때의 성적")
+    by_rep = {}
+    for r in c:
+        by_rep.setdefault(r.rep, []).append(r)
+    for rep in sorted(by_rep):
+        rs = by_rep[rep]
+        traj = summarize([float(r.extra["trajectories"]) for r in rs])
+        tok = summarize([float(r.tokens or r.chars) for r in rs])
+        hit = sum(r.hit for r in rs)
+        print(f"  r{rep}: 궤적 {traj['median']:>6.0f}건 · 적중 {hit}/{len(rs)} · "
+              f"비용 {tok['median']:>9,.0f}")
+    print("  → 회차가 갈수록 적중이 오르고 비용이 줄면 학습이 일하는 것이다")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--md", action="store_true", help="마크다운으로")
@@ -156,6 +185,7 @@ def main() -> int:
     emit(rows, a.md)
     if not a.md:
         wrong_answers(rows)
+        learning_curve(rows)
     return 0
 
 
