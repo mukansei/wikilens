@@ -149,6 +149,8 @@ def run_once(argv: list[str]) -> dict:
                    + u.get("cache_read_input_tokens", 0)),
         "cost": d.get("total_cost_usd", 0.0),
         "turns": d.get("num_turns", 0),
+        # **비용의 최대 변수.** 모델이 바뀌면 토큰·턴이 통째로 달라져 비교가 무효다.
+        "model": ",".join(sorted(d.get("modelUsage", {}))) or "unknown",
         "seconds": wall,
         "error": "" if not d.get("is_error") else str(d.get("result", ""))[:120],
         # **질의 연산 수와 그 종류.** 왕복 하나하나가 지연과 토큰을 함께 쓰므로

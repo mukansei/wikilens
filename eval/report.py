@@ -201,11 +201,30 @@ def main() -> int:
     # 바뀐 전후를 한 표에 넣는 셈이다.
     shapes = {}
     for r in rows:
-        k = (r.commit or "?", r.dirty)
+        k = (r.commit or "(기록 없음)", r.dirty)
         shapes[k] = shapes.get(k, 0) + 1
     print("\n=== 형상 ===")
     for (c, d), n in sorted(shapes.items(), key=lambda x: -x[1]):
         print(f"  {c:28} {'더러운 트리 ← 재현 불가' if d else '':24} {n:>4}건")
+
+    # **형상 말고도 결과를 바꾸는 축이 셋 있다.** 하나라도 섞이면 그대로 비교하면
+    # 안 된다 — 모델이 다르면 토큰·턴이 통째로 달라지고, 코퍼스가 다르면 grep 비용도
+    # 랭킹도 달라진다. 시각은 그 둘이 언제 갈렸는지를 짚는 유일한 단서다.
+    for label, key, fmt in (("모델이", "model", str),
+                            ("코퍼스가", "corpus", lambda v: f"{v:,}건")):
+        vals = {}
+        for r in rows:
+            v = getattr(r, key)
+            if v:
+                vals[v] = vals.get(v, 0) + 1
+        if len(vals) > 1:
+            detail = " · ".join(f"{fmt(k)}({n})" for k, n in
+                                sorted(vals.items(), key=lambda x: -x[1]))
+            print(f"  ★ {label} 섞여 있다: {detail}")
+    stamps = sorted(r.ts for r in rows if r.ts)
+    if stamps:
+        print(f"  측정 기간 {stamps[0][:16]} ~ {stamps[-1][:16]}")
+
     if len(shapes) > 1:
         print("  ★ 형상이 섞여 있다 — 코드가 바뀐 전후를 한 표에 넣고 있다")
 
