@@ -24,12 +24,13 @@
 
 ### `static.py` — 프로세스 없이
 
-`rg` 와 HTTP 를 직접 불러 **순위 · 문자 수 · 지연**을 잰다. 싸고 빠르고 결정적이라
+`rg` 와 HTTP 를 직접 불러 **순위 · 문자 수 · 지연**을 잰다. 로컬판은 스킬 절차
+전체(ALIASES → TREE → 본문)를 밟고 **어느 단계에서 찾았는지 기록한다**. 싸고 빠르고 결정적이라
 반복 측정에 맞는다. 대신 에이전트가 실제로 어떻게 행동하는지는 모른다 — 후보를 몇 개
 열어볼지, 실패하면 어떻게 재시도할지를 코드로 흉내낸 값이다.
 
 ```bash
-python3 eval/static.py
+python3 eval/static.py --reps 5
 ```
 
 ### `agent.py` — 진짜 세션
@@ -39,10 +40,13 @@ python3 eval/static.py
 
 ```bash
 eval/setup.sh up
-python3 eval/agent.py          # 전체 (30질의 × 3케이스 = 90세션)
-python3 eval/agent.py G01      # 한 그룹만
+python3 eval/agent.py --groups G01 G05 --reps 3 --budget 20
 eval/setup.sh down
 ```
+
+**중단돼도 이어받는다** — 끝난 조합은 건너뛴다. `--budget` 이 USD 상한이고 넘으면
+멈춘다. `--warmup` 은 케이스마다 버리는 1회를 먼저 돌려 **MCP 첫 호출 오버헤드**를
+분리한다(파일럿에서 C 의 첫 질의만 603K, 이후 183K·259K 였다).
 
 **세션 분리가 이 벤치의 핵심이다.** 한 세션에서 세 방식을 다 하면 첫 방식에서 답을
 알아버려 나머지가 무효가 된다. `claude -p` 는 매번 새 프로세스라 컨텍스트가 안 샌다.
@@ -74,9 +78,18 @@ eval/setup.sh down
 
 ---
 
-## 지금까지의 결과
+## 결과 보기
 
-- [`RESULTS-2026-08-12.md`](RESULTS-2026-08-12.md) — 정적 측정 (순위·문자 수·지연)
-- [`results/pilot-G06.jsonl`](results/) — 에이전트 파일럿 9세션
+```bash
+python3 eval/report.py                    # 표
+python3 eval/report.py --md > eval/RESULTS.md
+```
 
-`results/` 의 `.jsonl` 은 한 줄이 한 세션이다. 재분석하려면 그것을 읽는다.
+**손으로 옮겨 적은 표는 두지 않는다.** 그렇게 했더니 질의를 바꾼 순간 문서가 조용히
+낡았다 — 질의 4개가 전부 교체됐는데 문서는 옛 값을 말하고 있었다. `results/*.jsonl`
+이 정본이고 표는 거기서만 나온다.
+
+리포트가 **IQR 이 겹치는 쌍을 스스로 지목한다.** 겹치면 우열을 말할 수 없다는 뜻이다.
+
+`results/pilot-G06.jsonl` 은 에이전트 파일럿 9세션($4.79)이다 — 스키마를 통합하면서
+옛 형식을 옮겨 놨다(`extra.migrated`).
