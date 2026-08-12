@@ -17,7 +17,8 @@ from pathlib import Path
 
 from wikilens.build import build
 
-FIXTURE = Path(__file__).resolve().parents[2] / "contract" / "shared-fixture"
+REPO = Path(__file__).resolve().parents[2]
+FIXTURE = REPO / "contract" / "shared-fixture"
 
 # build() 가 만드는 산출물만 비교한다. mirror/raw, mirror/.sync-state.json 은
 # 입력이라 애초에 그대로 복사되므로 비교 대상이 아니다.
@@ -37,8 +38,12 @@ def test_build_reproduces_golden_fixture_output(tmp_path):
     root = _rebuild(tmp_path)
 
     for rel in GENERATED_FILES:
-        got = (root / rel).read_text(encoding="utf-8")
-        want = (FIXTURE / rel).read_text(encoding="utf-8")
+        # **바이트로 비교한다 — `read_text` 가 아니다.** 텍스트 모드는 CRLF 를 LF 로
+        # 되돌려 읽으므로(universal newlines) **줄바꿈 차이에 눈이 먼다.** Windows 의
+        # `write_text` 기본값이 `os.linesep` 변환이라, 그쪽에서 만든 볼트는 CRLF 인데
+        # 이 비교는 통과했다. 계약이 요구하는 것은 "바이트 동일" 이다.
+        got = (root / rel).read_bytes()
+        want = (FIXTURE / rel).read_bytes()
         assert got == want, f"{rel} 가 체크인된 픽스처와 달라졌다 — 포맷 변경이면 Kotlin 쪽도 함께 고칠 것"
 
     for rel in GENERATED_DIRS:
@@ -46,8 +51,8 @@ def test_build_reproduces_golden_fixture_output(tmp_path):
         want_files = sorted(p.relative_to(FIXTURE / rel) for p in (FIXTURE / rel).rglob("*") if p.is_file())
         assert got_files == want_files, f"{rel} 의 파일 목록이 달라졌다"
         for f in got_files:
-            got = (root / rel / f).read_text(encoding="utf-8")
-            want = (FIXTURE / rel / f).read_text(encoding="utf-8")
+            got = (root / rel / f).read_bytes()
+            want = (FIXTURE / rel / f).read_bytes()
             assert got == want, f"{rel / f} 가 체크인된 픽스처와 달라졌다"
 
 
@@ -63,3 +68,40 @@ def test_golden_fixture_covers_ancestors_and_orphan_contract():
 
     aliases = (FIXTURE / "ALIASES.md").read_text(encoding="utf-8")
     assert "고아B | (별칭 없음)" in aliases
+
+
+def test_every_file_write_pins_the_newline():
+    """
+    **볼트·설정을 쓰는 모든 자리가 `newline="\\n"` 을 준다.**
+
+    파이썬 텍스트 쓰기의 기본값은 `newline=None` = `os.linesep` 변환이라, Windows 에서
+    돌리면 같은 코드가 CRLF 를 쓴다. 그러면 셋이 갈린다:
+
+      - `env.sh` 는 셸이 `source` 하므로 `$'\\r': command not found` 로 죽는다
+      - `ALIASES.md`·`TREE.md` 는 로컬판이 grep 하는데 `$` 앵커가 안 맞는다
+      - 계약이 요구하는 "빌드 멱등성 = 바이트 동일" 이 플랫폼마다 달라진다
+
+    **grep 으로는 못 잡는다** — 여러 줄 호출이면 `newline=` 이 다음 줄에 있다.
+    그래서 AST 로 본다.
+    """
+    import ast
+
+    roots = [
+        REPO / "cli" / "wikilens",
+        REPO / "plugin" / "local" / "scripts",
+        REPO / "plugin" / "client" / "mcp",
+    ]
+    missing = []
+    for d in roots:
+        for f in sorted(d.glob("*.py")):
+            for node in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
+                if not isinstance(node, ast.Call):
+                    continue
+                if getattr(node.func, "attr", None) not in ("write_text", "fdopen"):
+                    continue
+                if "newline" not in {k.arg for k in node.keywords}:
+                    missing.append(f"{f.relative_to(REPO)}:{node.lineno}")
+
+    assert not missing, (
+        "줄바꿈을 고정하지 않은 쓰기가 있다 — Windows 에서 CRLF 가 된다: " + ", ".join(missing)
+    )

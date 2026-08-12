@@ -386,7 +386,8 @@ def configure(argv: list[str]) -> int:
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(CONFIG_PATH.parent, 0o700)
     CONFIG_PATH.write_text(
-        json.dumps(cfg, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        json.dumps(cfg, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8", newline="\n")
 
     print(f"CONFIG={CONFIG_PATH}")
     if quarantined:

@@ -173,7 +173,8 @@ def _alias_terms(entry: AnchorEntry) -> list[str]:
 def _write_anchors(root: Path, entries: list[AnchorEntry]) -> None:
     p = layout.ensure_parent(layout.anchors_path(root))
     # JSONL 한 줄도 같은 결정적 직렬화를 쓴다 — 규칙이 갈리면 멱등성이 깨진다.
-    p.write_text("".join(canonical_json(e.to_dict()) for e in entries), encoding="utf-8")
+    p.write_text("".join(canonical_json(e.to_dict()) for e in entries),
+                 encoding="utf-8", newline="\n")
 
 
 def _write_aliases(
@@ -219,7 +220,7 @@ def _write_aliases(
             lines.append(f"{e.space} | {e.title} | (별칭 없음) | 0 | {e.path}")
 
     lines.append("")
-    layout.aliases_path(root).write_text("\n".join(lines), encoding="utf-8")
+    layout.aliases_path(root).write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
 def _write_tree(
@@ -280,7 +281,7 @@ def _write_tree(
         render(pid, 0)
 
     lines.append("")
-    layout.tree_path(root).write_text("\n".join(lines), encoding="utf-8")
+    layout.tree_path(root).write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
 def _write_if_changed(path: Path, content: str) -> bool:
@@ -293,5 +294,5 @@ def _write_if_changed(path: Path, content: str) -> bool:
     layout.ensure_parent(path)
     if path.exists() and path.read_text(encoding="utf-8") == content:
         return False
-    path.write_text(content, encoding="utf-8")
+    path.write_text(content, encoding="utf-8", newline="\n")
     return True

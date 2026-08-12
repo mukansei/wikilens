@@ -96,7 +96,9 @@ def capture_env() -> tuple[list[str], list[str], str]:
     _ensure_config_dir()
     # 토큰이 들어가므로 만들 때부터 600 이어야 한다 — 쓰고 나서 chmod 하면 그 사이가 열려 있다.
     fd = os.open(ENV_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
+    # **줄바꿈을 고정한다** — 셸이 `source` 하는 파일이라 Windows 기본값(CRLF)이면
+    # `$'\r': command not found` 로 죽거나 값 끝에 `\r` 이 붙는다.
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(out) + "\n")
     os.chmod(ENV_PATH, 0o600)   # 이미 있던 파일이면 O_CREAT 모드가 적용되지 않는다
     return present, kept, str(ENV_PATH)
@@ -163,7 +165,7 @@ def write_config(vault: Path | None, source: str | None, cli: str | None = None)
     _ensure_config_dir()
     CONFIG_PATH.write_text(
         json.dumps(cfg, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+        encoding="utf-8", newline="\n",
     )
     return cfg
 
@@ -192,7 +194,8 @@ def register_permissions(vault: Path) -> str:
     dirs.append(target)
     # 기존 설정을 통째로 날리지 않도록 임시 파일에 쓴 뒤 교체한다.
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(json.dumps(settings, ensure_ascii=False, indent=2) + "\n",
+                   encoding="utf-8", newline="\n")
     tmp.replace(path)
     return f"등록했습니다: {target} → {path}"
 
