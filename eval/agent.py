@@ -211,11 +211,24 @@ def main() -> int:
     if not groups:
         print("  해당 그룹 없음", file=sys.stderr)
         return 2
+    # **transfer 는 학습 단계가 있어야 성립한다.** `--reps 1` 이면 q0 를 0회 학습하고
+    # q1·q2 를 재는데, 그것은 그냥 cold 측정이지 전이 실험이 아니다. 조용히 돌면
+    # 결과 파일에 `pattern=transfer` 로 남아 나중에 전이를 잰 것처럼 읽힌다.
+    if a.pattern == "transfer" and a.reps < 2:
+        print("  ✗ --pattern transfer 는 --reps 2 이상이 필요하다 "
+              f"(지금 {a.reps} → 학습 0회)", file=sys.stderr)
+        return 2
 
     total = len(plan(groups, a.reps, a.pattern)) * len(CASES)
     print(f"  대상 {len(groups)}그룹 · {a.pattern} 순서 · {len(CASES)}케이스 = {total}세션")
     t0 = trajectory_count()
-    mode = "warm" if t0 > 0 else ("cold" if t0 == 0 else "서버 없음")
+    # **서버가 없으면 시작하지 않는다.** 그냥 두면 C 세션이 전부 실패하면서
+    # 세션당 $0.53 을 태운다 — 30세션이면 $16 을 버리고 나서야 안다.
+    if t0 < 0:
+        print(f"  ✗ {SERVER} 에 못 닿는다 — `eval/setup.sh up` 을 먼저 돌릴 것\n"
+              "    (C 케이스가 전부 실패하면서 예산만 태운다)", file=sys.stderr)
+        return 2
+    mode = "warm" if t0 > 0 else "cold"
     print(f"  예산 ${a.budget:.0f} (세션당 파일럿 평균 $0.53 → 예상 ${total*0.53:.0f})")
     print(f"  서버 학습량 {t0}건 → **{mode}** 실험"
           + ("  ← C 만 이전 회차를 물려받는다(비대칭)" if mode == "warm" else "") + "\n")
