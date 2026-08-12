@@ -23,10 +23,23 @@ CASE_ORDER = ["A 원시grep", "B 로컬판", "C 서버판"]
 
 
 def collect() -> list:
+    """
+    `results/` 전부를 읽되 **같은 조합은 마지막 것만 센다.**
+
+    `--no-resume` 로 다시 돌리거나, 실패한 뒤 성공할 때까지 다시 돌리면 같은
+    `(harness, case, group, qi, rep)` 이 여러 줄이 된다. 그대로 세면 한 측정이
+    두 번 들어가 중앙값이 흔들린다 — 실측으로 확인했다(같은 키 3줄이 3건으로 셈).
+    로그는 append-only 로 두고(무엇을 언제 쟀는지가 남는다) 집계에서만 접는다.
+    """
     rows = []
     for f in sorted(RESULTS.glob("*.jsonl")):
         rows += load(f)
-    return [r for r in rows if not r.warmup and not r.error]
+    latest = {}
+    for r in rows:
+        if r.warmup or r.error:
+            continue
+        latest[r.key()] = r          # 나중 줄이 이긴다
+    return list(latest.values())
 
 
 def by_case(rows: list, harness: str) -> dict:
@@ -108,6 +121,25 @@ def emit(rows: list, md: bool) -> None:
               else "  " + cells[0].ljust(24) + "  ".join(x.rjust(7) for x in cells[1:]))
 
 
+def wrong_answers(rows: list) -> None:
+    """
+    **틀렸을 때 무엇이라고 답했는지.** 랭킹을 고치려면 이 열이 필요하다 — `none` 이
+    많으면 검색이 못 찾은 것이고, 다른 ID 가 반복되면 **그것이 더 나은 답일 수도**
+    있다(G05 처럼 정답 설정 자체가 모호한 그룹이 있다).
+    """
+    bad = [r for r in rows if not r.hit and r.answer]
+    if not bad:
+        return
+    print("\n=== 오답 (무엇과 헷갈렸나) ===")
+    seen = {}
+    for r in bad:
+        seen.setdefault((r.group, r.case, r.answer), 0)
+        seen[(r.group, r.case, r.answer)] += 1
+    for (g, c, ans), n in sorted(seen.items(), key=lambda x: -x[1])[:12]:
+        tag = "못 찾음" if ans == "none" else ans
+        print(f"  {g[:20]:22} {c:11} → {tag:12} ×{n}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--md", action="store_true", help="마크다운으로")
@@ -122,6 +154,8 @@ def main() -> int:
               "손으로 고치지 말 것 — 다시 돌리면 덮인다.\n"
               "> 질의는 [`queries.py`](queries.py), 방법은 [`README.md`](README.md).")
     emit(rows, a.md)
+    if not a.md:
+        wrong_answers(rows)
     return 0
 
 

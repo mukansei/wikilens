@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import time
@@ -65,6 +66,16 @@ def post(path: str, payload: dict) -> tuple[dict, float]:
         return json.loads(r.read() or b"{}"), time.perf_counter() - t
 
 
+#: 경로·ALIASES 줄에서 페이지 ID 를 뽑는다. **못 찾았을 때 무엇을 대신 골랐는지**를
+#: 기록하려는 것이고, 그 값이 랭킹 진단의 단서다(G01 의 길이 정규화가 그렇게 드러났다).
+_PID = re.compile(r"/(\d{4,})\.md")
+
+
+def top_pid(s: str) -> str:
+    m = _PID.search(s)
+    return m.group(1) if m else ""
+
+
 def gold_file(pid: str) -> pathlib.Path | None:
     return next(PAGES.rglob(f"{pid}.md"), None)
 
@@ -82,7 +93,17 @@ def read_gold(pid: str) -> tuple[int, float]:
 # ---------------------------------------------------------------- 세 방식
 
 def case_a(q: str, gold: str) -> dict:
-    """안내 없이 본문을 훑고 후보를 순서대로 열어본다. **힌트 파일을 안 쓴다.**"""
+    """
+    안내 없이 본문을 훑고 후보를 순서대로 열어본다. **힌트 파일을 안 쓴다.**
+
+    **정답 위치를 아는 채로 거기까지만 연다 — 오라클이다.** 실제 에이전트는 어디
+    있는지 모르므로 더 열거나(못 알아보고 지나침) 덜 열 수 있다(먼저 포기). 그래서
+    이 값은 "이 순서로 훑을 때 정답에 닿는 최소 비용" 이지 실사용 예측이 아니다.
+    실사용은 `agent.py` 가 잰다 — **둘의 차이가 곧 에이전트의 판단 비용**이다.
+
+    후보 정렬이 파일명 순인 것도 같은 성격이다. 원시 grep 에는 랭킹이 없으므로
+    임의 순서가 맞는 모델이지만, 운이 좋으면 앞에 오고 나쁘면 뒤에 온다.
+    """
     ts = picks(q) or [q.split()[0]]
     out, dt = sh(["rg", "-l", "-i", "--", ts[0], str(PAGES)])
     chars, calls, sec = len(out), 1, dt
@@ -101,6 +122,7 @@ def case_a(q: str, gold: str) -> dict:
         calls += 1
     return {"hit": idx is not None, "rank": (idx + 1) if idx is not None else -1,
             "chars": chars, "calls": calls, "seconds": sec,
+            "answer": gold if idx is not None else (top_pid(ranked[0]) if ranked else "none"),
             "extra": {"candidates": len(hits), "opened": len(opened)}}
 
 
@@ -112,19 +134,23 @@ def case_b(q: str, gold: str) -> dict:
     pat = pattern(ts)
     chars = calls = 0
     sec = 0.0
+    last_first = ""      # 못 찾았을 때 "대신 무엇이 1순위였나"
     for stage, path, flags in (("ALIASES", VAULT / "ALIASES.md", ()),
                                ("TREE", VAULT / "TREE.md", ()),
                                ("BODY", PAGES, ("-l",))):
         out, dt = sh(["rg", "-i", *flags, "--", pat, str(path)])
         chars += len(out); calls += 1; sec += dt
         lines = [ln for ln in out.splitlines() if ln.strip()]
+        if lines and not last_first:
+            last_first = lines[0]
         for i, ln in enumerate(lines, 1):
             if gold in ln:
                 n, dt2 = read_gold(gold)
                 return {"hit": True, "rank": i, "chars": chars + n,
-                        "calls": calls + 1, "seconds": sec + dt2,
+                        "calls": calls + 1, "seconds": sec + dt2, "answer": gold,
                         "extra": {"stage": stage, "candidates": len(lines)}}
     return {"hit": False, "rank": -1, "chars": chars, "calls": calls, "seconds": sec,
+            "answer": top_pid(last_first) if last_first else "none",
             "extra": {"stage": "none"}}
 
 
@@ -137,7 +163,9 @@ def case_c(q: str, gold: str) -> dict:
     rd, dt2 = post("/api/read", {"pageId": gold, "userKey": USER})
     return {"hit": idx is not None, "rank": (idx + 1) if idx is not None else -1,
             "chars": chars + len(rd.get("markdown", "")), "calls": 2,
-            "seconds": dt + dt2, "extra": {"candidates": len(ids)}}
+            "seconds": dt + dt2,
+            "answer": gold if idx is not None else (ids[0] if ids else "none"),
+            "extra": {"candidates": len(ids)}}
 
 
 CASES = [("A 원시grep", case_a), ("B 로컬판", case_b), ("C 서버판", case_c)]
