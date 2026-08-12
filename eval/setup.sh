@@ -35,8 +35,16 @@ up)
   cp -al "$VAULT/mirror/pages" "$HERE/vault-nohint/mirror/pages"
   echo "  vault-nohint: 문서 $(find "$HERE/vault-nohint/mirror/pages" -name '*.md' | wc -l | tr -d ' ')개 · 심링크 $(find "$HERE/vault-nohint" -type l | wc -l | tr -d ' ')개 · ALIASES/TREE 도달 불가"
 
-  # C 케이스 서버 — 이미지는 운영과 같은 것을 쓰되 상태만 격리
+  # C 케이스 서버 — 이미지는 운영과 같은 것을 쓰되 상태만 격리.
+  #
+  # **상태를 매번 비운다.** 안 그러면 `up` 을 다시 부를 때 앞 실행의 궤적이 남아
+  # **C 케이스만 학습을 물려받는다**(실측: 재실행 후 궤적 1건 잔존). 벤치의 전제가
+  # "세 방식이 같은 조건" 인데 회차마다 한쪽이 유리해지면 비교가 무너진다.
+  #
+  # 학습 효과를 **재려면** 그때는 일부러 남겨야 한다 — 그건 다른 실험이고,
+  # `srv-state` 를 직접 다루면 된다.
   docker rm -f "$NAME" >/dev/null 2>&1 || true
+  rm -rf "$HERE/srv-state" "$HERE/srv-index"
   mkdir -p "$HERE/srv-state" "$HERE/srv-index"
   if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
     echo "  ✗ 포트 $PORT 를 이미 누가 쓰고 있다 — 그대로 두면 벤치가 **엉뚱한 서버**를 잰다" >&2

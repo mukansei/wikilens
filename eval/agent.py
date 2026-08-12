@@ -137,6 +137,12 @@ def main() -> int:
             # 확정된 것은 아니다 — 버리는 1회를 따로 기록해 두면 나중에 확인할 수 있다.
             g0 = groups[0]
             for cname, builder in CASES:
+                # **워밍도 예산을 쓴다.** 안 보면 `--budget 0.9` 인데 워밍만 $1.41 을
+                # 쓰고 본측정이 0건이 된다(실측). 돈을 쓰는 모든 자리가 같은 가드를
+                # 지나야 한다.
+                if spent >= a.budget:
+                    print(f"  ★ 예산 ${a.budget:.2f} 도달 — 워밍 중 멈춘다")
+                    return 0
                 r = run_once(builder(g0[3][0]))
                 spent += r.get("cost", 0.0)
                 w.write(make(harness="agent", case=cname, group=g0[0], qi=0,
