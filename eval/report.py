@@ -17,7 +17,7 @@ import pathlib
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from harness import RESULTS, load, overlaps, summarize, too_few  # noqa: E402
+from harness import RESULTS, load, overlaps, summarize, too_few, wilson  # noqa: E402
 
 CASE_ORDER = ["A 원시grep", "B 로컬판", "C 서버판"]
 
@@ -104,14 +104,36 @@ def cost_table(rows: list, md: bool) -> None:
         if items:
             msg = f"{label}: " + " · ".join(items)
             print(f"\n{msg}" if md else f"\n  {msg}")
+    # **적중률도 판정한다.** 토큰은 IQR 로 가리면서 적중률은 맨눈으로 두면, 정작
+    # 가장 중요한 축(찾았나 못 찾았나)이 근거 없이 읽힌다. 비율이므로 IQR 이 아니라
+    # Wilson 구간이다.
+    print("\n적중률 95% 구간:" if md else "\n  적중률 95% 구간:")
+    cis = {}
+    for case, v in by.items():
+        lo, hi = wilson(sum(r.hit for r in v), len(v))
+        cis[case] = (lo, hi)
+        print(f"    {case:11} {sum(r.hit for r in v)}/{len(v)} "
+              f"[{lo*100:.0f}%~{hi*100:.0f}%]")
+    apairs = [(a, b) for i, a in enumerate(cis) for b in list(cis)[i + 1:]]
+    sep = [f"{a}↔{b}" for a, b in apairs
+           if cis[a][1] < cis[b][0] or cis[b][1] < cis[a][0]]
+    print(f"    → 구간이 분리된 쌍: {' · '.join(sep) if sep else '없음 — 적중률 차이를 주장할 수 없다'}")
+
     print(f"\n총 비용 ${sum(r.cost for r in rs):.2f}" if md
           else f"  총 비용 ${sum(r.cost for r in rs):.2f}")
 
 
-#: 케이스별로 **보여야 하는** 도구. 벗어나면 격리가 깨진 것이다.
+#: 케이스별로 **보여도 되는** 도구. 벗어나면 격리가 깨진 것이다.
 EXPECTED = {"A 원시grep": ("Bash", "Read", "Grep", "Glob", "ToolSearch"),
             "B 로컬판": ("Bash", "Read", "Grep", "Glob", "Skill", "ToolSearch"),
             "C 서버판": ("mcp__", "Skill", "ToolSearch", "Read")}
+
+#: 케이스가 **반드시 써야 하는** 도구. 안 쓰면 그 방식을 잰 게 아니다.
+#:
+#: 허용 목록만으로는 부족하다 — C 가 MCP 를 한 번도 안 쓰고 `Skill` 로만 답해도
+#: 통과한다(합성 데이터로 확인). 그러면 서버판이 아니라 클라이언트 스킬의 안내문을
+#: 잰 셈이고, 겉으로는 정상이다.
+REQUIRED = {"C 서버판": "mcp__"}
 
 
 def isolation(rows: list) -> None:
@@ -137,10 +159,14 @@ def isolation(rows: list) -> None:
                 used[k] = used.get(k, 0) + 1
         ok = EXPECTED.get(case, ())
         stray = [t for t in used if not any(t.startswith(p) for p in ok)]
-        mark = "✗ 누출" if stray else "○"
+        need = REQUIRED.get(case)
+        missing = need and not any(t.startswith(need) for t in used)
+        mark = "✗ 누출" if stray else ("✗ 미사용" if missing else "○")
         print(f"  {case:11} {mark} {used}")
         if stray:
-            bad.append(f"{case}: {stray}")
+            bad.append(f"{case}: 누출 {stray}")
+        if missing:
+            bad.append(f"{case}: {need} 를 한 번도 안 씀 — 그 방식을 잰 게 아니다")
     if bad:
         print("  ★ 격리가 깨졌다 — 이 측정은 무효다: " + " · ".join(bad))
 

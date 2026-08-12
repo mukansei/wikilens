@@ -202,6 +202,27 @@ def overlaps(a: dict, b: dict) -> bool:
     return not (a["q3"] < b["q1"] or b["q3"] < a["q1"])
 
 
+def wilson(hits: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """
+    적중률의 95% 신뢰구간 (Wilson score).
+
+    **적중률은 비율이라 IQR 이 안 맞는다** — 토큰처럼 분포가 아니라 성공/실패 카운트다.
+    맨눈으로 `69/90` 대 `74/90` 을 보면 차이가 있어 보이는데, 구간을 그려보면 크게
+    겹친다. 이 저장소가 `learn/Reliability.kt` 에서 Wilson 대신 EB 를 쓴 것은 사전
+    정보를 살리려는 것이었고, 여기서는 사전 정보가 없으므로 Wilson 이 맞다.
+
+    정규 근사가 아니라 Wilson 인 이유: n 이 작거나 비율이 0·1 에 가까울 때 정규
+    근사는 구간이 [0,1] 을 벗어난다.
+    """
+    if n == 0:
+        return 0.0, 1.0
+    p_hat = hits / n
+    d = 1 + z * z / n
+    centre = (p_hat + z * z / (2 * n)) / d
+    half = z * ((p_hat * (1 - p_hat) / n + z * z / (4 * n * n)) ** 0.5) / d
+    return max(0.0, centre - half), min(1.0, centre + half)
+
+
 def too_few(*dists: dict) -> bool:
     """
     표본이 4 미만이면 **겹침 여부를 따지는 것 자체가 무의미하다.**
