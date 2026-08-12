@@ -27,6 +27,26 @@ up)
   if [ "$MODE" != "cold" ] && [ "$MODE" != "warm" ]; then
     echo "usage: $0 up [cold|warm]" >&2; exit 2
   fi
+  # **설치된 플러그인을 내린다 — 이것이 케이스 격리의 전부다.**
+  #
+  # `--plugin-dir` 는 플러그인을 **추가**할 뿐 사용자 레벨 설치본을 끄지 않는다.
+  # 그래서 설치본이 있으면 세 케이스가 서로의 것을 본다(실측):
+  #
+  #   A 가 `wikilens-local` 스킬을 본다 → 그 스킬이 config.json 의 **진짜 볼트**를
+  #     가리키므로, 힌트 없는 볼트를 준 격리가 경로 우회로 무력화된다
+  #   B 가 `wikilens-client` MCP 를 쓴다 → B 와 C 가 같은 것을 재게 된다(실제로 그랬다)
+  #   C 가 `wikilens-local` 스킬을 본다 → MCP 대신 grep 을 쓸 수 있다
+  #
+  # **도구 이름으로 막는 것은 안 된다** — `Skill(이름)` 형식이 안 먹고(실측),
+  # `Skill` 통째로 막으면 B·C 가 자기 스킬을 못 쓴다. 설치본을 내리고
+  # `--plugin-dir` 만 남기는 것이 유일하게 깨끗하다.
+  #
+  # `down` 이 되돌린다. **벤치가 죽으면 안 돌아오므로** 끝나면 반드시 부를 것.
+  for plug in wikilens-local wikilens-client; do
+    claude plugin uninstall "$plug@wikilens" >/dev/null 2>&1 || true
+  done
+  echo "  플러그인 설치본 내림 (down 이 되돌린다)"
+
   # A 케이스 볼트.
   #
   # **하드링크로 복사한다 — 심링크를 쓰면 격리가 새어 나간다.** 심링크는 실제 볼트를
@@ -88,7 +108,14 @@ print("  :%s 서버: 문서 %s · 궤적 %s (운영과 격리)"
 down)
   docker rm -f "$NAME" >/dev/null 2>&1 || true
   rm -rf "$HERE/vault-nohint" "$HERE/srv-state" "$HERE/srv-index"
-  echo "  정리 완료 (results/ 는 남긴다)"
+  # 설치본을 되돌린다. 마켓플레이스가 등록돼 있어야 하는데, 없으면 조용히 지나가지
+  # 말고 알린다 — 사용자는 벤치 뒤에 플러그인이 사라진 줄 모른다.
+  for plug in wikilens-local wikilens-client; do
+    if ! claude plugin install "$plug@wikilens" >/dev/null 2>&1; then
+      echo "  ✗ $plug 재설치 실패 — 손으로 복구할 것: claude plugin install $plug@wikilens" >&2
+    fi
+  done
+  echo "  정리 완료 · 플러그인 복구 (results/ 는 남긴다)"
   ;;
 *)
   echo "usage: $0 [up [cold|warm]|down]" >&2; exit 2 ;;

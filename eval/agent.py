@@ -37,28 +37,14 @@ from harness import Writer, done_keys, make  # noqa: E402
 from queries import GROUPS  # noqa: E402
 
 #: 벤치가 재려는 것은 **볼트 검색**이지 웹 검색이나 위임이 아니다.
-BASE_DENY = ["WebFetch", "WebSearch", "Task", "Edit", "Write", "NotebookEdit"]
-
-#: 서버판 MCP 도구. **A·B 에서 막아야 한다.**
 #:
-#: `--plugin-dir` 는 플러그인을 **추가**할 뿐 사용자 레벨 설치본을 끄지 않는다.
-#: 그래서 `wikilens-client` 가 설치돼 있으면 A·B 세션에도 이 도구들이 보이고,
-#: 실제로 **B 가 이것을 썼다**(실측: `mcp__…__search`·`grep`·`read` 각 1회).
-#: 그러면 B 와 C 가 같은 것을 재게 되어 비교가 통째로 무효다.
-MCP_TOOLS = [f"mcp__plugin_wikilens-client_wiki__{t}"
-             for t in ("search", "read", "grep", "tree")]
+#: **케이스 격리는 여기가 아니라 `setup.sh` 가 한다.** 처음에는 도구 이름으로 막으려
+#: 했는데(`mcp__…` 목록 + `Skill`) 둘 다 나쁘다: 이름은 플러그인을 고치면 낡고,
+#: `Skill` 통째 차단은 B·C 가 자기 스킬을 못 쓰게 만든다. `Skill(이름)` 형식은
+#: 아예 안 먹는다(실측). 설치본을 내리고 `--plugin-dir` 만 남기는 것이 유일하게
+#: 깨끗하다 — 그러면 각 세션이 자기 플러그인만 본다(실측 확인).
+DENY = "WebFetch,WebSearch,Task,Edit,Write,NotebookEdit"
 
-#: 스킬. **A 에서 막아야 한다** — 설치된 `wikilens-local` 스킬이 A 세션에도 보이는데
-#: (실측), 그 스킬은 `~/.wikilens/config.json` 을 읽어 **진짜 볼트**를 가리킨다.
-#: 힌트 없는 볼트를 준 격리가 그 한 줄로 무력화된다.
-SKILL_TOOL = ["Skill"]
-
-
-def deny(*extra: list[str]) -> str:
-    out = list(BASE_DENY)
-    for e in extra:
-        out += e
-    return ",".join(out)
 
 ASK = ("찾은 문서의 페이지 ID(숫자)만 마지막 줄에 `ANSWER=<id>` 형식으로 답하세요. "
        "못 찾으면 `ANSWER=none`.")
@@ -70,7 +56,7 @@ def case_a(q: str) -> list[str]:
             f"위키 볼트가 {NOHINT} 에 있습니다. 마크다운 문서 13,933개가 "
             f"mirror/pages/ 아래 샤딩돼 있습니다.\n\n질문: {q}\n\n{ASK}",
             "--output-format", "stream-json", "--verbose",
-            "--disallowed-tools", deny(MCP_TOOLS, SKILL_TOOL),
+            "--disallowed-tools", DENY,
             "--add-dir", str(NOHINT)]
 
 
@@ -78,7 +64,7 @@ def case_b(q: str) -> list[str]:
     """로컬판 — 스킬 + 네이티브 grep. **MCP 가 아니다**(D8)."""
     return ["claude", "-p", f"질문: {q}\n\n{ASK}",
             "--output-format", "stream-json", "--verbose",
-            "--disallowed-tools", deny(MCP_TOOLS),
+            "--disallowed-tools", DENY,
             "--plugin-dir", str(REPO / "plugin" / "local"), "--add-dir", str(VAULT)]
 
 
@@ -86,7 +72,7 @@ def case_c(q: str) -> list[str]:
     """서버판 — MCP 도구 4개."""
     return ["claude", "-p", f"질문: {q}\n\n{ASK}",
             "--output-format", "stream-json", "--verbose",
-            "--disallowed-tools", deny(),
+            "--disallowed-tools", DENY,
             "--plugin-dir", str(REPO / "plugin" / "client")]
 
 
