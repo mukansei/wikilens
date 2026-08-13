@@ -181,6 +181,64 @@ def cost_table(rows: list, md: bool) -> None:
     print(f"\n총 비용 ${sum(r.cost for r in rs):.2f}" if md
           else f"  총 비용 ${sum(r.cost for r in rs):.2f}")
 
+    mode_split(rs, md)
+
+
+def mode_split(rs: list, md: bool) -> None:
+    """
+    **cold 와 warm 을 나란히 놓는다 — 그 차이가 곧 학습의 기여분이다.**
+
+    위 표는 둘을 합쳐 낸다(케이스 비교가 목적이라 표본을 쪼개면 판정이 더 약해진다).
+    그런데 합친 값만으로는 서버판이 이겨도 **형태소 분석 덕인지 학습 덕인지 못 가린다** —
+    그것을 가르려고 cold 를 따로 재는 것이므로, 여기서 갈라 보인다.
+
+    **A·B 가 대조군이다.** 둘에는 학습이 아예 없으므로 cold 와 warm 이 같아야 한다.
+    거기서 차이가 나면 학습이 아니라 **측정 변동**을 보고 있는 것이고, 그 폭이 C 의
+    차이보다 크면 C 의 차이도 못 믿는다. 그 판정을 사람에게 미루지 않고 여기서 한다.
+    """
+    modes = sorted({r.mode for r in rs if r.mode})
+    if len(modes) < 2:
+        return
+    print("\n## 학습 기여분 (cold ↔ warm)\n" if md else "\n=== 학습 기여분 (cold ↔ warm) ===")
+
+    deltas = {}
+    for case in CASE_ORDER:
+        cells = []
+        for m in modes:
+            v = [r for r in rs if r.case == case and r.mode == m]
+            if not v:
+                cells.append((m, None))
+                continue
+            tok = summarize([float(r.tokens) for r in v])
+            cells.append((m, (sum(r.hit for r in v), len(v), tok["median"])))
+        if all(c[1] is None for c in cells):
+            continue
+        line = f"  {case:11}"
+        for m, c in cells:
+            line += (f"  {m} {c[0]}/{c[1]} · {c[2]:>8,.0f}tok" if c
+                     else f"  {m} —")
+        print(line)
+        got = {m: c for m, c in cells if c}
+        if len(got) == 2:
+            a, b = (got[m][2] for m in modes)
+            deltas[case] = (b - a) / a if a else 0.0
+
+    if len(deltas) < 2:
+        return
+    print()
+    for case, d in deltas.items():
+        print(f"    {case:11} 토큰 {d:+.0%}")
+    # 대조군(A·B)의 변동 폭이 C 의 변화보다 크면 C 의 변화도 잡음일 수 있다.
+    control = [abs(d) for c, d in deltas.items() if not c.startswith("C")]
+    cd = deltas.get("C 서버판")
+    if control and cd is not None:
+        if abs(cd) <= max(control):
+            print(f"\n  ★ 학습이 없는 A·B 도 {max(control):.0%} 움직였다 — "
+                  "C 의 변화를 학습 덕으로 읽을 수 없다(측정 변동이 더 크다)")
+        else:
+            print(f"\n  대조군(A·B) 변동 {max(control):.0%} 보다 C 의 {abs(cd):.0%} 가 크다 "
+                  "— 학습 기여로 읽을 여지가 있다(표본 수를 함께 볼 것)")
+
 
 #: 케이스별로 **보여도 되는** 도구. 벗어나면 격리가 깨진 것이다.
 EXPECTED = {"A 원시grep": ("Bash", "Read", "Grep", "Glob", "ToolSearch"),
