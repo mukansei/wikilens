@@ -29,19 +29,17 @@ import signal
 import subprocess
 import sys
 import time
-import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parent
 NOHINT = HERE / "vault-nohint"
 VAULT = pathlib.Path.home() / ".wikilens" / "vault"
 
-#: `setup.sh` 가 띄우는 전용 서버. **운영(:8787)으로 돌리면 궤적이 오염된다** —
-#: MCP 프록시는 항상 sessionId 를 보내므로 벤치 질의가 그대로 학습으로 쌓인다.
-SERVER = "http://127.0.0.1:8790"
-
 sys.path.insert(0, str(HERE))
-from harness import COMMIT, DIRTY, Writer, done_keys, record  # noqa: E402
+# 주소·사용자는 `harness` 가 정본이다 — 각자 들면 세 하네스가 다른 서버를 잰다.
+from harness import (BENCH_USER, COMMIT, DIRTY, SERVER, Writer,  # noqa: E402
+                     done_keys, record, require_server, select_groups,
+                     trajectory_count)
 from queries import GROUPS, MINIMAL  # noqa: E402
 
 #: 벤치가 재려는 것은 **볼트 검색**이지 웹 검색이나 위임이 아니다.
@@ -102,21 +100,8 @@ def server_image() -> str:
         return "unknown"
 
 
-def trajectory_count() -> int:
-    """
-    **모드를 사람이 아니라 서버에 묻는다.** `--mode warm` 같은 플래그를 받으면
-    `setup.sh` 를 cold 로 띄워놓고 warm 이라 적는 일이 생긴다 — 결과 파일이
-    거짓말을 하면 나중에 구별할 방법이 없다.
-    """
-    try:
-        with urllib.request.urlopen(SERVER + "/api/stats", timeout=10) as r:
-            return int(json.loads(r.read()).get("trajectories", 0))
-    except Exception:  # noqa: BLE001
-        return -1
-
-
 def run_once(argv: list[str]) -> dict:
-    env = dict(os.environ, WIKILENS_SERVER=SERVER, WIKILENS_USER="bench")
+    env = dict(os.environ, WIKILENS_SERVER=SERVER, WIKILENS_USER=BENCH_USER)
     t = time.perf_counter()
     # **프로세스 그룹으로 띄운다.** `subprocess.run(timeout=)` 은 `claude` 만 죽이고
     # 그 자식(MCP 프록시 등)은 남긴다(실측: 타임아웃 뒤 자식 2개 잔존). 90세션에서
@@ -251,8 +236,7 @@ def main() -> int:
     if done:
         print(f"  이어받기: 끝난 조합 {len(done)}개 건너뜀")
 
-    groups = [g for g in GROUPS
-              if a.groups is None or any(g[0].startswith(p) for p in a.groups)]
+    groups = select_groups(GROUPS, a.groups)
     if not groups:
         print("  해당 그룹 없음", file=sys.stderr)
         return 2
@@ -266,13 +250,14 @@ def main() -> int:
 
     total = len(plan(groups, a.reps, a.pattern, a.per_group)) * len(CASES)
     print(f"  대상 {len(groups)}그룹 · {a.pattern} 순서 · {len(CASES)}케이스 = {total}세션")
-    t0 = trajectory_count()
     # **서버가 없으면 시작하지 않는다.** 그냥 두면 C 세션이 전부 실패하면서
     # 세션당 $0.53 을 태운다 — 30세션이면 $16 을 버리고 나서야 안다.
-    if t0 < 0:
-        print(f"  ✗ {SERVER} 에 못 닿는다 — `bench/setup.sh up` 을 먼저 돌릴 것\n"
-              "    (C 케이스가 전부 실패하면서 예산만 태운다)", file=sys.stderr)
+    # 이쪽만 플러그인 격리가 필요하므로 `up` 을 안내한다.
+    bad = require_server(need_plugins=True)
+    if bad:
+        print(f"  ✗ {bad}", file=sys.stderr)
         return 2
+    t0 = trajectory_count()
     mode = "warm" if t0 > 0 else "cold"
     print(f"  예산 ${a.budget:.0f} (세션당 파일럿 평균 $0.53 → 예상 ${total*0.53:.0f})")
     print(f"  서버 학습량 {t0}건 → **{mode}** 실험"

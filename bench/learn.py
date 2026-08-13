@@ -43,37 +43,24 @@ D23 의 전제가 바뀐다.
 from __future__ import annotations
 
 import argparse
-import json
 import pathlib
 import sys
 import time
 import urllib.error
-import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 
-#: **`setup.sh` 가 띄우는 전용 서버.** 운영(:8787)으로 돌리면 벤치 질의가 그대로
-#: 학습으로 쌓인다 — 궤적은 이 저장소의 유일한 복구 불가 자산이라 되돌릴 수 없다.
-#: 아래 `guard()` 가 주소를 확인한다.
-SERVER = "http://127.0.0.1:8790"
-USER = "bench"
-
 sys.path.insert(0, str(HERE))
-from harness import Writer, record  # noqa: E402
+# **주소·사용자는 `harness` 가 정본이다.** 여기서 따로 들면 `rank.py` 와 다른 서버를
+# 재게 되고, 이 스크립트는 궤적을 *만드는* 물건이라 그 실수가 되돌려지지 않는다.
+from harness import (BENCH_USER, SERVER, Writer, api_get, api_post,  # noqa: E402
+                     record, require_server, select_groups)
 from queries import GROUPS, MINIMAL  # noqa: E402
-
-
-def post(path: str, body: dict, timeout: int = 30) -> dict:
-    req = urllib.request.Request(SERVER + path, data=json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read())
 
 
 def stats() -> dict:
     try:
-        with urllib.request.urlopen(SERVER + "/api/stats", timeout=10) as r:
-            return json.loads(r.read())
+        return api_get("/api/stats")
     except Exception:  # noqa: BLE001
         return {}
 
@@ -87,20 +74,20 @@ def probe(query: str, gold: str, sid: str, read_gold: bool) -> dict:
     말한다. 이것이 "2회차부터 서빙" 이라는 예측의 정확한 뜻이다.
     """
     t = time.perf_counter()
-    res = post("/api/search", {"query": query, "userKey": USER,
-                               "sessionId": sid, "limit": 8})
+    res = api_post("/api/search", {"query": query, "userKey": BENCH_USER,
+                                   "sessionId": sid, "limit": 8})
     ids = [h["pageId"] for h in res.get("hits", [])]
     err = ""
     if read_gold:
         # **읽어야 궤적이 목적지를 갖는다.** 안 읽으면 `onEnd` 가 빈 스팬을 버린다.
         try:
-            post("/api/read", {"pageId": gold, "userKey": USER, "sessionId": sid})
+            api_post("/api/read", {"pageId": gold, "userKey": BENCH_USER, "sessionId": sid})
         except urllib.error.HTTPError as e:
             err = f"read {gold} → HTTP {e.code}"
     # **실패해도 세션은 닫는다.** 예전에는 read 가 실패하면 여기로 안 와서 서버에
     # 열린 스팬이 남았고, 다음 회차가 그 상태에서 재는 것이 됐다(`SessionSweeper` 가
     # 5분 뒤 거두지만 벤치는 그보다 빨리 끝난다).
-    post("/api/session/end", {"sessionId": sid})
+    api_post("/api/session/end", {"sessionId": sid})
     if err:
         return {"error": err, "seconds": time.perf_counter() - t}
     return {
@@ -109,19 +96,6 @@ def probe(query: str, gold: str, sid: str, read_gold: bool) -> dict:
         "rank": (ids.index(gold) + 1) if gold in ids else -1,
         "seconds": time.perf_counter() - t,
     }
-
-
-def guard() -> str:
-    """
-    **운영 서버로 돌지 않게 막는다.** 이 스크립트는 궤적을 *만드는* 물건이라
-    주소를 잘못 주면 되돌릴 수 없다(`rank.py` 는 `sessionId` 를 안 보내 안전했다).
-    """
-    if not SERVER.endswith(":8790"):
-        return f"SERVER 가 {SERVER} 다 — 이 스크립트는 궤적을 만든다. :8790 이어야 한다"
-    s = stats()
-    if not s:
-        return f"{SERVER} 에 못 닿는다 — `bench/setup.sh server warm` 을 먼저 돌릴 것"
-    return ""
 
 
 def main() -> int:
@@ -133,7 +107,7 @@ def main() -> int:
     ap.add_argument("--out", default="learn.jsonl")
     a = ap.parse_args()
 
-    groups = [g for g in GROUPS if any(g[0].startswith(p) for p in a.groups)]
+    groups = select_groups(GROUPS, a.groups)
     if not groups:
         print("  해당 그룹 없음", file=sys.stderr)
         return 2
@@ -150,7 +124,8 @@ def main() -> int:
         print(f"  ✗ --reps 는 1 이상이어야 한다 (지금 {a.reps})", file=sys.stderr)
         return 2
 
-    bad = guard()
+    # 플러그인 격리는 안 쓴다 — 순수 HTTP 라 `setup.sh server` 면 된다.
+    bad = require_server(need_plugins=False)
     if bad:
         print(f"  ✗ {bad}", file=sys.stderr)
         return 2

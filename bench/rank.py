@@ -27,17 +27,14 @@ import pathlib
 import re
 import subprocess
 import sys
-import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 VAULT = pathlib.Path.home() / ".wikilens" / "vault"
-#: **`agent.py` 와 같은 격리 서버를 본다.** 운영(:8787)을 보면 그쪽 궤적이 섞여
-#: 두 하네스가 다른 조건의 C 를 재게 된다(실측: 운영에 궤적 4건이 있었다).
-#: `setup.sh up` 이 띄운다.
-SERVER = "http://127.0.0.1:8790"
 
 sys.path.insert(0, str(HERE))
-from harness import Writer, record  # noqa: E402
+# 주소·사용자는 `harness` 가 정본이다 — 각자 들면 두 하네스가 다른 서버를 잰다.
+from harness import (BENCH_USER, SERVER, Writer, api_post, record,  # noqa: E402
+                     require_server, select_groups)
 from queries import GROUPS  # noqa: E402
 
 #: 모델이 질의에서 버리는 말. **없으면 로컬판에 불공정하다** — 구어체는 앞 두 낱말이
@@ -120,12 +117,8 @@ def server(q: str, gold: str) -> tuple[int, str, str]:
     서버 검색. **궤적을 안 남긴다** — `sessionId` 를 안 보내므로 이 측정 자체가
     학습을 오염시키지 않는다.
     """
-    req = urllib.request.Request(
-        SERVER + "/api/search",
-        data=json.dumps({"query": q, "userKey": "bench", "limit": 20}).encode(),
-        headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        ids = [h["pageId"] for h in json.loads(r.read())["hits"]]
+    res = api_post("/api/search", {"query": q, "userKey": BENCH_USER, "limit": 20})
+    ids = [h["pageId"] for h in res["hits"]]
     if gold in ids:
         return ids.index(gold) + 1, "search", gold
     return -1, "search", (ids[0] if ids else "none")
@@ -140,16 +133,13 @@ def main() -> int:
     ap.add_argument("--out", default="rank.jsonl")
     a = ap.parse_args()
 
-    groups = [g for g in GROUPS
-              if a.groups is None or any(g[0].startswith(p) for p in a.groups)]
+    groups = select_groups(GROUPS, a.groups)
 
     # **도달 못 하면 여기서 멈춘다.** 그냥 두면 첫 질의에서 raw URLError 로 죽어
-    # "서버를 안 띄웠다" 를 알기 어렵다.
-    try:
-        urllib.request.urlopen(SERVER + "/api/health", timeout=5).read()
-    except Exception as e:  # noqa: BLE001
-        print(f"  ✗ {SERVER} 에 못 닿는다 ({e}) — `bench/setup.sh up` 을 먼저 돌릴 것",
-              file=sys.stderr)
+    # "서버를 안 띄웠다" 를 알기 어렵다. 플러그인 격리는 안 쓰므로 `server` 면 된다.
+    bad = require_server(need_plugins=False)
+    if bad:
+        print(f"  ✗ {bad}", file=sys.stderr)
         return 2
 
     out = HERE / "results" / a.out
