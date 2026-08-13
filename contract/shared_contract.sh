@@ -239,6 +239,18 @@ check "두 스킬이 같은 우선순위를 말함 (서버판 우선 · 배타�
    && ! grep -q "하나만 고르세요" .claude-plugin/marketplace.json \
    && grep -q "OTHER=" plugin/local/scripts/vault_status.py'
 
+# **배제 조항은 스킬만으로는 아무것도 안 막는다.** 서버판 MCP 도구는 스킬 선택과
+# 무관하게 항상 도구 목록에 뜨므로(바로 위 항목·D13), 모델이 실제로 읽는 것은 도구
+# 설명이다. 한때 스킬에만 "코드베이스 자체에는 쓰지 마세요" 가 있고 도구 설명에는
+# "아키텍처 문서를 찾을 때 반드시 먼저" 만 있어서, **지금 열려 있는 저장소의 아키텍처를
+# 물으면 위키를 먼저 뒤질 근거**가 됐다(치명적이진 않다 — 읽기 전용이고 왕복 한두 번을
+# 버린다). `grep` 은 설명에 "식별자·코드 조각" 이 있어 `search` 보다 오히려 새기 쉽다.
+check "코드베이스 배제가 스킬과 MCP 도구 설명 양쪽에 있음 (도구 설명이 실제 관문)" \
+  'grep -q "코드베이스 자체" plugin/local/skills/search/SKILL.md \
+   && grep -q "코드베이스 자체" plugin/client/skills/search/SKILL.md \
+   && grep -q "코드베이스 자체" plugin/client/mcp/wikilens_mcp.py \
+   && [ "$(grep -c "NOT_FOR_CODEBASE" plugin/client/mcp/wikilens_mcp.py)" -ge 3 ]'
+
 # 두 판이 대소문자를 다르게 다루면 **판을 옮긴 사용자가 같은 질의에 다른 답을 받는다.**
 # 두 경로가 어긋나기 쉬운 이유는 각자의 기본값이 반대라서다 — ripgrep(로컬판의 Grep)은
 # 대소문자를 구분하고, 서버는 리터럴 경로가 ignoreCase 라 정규식도 거기 맞췄다.
