@@ -115,6 +115,31 @@ def steps(pattern: str, reps: int) -> list[tuple[int, int, bool]]:
     return out + [(qi, reps - 2 + i, False) for i, qi in enumerate((1, 2))]
 
 
+def verdict(fired: list[tuple[str, int]], pattern: str) -> None:
+    """
+    그룹별로 몇 회차부터 서빙됐나, 그리고 그것이 **예측과 같은가**.
+
+    **예측을 여기 적어 두고 대조한다.** 나중에 결과만 남으면 이 수치가 예상과 같았는지
+    달랐는지를 복원할 수 없다 — 그 차이가 D23 을 다시 볼지를 가른다.
+    """
+    what = "반복 질의" if pattern == "repeat" else "**다른 표현**(시험 단계)"
+    print(f"\n  === 판정 ({pattern}) — {what} 에 힌트가 서빙됐나 ===")
+    for name, first in fired:
+        print(f"    {name:<22} " + ("끝까지 힌트 0" if first < 0 else f"r{first} 부터 서빙"))
+
+    none = [n for n, f in fired if f < 0]
+    if pattern == "repeat":
+        print("\n    예측: r1 부터 서빙 (c=1.0, ebLower(1,0,0.85)=0.62 > 문턱 0.45)")
+        if none:
+            print(f"    → **예측과 다르다.** {len(none)}그룹이 끝까지 0 이다. "
+                  "가장 유리한 조건에서도 안 오르면 아래는 볼 것이 없다")
+    else:
+        print("\n    예측: 끝까지 0 (항 겹침 0~3개 → c=0.17~0.43 < 문턱 0.73)")
+        if len(none) < len(fired):
+            print("    → **예측을 깼다.** 표현 전이가 된다는 뜻이라 D23 의 전제가 바뀐다. "
+                  "항이 적은 질의는 겹침 하나가 c 를 크게 올린다")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pattern", choices=["repeat", "transfer"], default="repeat")
@@ -196,27 +221,7 @@ def main() -> int:
           f" · 포스팅 항 {t0.get('terms', 0)} → {t1.get('terms', 0)}개"
           f" · 서빙 {t1.get('served', 0)} · 거부 {t1.get('rejected', 0)}")
 
-    what = "반복 질의" if a.pattern == "repeat" else "**다른 표현**(시험 단계)"
-    print(f"\n  === 판정 ({a.pattern}) — {what} 에 힌트가 서빙됐나 ===")
-    for name, first in fired:
-        if first < 0:
-            print(f"    {name:<22} 끝까지 힌트 0")
-        else:
-            print(f"    {name:<22} r{first} 부터 서빙")
-
-    # **예측을 여기 적어 두고 대조한다.** 나중에 결과만 남으면 이 수치가 예상과 같았는지
-    # 달랐는지를 복원할 수 없다 — 그 차이가 D23 을 다시 볼지를 가른다.
-    none = [n for n, f in fired if f < 0]
-    if a.pattern == "repeat":
-        print("\n    예측: r1 부터 서빙 (c=1.0, ebLower(1,0,0.85)=0.62 > 문턱 0.45)")
-        if none:
-            print(f"    → **예측과 다르다.** {len(none)}그룹이 끝까지 0 이다. "
-                  "가장 유리한 조건에서도 안 오르면 아래는 볼 것이 없다")
-    else:
-        print("\n    예측: 끝까지 0 (항 겹침 0~3개 → c=0.17~0.43 < 문턱 0.73)")
-        if len(none) < len(fired):
-            print("    → **예측을 깼다.** 표현 전이가 된다는 뜻이라 D23 의 전제가 바뀐다. "
-                  "항이 적은 질의는 겹침 하나가 c 를 크게 올린다")
+    verdict(fired, a.pattern)
 
     print(f"\n  결과 {out}")
     return 0
