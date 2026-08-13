@@ -182,6 +182,45 @@ def test_대조군이_더_움직이면_잡음이라고_말한다(tmp_path, capsy
     assert "학습 덕으로 읽을 수 없다" in capsys.readouterr().out
 
 
+def test_힌트를_받은_질의만_학습기여분에_센다(tmp_path, capsys, monkeypatch):
+    """
+    **warm 이라고 다 힌트를 받는 것이 아니다** — 학습된 질의에서만 서빙된다. 안 거르면
+    학습이 안 닿은 그룹의 잡음이 중앙값을 지배한다. 실측으로 겪었다: G04 가 -3% 인데
+    학습 없는 G01·G09 가 +81%·+63% 라 전체가 **+63%** 로 나왔고, 그것을 "학습 기여" 로
+    읽었다. 힌트를 기록해 거르면 같은 데이터가 -3% 가 된다.
+    """
+    cost = {"G01": (180000, 330000), "G04": (168000, 163000), "G09": (177000, 288000)}
+    p = tmp_path / "a.jsonl"
+    with Writer(p) as w:
+        for case in ("A 원시grep", "B 로컬판", "C 서버판"):
+            for g, (cold, warm) in cost.items():
+                for mode, tok in (("cold", cold), ("warm", warm)):
+                    w.write(record(harness="agent", case=case, group=g, qi=0, query="q",
+                                   gold="1", rep=0, mode=mode, tokens=tok, cost=0.5,
+                                   # 힌트는 C 의 G04 에만 붙는다 — 거기만 학습됐다
+                                   hints=1 if (mode == "warm" and case.startswith("C")
+                                               and g == "G04") else 0,
+                                   extra={"tools": ["x"]}))
+    monkeypatch.setattr(report, "RESULTS", tmp_path)
+    report.mode_split([r for r in load(p) if r.harness == "agent"], False)
+    out = capsys.readouterr().out
+    assert "+63%" not in out, "학습이 안 닿은 그룹이 섞였다"
+    assert "-3%" in out and "학습 효과가 안 보인다" in out
+
+
+def test_토큰이_늘면_학습기여로_읽지_않는다():
+    """
+    **방향을 봐야 한다** — 학습이 일하면 토큰이 준다. 한때 `abs()` 로만 비교해
+    63% 늘었는데 "학습 기여로 읽을 여지가 있다" 고 찍었다.
+    """
+    up = report._verdict({"A 원시grep": 0.05, "B 로컬판": -0.05, "C 서버판": 0.63})
+    assert "늘었다" in up and "학습이 일하면 줄어야 한다" in up
+    assert "학습 기여로 읽을 여지" not in up
+
+    down = report._verdict({"A 원시grep": 0.05, "B 로컬판": -0.05, "C 서버판": -0.63})
+    assert "학습 기여로 읽을 여지가 있다" in down
+
+
 def test_collect_는_하위디렉터리를_안_걷는다(tmp_path, monkeypatch):
     """
     옛 형상 결과는 `stale-*/` 로 치운다. 그것이 다시 걷히면 **코드가 바뀐 전후를 한

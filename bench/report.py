@@ -21,6 +21,9 @@ from harness import RESULTS, load, overlaps, summarize, too_few, wilson  # noqa:
 
 CASE_ORDER = ["A 원시grep", "B 로컬판", "C 서버판"]
 
+#: 학습이 없는 상태. `agent.py`·`learn.py` 가 서버의 궤적 수로 판정해 기록한다.
+COLD = "cold"
+
 
 def collect() -> list:
     """
@@ -208,9 +211,24 @@ def mode_split(rs: list, md: bool) -> None:
         return
     print("\n## 학습 기여분 (cold ↔ warm)\n" if md else "\n=== 학습 기여분 (cold ↔ warm) ===")
 
+    # **힌트를 실제로 받은 질의만 본다.** warm 이라고 다 받는 것이 아니다 — 학습된
+    # 질의에서만 서빙된다. 안 거르면 학습이 안 닿은 그룹의 잡음이 중앙값을 지배한다
+    # (실측: G04 가 -3% 인데 학습 없는 G01·G09 가 +81%·+63% 라 전체가 +63% 로 나왔고,
+    # 아래 판정이 그것을 "학습 기여" 로 읽었다).
+    #
+    # C 케이스에서만 판단한다 — A·B 는 학습이 아예 없으므로 `hints` 가 늘 0 이다.
+    learned = {(r.group, r.qi) for r in rs
+               if r.mode != COLD and r.case.startswith("C") and r.hints > 0}
+
     # 두 모드에 다 나타난 (그룹, 질의) 만 대상이다.
     seen = {m: {(r.group, r.qi) for r in rs if r.mode == m} for m in modes}
     common = set.intersection(*seen.values()) if seen else set()
+    if learned:
+        common &= learned
+    elif any(r.mode != COLD for r in rs):
+        # 옛 결과에는 `hints` 가 없어 0 이다. 그때는 거를 수 없다 — 조용히 넘어가지 말고
+        # 아래 판정이 무엇을 근거로 하는지 밝힌다.
+        print("  ! 힌트 기록이 없다(옛 형상) — 학습이 안 닿은 질의가 섞여 있을 수 있다")
     if not common:
         print("  두 모드에 공통인 질의가 없다 — 비교하면 학습이 아니라 질의 구성을 재게 된다."
               if not md else
@@ -255,19 +273,28 @@ def mode_split(rs: list, md: bool) -> None:
 
 def _verdict(deltas: dict[str, float]) -> str:
     """
-    **판정은 셋으로 갈린다.** "C 가 안 움직였다" 와 "대조군이 더 움직였다" 는 다른
-    상태인데, 뭉치면 학습 효과가 없는 것을 측정 잡음 탓으로 잘못 읽는다.
+    **판정은 넷으로 갈린다.** 뭉치면 틀린 결론으로 이끈다:
+
+      - "C 가 안 움직였다" 와 "대조군이 더 움직였다" 는 다른 상태다. 뭉치면 학습 효과가
+        없는 것을 측정 잡음 탓으로 읽는다.
+      - **방향을 봐야 한다.** 학습이 일하면 토큰이 **준다**. 한때 `abs()` 로만 비교해
+        **63% 늘었는데 "학습 기여로 읽을 여지가 있다"** 고 찍었다.
     """
     control = [abs(d) for c, d in deltas.items() if not c.startswith("C")]
     cd = deltas.get("C 서버판")
     if not control or cd is None:
         return ""
+    noise = max(control)
     if abs(cd) < 0.05:
         return f"\n  C 가 거의 안 움직였다({cd:+.0%}) — 이 표본에서 학습 효과가 안 보인다"
-    if abs(cd) <= max(control):
-        return (f"\n  ★ 학습이 없는 A·B 가 {max(control):.0%} 움직였다 — "
-                f"C 의 {abs(cd):.0%} 를 학습 덕으로 읽을 수 없다(측정 변동이 그만큼이다)")
-    return (f"\n  대조군(A·B) 변동 {max(control):.0%} 보다 C 의 {abs(cd):.0%} 가 크다 "
+    if abs(cd) <= noise:
+        return (f"\n  ★ 학습이 없는 A·B 가 {noise:.0%} 움직였다 — "
+                f"C 의 {abs(cd):+.0%} 를 학습 덕으로 읽을 수 없다(측정 변동이 그만큼이다)")
+    if cd > 0:
+        return (f"\n  ★ C 의 토큰이 **{cd:+.0%} 늘었다**(대조군 변동 {noise:.0%}) — "
+                "학습이 일하면 줄어야 한다. 힌트가 오히려 더 헤매게 했거나, "
+                "이 표본이 학습과 무관한 변동을 보고 있다")
+    return (f"\n  대조군(A·B) 변동 {noise:.0%} 보다 C 의 감소 {abs(cd):.0%} 가 크다 "
             "— 학습 기여로 읽을 여지가 있다")
 
 
