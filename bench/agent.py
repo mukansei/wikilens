@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import pathlib
+import re
 import signal
 import subprocess
 import sys
@@ -51,6 +52,11 @@ from queries import GROUPS, MINIMAL  # noqa: E402
 #: 깨끗하다 — 그러면 각 세션이 자기 플러그인만 본다(실측 확인).
 DENY = "WebFetch,WebSearch,Task,Edit,Write,NotebookEdit"
 
+
+#: MCP 프록시가 `search` 결과 첫 줄에 찍는 `학습 힌트 N`. 형식이 바뀌면 여기도 바꿔야
+#: 하는데, 안 바꾸면 **힌트를 0 으로 읽어 warm 측정이 통째로 제외된다** — 조용하지 않게
+#: `report.py` 가 "힌트를 받은 측정이 없다" 로 지목한다.
+_HINTS = re.compile(r"학습 힌트 (\d+)")
 
 ASK = ("찾은 문서의 페이지 ID(숫자)만 마지막 줄에 `ANSWER=<id>` 형식으로 답하세요. "
        "못 찾으면 `ANSWER=none`.")
@@ -124,6 +130,7 @@ def run_once(argv: list[str]) -> dict:
     # **어느 도구를 썼는지**가 격리 검증이다 — C 가 MCP 를 정말 쓰는지, A 가 힌트
     # 파일을 안 보는지는 도구 이름으로만 확인된다.
     tools: list[str] = []
+    hints = 0
     d = None
     for line in out.splitlines():
         try:
@@ -134,6 +141,23 @@ def run_once(argv: list[str]) -> dict:
             for c in ev.get("message", {}).get("content", []):
                 if c.get("type") == "tool_use":
                     tools.append(c.get("name", "?"))
+        elif ev.get("type") == "user":
+            # **이 세션이 힌트를 실제로 받았나.** warm 이라고 다 받는 것이 아니다 —
+            # 학습된 질의에서만 서빙된다. 그 구별 없이 cold↔warm 을 비교하면 학습이
+            # 안 닿은 그룹의 잡음이 중앙값을 지배한다(실측: G04 는 -3% 인데 학습이
+            # 없는 G01·G09 가 +81%·+63% 라 전체가 +63% 로 나왔다).
+            #
+            # 서버 응답을 직접 못 보므로 MCP 프록시가 찍는 문장에서 읽는다 —
+            # `search` 도구의 첫 줄이 `N건 (어휘 후보 X · 학습 힌트 Y)` 다.
+            for c in ev.get("message", {}).get("content", []):
+                if c.get("type") != "tool_result":
+                    continue
+                body = c.get("content")
+                text = body if isinstance(body, str) else "".join(
+                    b.get("text", "") for b in body or [] if isinstance(b, dict))
+                m = _HINTS.search(text)
+                if m:
+                    hints += int(m.group(1))
         elif ev.get("type") == "result":
             d = ev
     if d is None:
@@ -160,6 +184,8 @@ def run_once(argv: list[str]) -> dict:
         # **질의 연산 수와 그 종류.** 왕복 하나하나가 지연과 토큰을 함께 쓰므로
         # 이것이 비용의 실제 동인이다. 이름까지 남기는 것은 격리 검증용이다.
         "calls": len(tools),
+        # **이 세션이 받은 학습 힌트 총합.** 0 이면 warm 이어도 학습이 안 닿은 것이다.
+        "hints": hints,
         "extra": {"out_tokens": u.get("output_tokens", 0),
                   "cache_read": u.get("cache_read_input_tokens", 0),
                   "tools": tools},
