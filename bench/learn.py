@@ -98,6 +98,23 @@ def probe(query: str, gold: str, sid: str, read_gold: bool) -> dict:
     }
 
 
+def steps(pattern: str, reps: int) -> list[tuple[int, int, bool]]:
+    """
+    한 그룹에서 밟을 `(질의 번호, 회차, 학습인가)` 목록.
+
+    `repeat` 은 같은 표현을 반복한다 — 커버리지 c=1.0 이라 학습에 가장 유리하다.
+    `transfer` 는 q0 로 학습시킨 뒤 **다른 표현**으로 시험하고, **시험 회차는 읽지
+    않는다** — 읽으면 그 자체가 학습이 되어 다음 시험이 오염된다.
+
+    회차 번호가 음수가 되면 안 된다 — 워밍(`rep=-1`)과 이어받기 키가 충돌한다.
+    `main` 이 `transfer` 에 `reps >= 3` 을 요구하는 이유가 그것이다.
+    """
+    if pattern == "repeat":
+        return [(0, r, True) for r in range(reps)]
+    out = [(0, r, True) for r in range(reps - 2)]
+    return out + [(qi, reps - 2 + i, False) for i, qi in enumerate((1, 2))]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pattern", choices=["repeat", "transfer"], default="repeat")
@@ -147,16 +164,7 @@ def main() -> int:
         for name, gold, _title, queries in groups:
             print(f"  {name}  정답 {gold}")
             first = -1
-            if a.pattern == "repeat":
-                # 같은 표현을 반복한다 — 커버리지 c=1.0 이라 학습에 가장 유리하다.
-                steps = [(0, r, True) for r in range(a.reps)]
-            else:
-                # q0 로 학습시킨 뒤 **다른 표현**으로 시험한다. 시험 회차는 읽지 않는다 —
-                # 읽으면 그 자체가 학습이 되어 다음 시험이 오염된다.
-                steps = [(0, r, True) for r in range(a.reps - 2)]
-                steps += [(qi, a.reps - 2 + i, False) for i, qi in enumerate((1, 2))]
-
-            for qi, rep, learn in steps:
+            for qi, rep, learn in steps(a.pattern, a.reps):
                 q = queries[qi]
                 r = probe(q, gold, f"learn-{stamp}-{name[:3]}-{qi}-{rep}", learn)
                 w.write(record(harness="learn", case="C 서버판", group=name, qi=qi,
