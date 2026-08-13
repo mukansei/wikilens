@@ -135,7 +135,52 @@ python3 bench/agent.py --pattern transfer --reps 5 --groups G04
 | `repeat` | q0×N, q1×N, q2×N | **정확 반복** — c=1.0 이라 발동해야 한다 |
 | `transfer` | q0 를 N−1회 학습 → q1,q2 시험 | **표현 전이** — c 가 낮아 안 될 것이다 |
 
-권장 순서: **cold 한 벌 → warm + repeat → warm + transfer.**
+---
+
+## 권장 흐름 — cold 와 warm 을 한 표에서 보기
+
+```bash
+# ① 학습이 발동하는지부터 $0 로 (서버만 띄운다 — 플러그인 안 건드림)
+bench/setup.sh server cold
+python3 bench/learn.py --pattern repeat
+python3 bench/learn.py --pattern transfer
+
+# ② cold — 검색 엔진 자체
+bench/setup.sh up cold
+python3 bench/agent.py                                    # 9세션 ~$5
+
+# ③ warm — 학습까지. ②가 만든 궤적을 물려받는다
+bench/setup.sh up warm
+python3 bench/agent.py --pattern repeat --reps 3 --groups G04 --per-group 1
+
+bench/setup.sh down                                       # 플러그인 복구
+python3 bench/report.py
+```
+
+**①을 먼저 하는 이유:** 서빙이 0 인 채로 세션을 태우면 "학습이 행동을 안 바꿨다" 와
+"애초에 학습이 없었다" 가 구별되지 않는다. $0 이므로 안 할 이유가 없다.
+
+**③에서 `--groups G04` 로 좁히는 이유:** ②가 만드는 궤적은 그룹당 **1건**뿐이라
+그것으로 힌트가 서빙되는 그룹이 G04 하나다(실측, `learn.py`). 나머지 둘은 warm 이어도
+cold 와 같은 값이 나와 세션만 태운다. `repeat 3회`로 몰아주면 **회차별 곡선**이 나온다.
+
+**같은 파일(`agent.jsonl`)에 이어 써도 된다.** `mode` 가 키에 들어 있어 cold 와 warm 이
+안 섞인다 — 예전에는 `done_keys` 가 warm 을 통째로 건너뛰거나, 파일을 나눠도
+`report.collect` 가 **cold 를 warm 으로 덮었다**(먼저 잰 쪽이 리포트에서 사라졌다).
+
+리포트의 **`학습 기여분 (cold ↔ warm)`** 절이 둘을 나란히 낸다:
+
+```
+  A 원시grep     cold 0/3 · 1,200,000tok  warm 0/3 · 1,180,000tok
+  B 로컬판        cold 0/3 ·   450,000tok  warm 0/3 ·   460,000tok
+  C 서버판        cold 0/3 ·   320,000tok  warm 3/3 ·   180,000tok
+
+  대조군(A·B) 변동 2% 보다 C 의 44% 가 크다 — 학습 기여로 읽을 여지가 있다
+```
+
+**A·B 가 대조군이다.** 둘에는 학습이 아예 없으므로 cold 와 warm 이 같아야 한다.
+거기서 차이가 나면 학습이 아니라 **측정 변동**을 보는 것이고, 그 폭이 C 의 차이보다
+크면 C 의 차이도 못 믿는다. 리포트가 그 판정을 대신 한다.
 
 ---
 
