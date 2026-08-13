@@ -17,10 +17,9 @@ data class WikiLensProperties(
      */
     val vaultRoot: String = DEFAULT_VAULT_ROOT,
     /**
-     * 색인·상태도 **홈 아래**다. 예전에는 `./.wikilens/…` 라 실행 디렉터리에 매여 있었고,
-     * 그래서 IntelliJ 가 `fun main` 에서 띄우면 저장소 루트에, `gradlew bootRun` 은
-     * `server/` 에 만들었다 — **같은 서버가 작업 디렉터리에 따라 다른 궤적 로그를 썼다**
-     * (실측). 궤적은 유일한 복구 불가 자산이라 그 갈림이 가장 비싸다.
+     * 색인·상태도 **홈 아래**다 — 상대경로면 작업 디렉터리에 매인다. 실측: IntelliJ 의
+     * `fun main` 은 저장소 루트에, `gradlew bootRun` 은 `server/` 에 만들어 **같은 서버가
+     * 다른 궤적 로그를 썼다.** 궤적은 유일한 복구 불가 자산이라 그 갈림이 가장 비싸다.
      *
      * Docker 는 `/vault`·`/index`·`/state` 를 환경변수로 덮는다(`Dockerfile`).
      */
@@ -34,12 +33,8 @@ data class WikiLensProperties(
      */
     val analyzer: String = "korean",
     /**
-     * 질의 시점 ACL 시행. **기본이 꺼짐이다** — 지금의 시행은 실질적으로 사용자
-     * 허용목록이라(`sync` 가 권한을 안 가져온다) 얻는 것 없이 전원이 빈손이 되는
-     * 함정이었다. 켜는 조건과 그때 생기는 일은 [AclRegistry] 참고.
-     *
-     * **꺼져 있다는 사실은 기동 로그·`/api/stats`·`--status` 셋이 계속 말한다.**
-     * 조용히 열린 것이 아니라 시끄럽게 열린 상태여야 이 기본값이 정당하다.
+     * 질의 시점 ACL 시행. **기본이 꺼짐**이고, 그 근거와 켜는 조건은 `application.yml` 에.
+     * 스위치의 유일한 소비처는 [io.wikilens.acl.AclRegistry] 다.
      */
     val aclEnforced: Boolean = false,
     /** `/api/admin` 공유 토큰. **비면 관리 API 가 전부 404.** 근거는 [io.wikilens.api.AdminGuard]. */

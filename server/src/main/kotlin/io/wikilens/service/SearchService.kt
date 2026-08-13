@@ -14,9 +14,6 @@ import org.springframework.stereotype.Service
 /**
  * 어휘 랭킹(Lucene) + 학습 힌트(궤적) 융합.
  *
- * `api/` 에서 분리한 이유는 한 패키지가 "라우팅" 과 "무엇을 하는가" 를 함께 가지면 랭킹을
- * 고치려는 사람과 엔드포인트를 추가하려는 사람이 같은 자리를 열어서다.
- *
  * 학습 힌트는 순위가 아니라 **신뢰도로 가중**한다 — EB 하한은 이미 확률이라 순위로
  * 뭉개면 보정된 정보를 버린다.
  */
@@ -71,25 +68,18 @@ class SearchService(
         val top = lexical.firstOrNull()?.score?.toDouble()?.takeIf { it > 0.0 } ?: 1.0
         val priors = lexical.associate { it.id to (it.score / top).coerceIn(0.0, 1.0) }
 
-        // **서빙 못 할 후보는 자르기 전에 거른다.** `take` 뒤에 거르면 버려질 후보가
-        // limit 슬롯을 먹어, 서빙 가능한 힌트가 아래에 있어도 안 나온다 — 같은 술어를
-        // 자리만 바꿔 세 번 놓쳤다(`CLAUDE.md` 조용히 실패 8·22번).
+        // **이 술어가 유일한 권한 관문이다.** [fuse]·[materialize] 에는 재확인이 없다 —
+        // 이 요청은 위에서 `tokens` 를 한 번 잡아 어휘 검색까지 그것으로 했으므로, 한
+        // 요청이 한 권한 스냅샷으로 답한다(요청 도중 권한이 바뀌어도).
         //
-        //   - **권한** — 실제로 겪은 실패. 권한이 좁으면 힌트가 통째로 0 이 됐다.
-        //   - **존재** — 포스팅은 한 번도 지워지지 않는다(궤적 로그가 정본이고
-        //     append-only). 단 **도달 경로는 아직 확인되지 않았다**: `VaultReader.read` 가
-        //     `acl.replacePages` 로 `retainAll` 하므로 삭제 방향은 권한 술어가 이미
-        //     거른다(실측). 남는 자리는 `reload()` 의 `replacePages` → `rebuild` 사이
-        //     창뿐이다. "고친 버그" 가 아니라 아직 안 일어난 것을 막는 것으로 읽을 것.
-        //
-        // **이 술어가 유일한 권한 관문이다.** 아래 융합 루프에는 재확인이 없다 —
-        // `canSee(userKey, p)` 는 정의상 `canSee(tokensFor(userKey), p)` 이고, 이 요청은
-        // 위에서 `tokens` 를 한 번 잡아 어휘 검색까지 그것으로 했다. 재확인은 **그 안에서
-        // 유일하게 토큰을 다시 읽던 자리**라, 없앤 쪽이 요청 내 일관성이 높다(권한이 요청
-        // 도중 바뀌어도 한 요청은 한 권한 스냅샷으로 답한다).
+        // 존재 검사(`metaOf`)가 함께 있는 이유: 포스팅은 한 번도 지워지지 않는다(궤적
+        // 로그가 정본이고 append-only). **도달 경로는 아직 확인되지 않았다** — 삭제 방향은
+        // 권한 술어가 이미 거르고(실측), 남는 자리는 `reload()` 의 `replacePages` →
+        // `rebuild` 사이 창뿐이다. 고친 버그가 아니라 안 일어난 것을 막는 것으로 읽을 것.
         //
         // **옮기거나 지우지 말 것** — `SearchServiceTest` 의 "권한 없는 페이지는 학습
         // 힌트로도 새지 않는다" 가 이것 하나에 걸려 있다(빼면 빨개진다, 확인함).
+        // 자르기 전에 거르는 이유는 `TrajectoryStore.hints` 의 KDoc 에 있다.
         val hints = store.hints(terms, priors, limit) { pid ->
             acl.canSee(tokens, pid) && index.metaOf(pid) != null
         }

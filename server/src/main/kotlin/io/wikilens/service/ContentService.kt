@@ -1,11 +1,5 @@
 package io.wikilens.service
 
-/*
- * `api/` 에서 분리했다. 거기엔 HTTP 표면(`Controller`·`Dto`)만 남는다 —
- * 한 패키지가 "라우팅"과 "무엇을 하는가"를 함께 갖고 있으면, 검색 랭킹을 고치려는
- * 사람과 엔드포인트를 추가하려는 사람이 같은 자리를 연다.
- */
-
 import io.wikilens.api.GrepResponse
 import io.wikilens.api.ReadResponse
 
