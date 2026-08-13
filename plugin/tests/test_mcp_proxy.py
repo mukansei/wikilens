@@ -166,6 +166,13 @@ def main() -> int:
         names = [t["name"] for t in r["result"]["tools"]]
         check("도구 4개", names == ["search", "read", "grep", "tree"], f"실제={names}")
         check("스키마 있음", all("inputSchema" in t for t in r["result"]["tools"]))
+        # **목록과 처리기가 어긋나면 목록에는 보이는데 부르면 "알 수 없는 도구" 가 된다.**
+        # 도구별 처리가 `HANDLERS` dict 로 나뉘면서 두 곳이 같아야 하는 자리가 생겼다.
+        for n in names:
+            rr = rpc(proc, {"jsonrpc": "2.0", "id": 200, "method": "tools/call",
+                            "params": {"name": n, "arguments": {}}})
+            body = rr.get("result", {}).get("content", [{}])[0].get("text", "")
+            check(f"{n} 에 처리기가 있음", "알 수 없는 도구" not in body, body[:40])
 
         print("\n=== 3. search ===")
         r = rpc(proc, {"jsonrpc": "2.0", "id": 3, "method": "tools/call",

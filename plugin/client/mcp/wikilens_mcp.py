@@ -159,21 +159,12 @@ def unreachable_hint(e: Exception) -> str:
     return ""
 
 
-def status() -> int:
-    """
-    설정과 서버 상태를 한 번에 진단한다 (로컬판 `vault_status.py` 에 대응).
-
-    서버는 `/api/health` 와 `/api/stats` 를 이미 갖고 있는데 플러그인이 쓰지 않아
-    사용자에게 닿지 않았다. 검색이 빈손일 때 원인이 셋(주소·식별자·색인) 중
-    무엇인지 구분할 방법이 없었다.
-    """
-    print(f"SERVER={SERVER} ({SERVER_ORIGIN})")
-    print(f"USER={USER or '(미설정)'} ({USER_ORIGIN})")
-    print(f"CONFIG={CONFIG_PATH if CONFIG_PATH.exists() else '(없음)'}")
-
+def _probe_reach() -> bool:
+    """닿나. 못 닿으면 **원인마다 다른 다음 걸음**을 함께 낸다([unreachable_hint])."""
     try:
         get("/api/health")
         print("REACHABLE=yes")
+        return True
     except Exception as e:  # noqa: BLE001
         print(f"REACHABLE=no ({e})")
         hint = unreachable_hint(e)
@@ -183,128 +174,176 @@ def status() -> int:
             print("\n서버 주소를 설정한 적이 없어 기본값(로컬)을 보고 있습니다.")
             print("  운영자에게 받은 주소를 넣으세요:")
             print(f"    python3 {pathlib.Path(__file__).name} --configure --server <주소> --user <본인 식별자>")
+        return False
+
+
+def _probe_index(s: dict) -> bool:
+    """색인과 분석기. 겉으로 초록인데 못 쓰는 조합을 짚는다."""
+    docs, pages = s.get("indexedDocs", 0), s.get("aclPages", 0)
+    ok = True
+
+    # 색인이 지어진 분석기와 서버 설정. **다를 때만** 의미가 있다 — 같으면 정상이라
+    # 줄만 늘어난다. 다르면 재색인이 안 된 상태이고, 실질적으로는 볼트를 못 읽어
+    # 기동 적재가 건너뛰어진 경우다. 그전에는 기동 로그로만 알 수 있었다.
+    built, want = s.get("analyzer"), s.get("analyzerConfigured")
+    if built and want and built != want:
+        print(f"ANALYZER={built} (설정은 {want})")
+        print(f"\n색인은 '{built}' 로 지어졌는데 서버 설정은 '{want}' 입니다.")
+        print("  검색은 정상 동작하지만 설정이 반영되지 않았습니다 —"
+              " 볼트를 못 읽어 기동 적재가 건너뛰어졌을 수 있습니다.")
+        print("  운영자가 볼트 경로를 확인한 뒤 POST /api/admin/reindex 를 돌려야 합니다.")
+        ok = False
+    elif built:
+        print(f"ANALYZER={built}")
+
+    # 서버에 기동 훅이 없다. Lucene 색인은 디스크에 남아 재기동 후에도 검색되는데
+    # ACL 페이지 맵은 메모리라 비어서 뜬다 — **검색은 되고 read 는 전부 404** 인
+    # 상태다. 겉으로는 전부 초록이라 이 조합을 짚어주지 않으면 못 찾는다
+    # (2026-08-06 실측: 재색인 전 read 404 → 재색인 후 200).
+    if docs and not pages:
+        print("\n색인은 있는데 ACL 페이지 맵이 비어 있습니다 — 검색은 되지만"
+              " **읽기가 전부 실패**합니다.")
+        print("  운영자가 POST /api/admin/reindex 를 한 번 돌리면 해결됩니다.")
+        print("  (서버를 재기동할 때마다 필요합니다.)")
+        ok = False
+    if not docs:
+        print("\n색인이 비어 있습니다. 운영자에게 재색인을 요청하세요.")
+        ok = False
+    return ok
+
+
+def _probe_grep(s: dict) -> bool:
+    """
+    본문 스캔 경로가 둘(JVM·ripgrep)이라 같은 질의가 어느 쪽으로 처리됐는지가 답의
+    근거가 된다. 기동 로그는 콘솔로만 나가고 응답의 `engine` 은 grep 을 던져야
+    보이므로, 여기가 로그를 못 보는 사람에게 닿는 유일한 자리다.
+    """
+    eng = s.get("grepEngine")
+    if eng:
+        print(f"GREP_ENGINE={eng}")
+    # 명시했는데 못 쓰는 상태. 동작은 하므로(매 요청 폴백) 겉으로는 정상이다.
+    if eng and s.get("grepEngineUsable") is False:
+        print(f"\n'{eng}' 로 설정돼 있는데 이 머신에서 쓸 수 없습니다 —"
+              " 매 요청이 JVM 스캔으로 넘어갑니다.")
+        print("  동작은 하지만 큰 코퍼스에서 grep 이 잘립니다. 운영자가 ripgrep 을"
+              " 설치하거나 wikilens.grep-engine 을 고쳐야 합니다.")
+        return False
+    return True
+
+
+def _probe_acl(s: dict) -> tuple[bool, bool]:
+    """`(정상인가, 시행 중인가)`. 시행 여부가 뒤의 USER 검사까지 가른다."""
+    users, pages = s.get("aclUsers", 0), s.get("aclPages", 0)
+    ok = True
+
+    # ACL 시행이 꺼져 있으면 등록이 필요 없다 — 아래 경고들이 다 헛말이 된다.
+    enforced = s.get("aclEnforced", True)
+    if not enforced:
+        print("ACL_ENFORCED=no")
+        print("\n이 서버는 권한을 확인하지 않습니다 — 접속한 누구나 색인된 전 문서를"
+              " 봅니다. 운영자가 의도한 것인지 확인하세요.")
+    if enforced and not users:
+        print("\n등록된 사용자가 없습니다 — 아무도 아무것도 못 봅니다.")
+        print("  운영자가 POST /api/admin/acl/user 로 계정을 등록해야 합니다.")
+        ok = False
+    # **등록만으로는 부족하다.** 토큰이 안 겹치면 등록이 있어도 전원이 빈손이고,
+    # 그 상태가 "문서가 없다" 와 구별되지 않는다. `wikilens acl` 을 처음 돌리면
+    # 반드시 걸리는 경로다 — 그전엔 전 페이지가 `@public` 폴백이라 `["@public"]`
+    # 등록으로 다 보이는데, 수집 후엔 `@space:<KEY>` 로 바뀐다.
+    elif enforced and users and pages and s.get("aclTokenOverlap") == 0:
+        ut = ", ".join(s.get("aclUserTokens") or []) or "(없음)"
+        pt = ", ".join(s.get("aclPageTokens") or []) or "(없음)"
+        print("ACL_TOKEN_OVERLAP=0")
+        print("\n등록된 사용자의 토큰이 **어느 페이지 토큰과도 안 겹칩니다** —"
+              " 등록은 됐지만 전원이 빈손입니다.")
+        print(f"  사용자 토큰: {ut}")
+        print(f"  페이지 토큰: {pt}")
+        print("  `wikilens acl` 을 처음 돌린 뒤라면 페이지 토큰이 @public 에서"
+              " @space:<KEY> 로 바뀐 것입니다 — 그 값으로 다시 등록하세요.")
+        ok = False
+    return ok, enforced
+
+
+def _probe_learning(s: dict) -> bool:
+    """검색은 정상인데 **학습만 새는** 상태들. 전부 겉으로는 안 보인다."""
+    ok = True
+
+    # 게이트가 실제로 무엇을 거르는지. UNKNOWN 이 거의 0 이면 `LOCALIZATION 만
+    # 간선 생성` 이 사실상 항등함수라는 뜻이고, 그건 밖에서 볼 방법이 없었다.
+    kinds = s.get("byKind") or {}
+    if sum(kinds.values()):
+        print("QUERY_KINDS=" + " ".join(f"{k}={v}" for k, v in kinds.items() if v))
+
+    # 0 이 아니면 세션 상한이나 sessionId 길이 상한에 걸려 관측을 버리는 중이다.
+    if s.get("droppedSessions"):
+        print(f"DROPPED_SESSIONS={s['droppedSessions']}")
+        print("\n세션 관측을 버리고 있습니다 — 검색은 정상이지만 **그만큼 학습이"
+              " 안 됩니다.** 클라이언트가 요청마다 새 sessionId 를 만들고 있거나"
+              " 비정상적으로 긴 값을 보내는지 확인하세요.")
+        ok = False
+
+    # 궤적 로그 쓰기가 실패해도 메모리 학습은 계속된다. 그래서 이 값이 0 이 아니면
+    # **메모리와 로그가 갈라지는 중**이고, 재기동하면 그만큼이 사라진다.
+    # 궤적은 유일한 복구 불가 자산이라 서버 로그의 WARN 만으로는 부족하다.
+    tl = s.get("trajectoryLog") or {}
+    if tl.get("writeFailures"):
+        print(f"LOG_WRITE_FAILURES={tl['writeFailures']}")
+        print("\n궤적 로그 쓰기가 실패하고 있습니다 — 검색은 정상이지만 **재기동하면"
+              " 그만큼의 학습이 사라집니다.**")
+        print("  운영자가 상태 디렉터리의 여유 공간과 권한을 확인해야 합니다.")
+        ok = False
+    if tl.get("replaySkipped"):
+        print(f"LOG_REPLAY_SKIPPED={tl['replaySkipped']}")
+        print("\n기동 시 궤적 일부를 읽지 못했습니다 — **옛 학습이 버려지는 중**입니다"
+              "(대개 스키마 변경). 로그를 지우지 말고 운영자에게 알리세요.")
+        ok = False
+    # 로그는 append-only 라 줄지 않는다. 조용히 느려지는 자리라 임계 전에 알린다.
+    if (tl.get("replayMillis") or 0) > 10000:
+        mb = (tl.get("bytes") or 0) // (1024 * 1024)
+        print(f"LOG_REPLAY_MILLIS={tl['replayMillis']} (로그 {mb}MB)")
+        print("\n궤적 로그가 커져 기동이 느려지고 있습니다. 동작에는 문제가 없지만"
+              " 운영자가 체크포인트를 검토할 시점입니다.")
+
+    # 권한 폭이 다른 사람들의 관측이 한 포스팅에 섞이면 rank 가중과 목적지 분포가
+    # 사람마다 다른 의미를 갖는다. 지금은 전 페이지가 @public 이라 0 또는 1 이다.
+    scopes = s.get("permissionScopes")
+    if isinstance(scopes, int) and scopes > 1:
+        print(f"PERMISSION_SCOPES={scopes}")
+    return ok
+
+
+def status() -> int:
+    """
+    설정과 서버 상태를 한 번에 진단한다 (로컬판 `vault_status.py` 에 대응).
+
+    서버는 `/api/health` 와 `/api/stats` 를 이미 갖고 있는데 플러그인이 쓰지 않아
+    사용자에게 닿지 않았다. 검색이 빈손일 때 원인이 셋(주소·식별자·색인) 중
+    무엇인지 구분할 방법이 없었다.
+
+    항목별 검사는 `_probe_*` 로 나뉘어 있고 **각자 자기 판정을 낸다** — 하나가
+    실패해도 나머지를 계속 찍는다. 진단이 첫 문제에서 멈추면 사용자가 고치고 다시
+    돌리기를 반복하게 된다.
+    """
+    print(f"SERVER={SERVER} ({SERVER_ORIGIN})")
+    print(f"USER={USER or '(미설정)'} ({USER_ORIGIN})")
+    print(f"CONFIG={CONFIG_PATH if CONFIG_PATH.exists() else '(없음)'}")
+
+    if not _probe_reach():
         return 2
 
     ok = True
     enforced = True          # stats 를 못 받으면 보수적으로 본다
     try:
         s = get("/api/stats")
-        docs, users = s.get("indexedDocs", 0), s.get("aclUsers", 0)
-        pages = s.get("aclPages", 0)
-        print(f"INDEXED_DOCS={docs}")
-        print(f"ACL_PAGES={pages}")
-        print(f"ACL_USERS={users}")
-
-        # 색인이 지어진 분석기와 서버 설정. **다를 때만** 의미가 있다 — 같으면 정상이라
-        # 줄만 늘어난다. 다르면 재색인이 안 된 상태이고, 실질적으로는 볼트를 못 읽어
-        # 기동 적재가 건너뛰어진 경우다. 그전에는 기동 로그로만 알 수 있었다.
-        built, want = s.get("analyzer"), s.get("analyzerConfigured")
-        if built and want and built != want:
-            print(f"ANALYZER={built} (설정은 {want})")
-            print(f"\n색인은 '{built}' 로 지어졌는데 서버 설정은 '{want}' 입니다.")
-            print("  검색은 정상 동작하지만 설정이 반영되지 않았습니다 —"
-                  " 볼트를 못 읽어 기동 적재가 건너뛰어졌을 수 있습니다.")
-            print("  운영자가 볼트 경로를 확인한 뒤 POST /api/admin/reindex 를 돌려야 합니다.")
-            ok = False
-        elif built:
-            print(f"ANALYZER={built}")
-
-        # 본문 스캔 경로가 둘(JVM·ripgrep)이라 같은 질의가 어느 쪽으로 처리됐는지가
-        # 답의 근거가 된다. 기동 로그는 콘솔로만 나가고 응답의 `engine` 은 grep 을
-        # 던져야 보이므로, 여기가 로그를 못 보는 사람에게 닿는 유일한 자리다.
-        eng = s.get("grepEngine")
-        if eng:
-            print(f"GREP_ENGINE={eng}")
-        # 명시했는데 못 쓰는 상태. 동작은 하므로(매 요청 폴백) 겉으로는 정상이다.
-        if eng and s.get("grepEngineUsable") is False:
-            print(f"\n'{eng}' 로 설정돼 있는데 이 머신에서 쓸 수 없습니다 —"
-                  " 매 요청이 JVM 스캔으로 넘어갑니다.")
-            print("  동작은 하지만 큰 코퍼스에서 grep 이 잘립니다. 운영자가 ripgrep 을"
-                  " 설치하거나 wikilens.grep-engine 을 고쳐야 합니다.")
-            ok = False
-
-        # 서버에 기동 훅이 없다. Lucene 색인은 디스크에 남아 재기동 후에도 검색되는데
-        # ACL 페이지 맵은 메모리라 비어서 뜬다 — **검색은 되고 read 는 전부 404** 인
-        # 상태다. 겉으로는 전부 초록이라 이 조합을 짚어주지 않으면 못 찾는다
-        # (2026-08-06 실측: 재색인 전 read 404 → 재색인 후 200).
-        if docs and not pages:
-            print("\n색인은 있는데 ACL 페이지 맵이 비어 있습니다 — 검색은 되지만"
-                  " **읽기가 전부 실패**합니다.")
-            print("  운영자가 POST /api/admin/reindex 를 한 번 돌리면 해결됩니다.")
-            print("  (서버를 재기동할 때마다 필요합니다.)")
-            ok = False
-        if not docs:
-            print("\n색인이 비어 있습니다. 운영자에게 재색인을 요청하세요.")
-            ok = False
-        # ACL 시행이 꺼져 있으면 등록이 필요 없다 — 아래 경고들이 다 헛말이 된다.
-        enforced = s.get("aclEnforced", True)
-        if not enforced:
-            print("ACL_ENFORCED=no")
-            print("\n이 서버는 권한을 확인하지 않습니다 — 접속한 누구나 색인된 전 문서를"
-                  " 봅니다. 운영자가 의도한 것인지 확인하세요.")
-        if enforced and not users:
-            print("\n등록된 사용자가 없습니다 — 아무도 아무것도 못 봅니다.")
-            print("  운영자가 POST /api/admin/acl/user 로 계정을 등록해야 합니다.")
-            ok = False
-        # **등록만으로는 부족하다.** 토큰이 안 겹치면 등록이 있어도 전원이 빈손이고,
-        # 그 상태가 "문서가 없다" 와 구별되지 않는다. `wikilens acl` 을 처음 돌리면
-        # 반드시 걸리는 경로다 — 그전엔 전 페이지가 `@public` 폴백이라 `["@public"]`
-        # 등록으로 다 보이는데, 수집 후엔 `@space:<KEY>` 로 바뀐다.
-        elif enforced and users and pages and s.get("aclTokenOverlap") == 0:
-            ut = ", ".join(s.get("aclUserTokens") or []) or "(없음)"
-            pt = ", ".join(s.get("aclPageTokens") or []) or "(없음)"
-            print("ACL_TOKEN_OVERLAP=0")
-            print(f"\n등록된 사용자의 토큰이 **어느 페이지 토큰과도 안 겹칩니다** —"
-                  f" 등록은 됐지만 전원이 빈손입니다.")
-            print(f"  사용자 토큰: {ut}")
-            print(f"  페이지 토큰: {pt}")
-            print("  `wikilens acl` 을 처음 돌린 뒤라면 페이지 토큰이 @public 에서"
-                  " @space:<KEY> 로 바뀐 것입니다 — 그 값으로 다시 등록하세요.")
-            ok = False
-
-        # 게이트가 실제로 무엇을 거르는지. UNKNOWN 이 거의 0 이면 `LOCALIZATION 만
-        # 간선 생성` 이 사실상 항등함수라는 뜻이고, 그건 밖에서 볼 방법이 없었다.
-        kinds = s.get("byKind") or {}
-        total_kinds = sum(kinds.values())
-        if total_kinds:
-            shown = " ".join(f"{k}={v}" for k, v in kinds.items() if v)
-            print(f"QUERY_KINDS={shown}")
-
-        # 0 이 아니면 세션 상한이나 sessionId 길이 상한에 걸려 관측을 버리는 중이다.
-        if s.get("droppedSessions"):
-            print(f"DROPPED_SESSIONS={s['droppedSessions']}")
-            print("\n세션 관측을 버리고 있습니다 — 검색은 정상이지만 **그만큼 학습이"
-                  " 안 됩니다.** 클라이언트가 요청마다 새 sessionId 를 만들고 있거나"
-                  " 비정상적으로 긴 값을 보내는지 확인하세요.")
-            ok = False
-
-        # 궤적 로그 쓰기가 실패해도 메모리 학습은 계속된다. 그래서 이 값이 0 이 아니면
-        # **메모리와 로그가 갈라지는 중**이고, 재기동하면 그만큼이 사라진다.
-        # 궤적은 유일한 복구 불가 자산이라 서버 로그의 WARN 만으로는 부족하다.
-        tl = s.get("trajectoryLog") or {}
-        if tl.get("writeFailures"):
-            print(f"LOG_WRITE_FAILURES={tl['writeFailures']}")
-            print("\n궤적 로그 쓰기가 실패하고 있습니다 — 검색은 정상이지만 **재기동하면"
-                  " 그만큼의 학습이 사라집니다.**")
-            print("  운영자가 상태 디렉터리의 여유 공간과 권한을 확인해야 합니다.")
-            ok = False
-        if tl.get("replaySkipped"):
-            print(f"LOG_REPLAY_SKIPPED={tl['replaySkipped']}")
-            print("\n기동 시 궤적 일부를 읽지 못했습니다 — **옛 학습이 버려지는 중**입니다"
-                  "(대개 스키마 변경). 로그를 지우지 말고 운영자에게 알리세요.")
-            ok = False
-        # 로그는 append-only 라 줄지 않는다. 조용히 느려지는 자리라 임계 전에 알린다.
-        if (tl.get("replayMillis") or 0) > 10000:
-            mb = (tl.get("bytes") or 0) // (1024 * 1024)
-            print(f"LOG_REPLAY_MILLIS={tl['replayMillis']} (로그 {mb}MB)")
-            print("\n궤적 로그가 커져 기동이 느려지고 있습니다. 동작에는 문제가 없지만"
-                  " 운영자가 체크포인트를 검토할 시점입니다.")
-
-        # 권한 폭이 다른 사람들의 관측이 한 포스팅에 섞이면 rank 가중과 목적지 분포가
-        # 사람마다 다른 의미를 갖는다. 지금은 전 페이지가 @public 이라 0 또는 1 이다.
-        scopes = s.get("permissionScopes")
-        if isinstance(scopes, int) and scopes > 1:
-            print(f"PERMISSION_SCOPES={scopes}")
+        print(f"INDEXED_DOCS={s.get('indexedDocs', 0)}")
+        print(f"ACL_PAGES={s.get('aclPages', 0)}")
+        print(f"ACL_USERS={s.get('aclUsers', 0)}")
+        # `all(...)` 로 묶으면 단축 평가로 뒤 검사가 안 돈다 — 전부 찍어야 한다.
+        ok = _probe_index(s) and ok
+        ok = _probe_grep(s) and ok
+        acl_ok, enforced = _probe_acl(s)
+        ok = acl_ok and ok
+        ok = _probe_learning(s) and ok
     except Exception as e:  # noqa: BLE001
         print(f"STATS=실패 ({e})")
         ok = False
@@ -530,8 +569,85 @@ def _int(args: dict, key: str, default: int) -> int:
         return default
 
 
+def _tool_search(args: dict) -> tuple[str, bool]:
+    r = post("/api/search", {
+        "query": args.get("query", ""), "userKey": USER,
+        "sessionId": SESSION, "limit": _int(args, "limit", 8),
+    })
+    # **거부 사유를 삼키면 안 된다.** 서버는 쓸 수 없는 질의에 200 + 빈 hits +
+    # `error` 를 낸다(질의 길이 상한). 이걸 안 읽으면 아래의 "다른 표현으로
+    # 시도하세요" 가 나가는데, 길이 때문에 거부된 질의에 재표현은 아무 도움이
+    # 안 되므로 **정확히 틀린 조언**이다. `grep` 이 같은 모양을 처리하는 것과 짝이다.
+    #
+    # 질의 원문은 되돌려 싣지 않는다 — 최대 500자라 모델 문맥만 먹는다.
+    if r.get("error"):
+        return (f"질의를 쓸 수 없습니다: {r['error']}", True)
+    hits = r.get("hits", [])
+    if not hits:
+        return ("결과 없음. 다른 표현으로 시도하거나 grep으로 리터럴 검색하세요.", False)
+    lines = [f"{len(hits)}건 (어휘 후보 {r.get('lexicalCandidates',0)} · "
+             f"학습 힌트 {r.get('learnedHints',0)})", ""]
+    for i, h in enumerate(hits, 1):
+        mark = {"lexical": " ", "learned": "S", "both": "*"}.get(h.get("source"), " ")
+        rel = f" rel={h['reliability']:.2f}" if h.get("reliability") else ""
+        lines.append(f"{mark} {i}. [{h['pageId']}] {h['title']}  ({h.get('space','')}){rel}")
+    lines += ["", "본문은 read(pageId)로 가져오세요. * = 어휘+학습, S = 학습 힌트만"]
+    return ("\n".join(lines), False)
+
+
+def _tool_read(args: dict) -> tuple[str, bool]:
+    r = post("/api/read", {
+        "pageId": str(args.get("pageId", "")), "userKey": USER, "sessionId": SESSION,
+    })
+    return (f"# {r.get('title','')}  [{r.get('pageId')}]\n\n{r.get('markdown','')}", False)
+
+
+def _tool_grep(args: dict) -> tuple[str, bool]:
+    r = post("/api/grep", {
+        # sessionId 를 안 보낸다 — grep 은 궤적 관측 대상이 아니다(서버의
+        # `Controller.grep` 에 이유가 있다). 보내면 서버가 버리는데, 보내는
+        # 쪽만 보면 "기록되고 있다" 로 읽힌다.
+        "pattern": args.get("pattern", ""), "userKey": USER,
+        "limit": _int(args, "limit", 40), "regex": bool(args.get("regex", False)),
+    })
+    # 패턴 자체가 거부된 경우. 이유를 안 보여주면 "쓸 수 없는 문법" 과
+    # "정말 일치가 없음" 이 똑같이 0건으로 보인다.
+    if r.get("error"):
+        return (f"'{r.get('pattern')}' 을 쓸 수 없습니다: {r['error']}", True)
+    ms = r.get("matches", [])
+    if not ms:
+        return (f"'{r.get('pattern')}' 일치 없음 (문서 {r.get('scanned',0)}개 스캔)", False)
+    out = [f"{len(ms)}건" + (" (잘림)" if r.get("truncated") else "")]
+    for m in ms:
+        out.append(f"  [{m['pageId']}] {m['title']}:{m['line']}  {m['text']}")
+    return ("\n".join(out), False)
+
+
+def _tool_tree(args: dict) -> tuple[str, bool]:
+    root_id = args.get("rootId")
+    payload = {"userKey": USER, "depth": _int(args, "depth", 0)}
+    if root_id:
+        payload["rootId"] = str(root_id)
+    md = post("/api/tree", payload).get("markdown", "")
+    if md:
+        return (md, False)
+    if root_id:
+        return ("계층 정보 없음 (해당 rootId를 찾을 수 없거나 권한이 없습니다).", False)
+    return ("계층 정보 없음 (권한이 없거나 색인이 비어 있습니다).", False)
+
+
+#: 이름 → 핸들러. [TOOLS] 의 `name` 과 **키가 같아야 한다** — 어긋나면 도구 목록에는
+#: 보이는데 부르면 "알 수 없는 도구" 가 된다. `test_mcp_proxy` 가 둘을 대조한다.
+HANDLERS = {
+    "search": _tool_search,
+    "read": _tool_read,
+    "grep": _tool_grep,
+    "tree": _tool_tree,
+}
+
+
 def call_tool(name: str, args: dict) -> tuple[str, bool]:
-    """(텍스트, isError) 반환."""
+    """(텍스트, isError) 반환. 도구별 처리는 [HANDLERS] 에 있다."""
     # ACL 은 fail-closed 다 — userKey 가 없으면 서버가 정상적으로 빈 결과를 준다.
     # 그것을 "문서가 없다"로 오해하지 않도록 여기서 먼저 구분해 알린다.
     if not USER:
@@ -542,73 +658,11 @@ def call_tool(name: str, args: dict) -> tuple[str, bool]:
             "  (환경변수 WIKILENS_USER 로도 되지만 그 셸에서만 유지됩니다.)",
             True,
         )
-    try:
-        if name == "search":
-            r = post("/api/search", {
-                "query": args.get("query", ""), "userKey": USER,
-                "sessionId": SESSION, "limit": _int(args, "limit", 8),
-            })
-            # **거부 사유를 삼키면 안 된다.** 서버는 쓸 수 없는 질의에 200 + 빈 hits +
-            # `error` 를 낸다(질의 길이 상한). 이걸 안 읽으면 아래의 "다른 표현으로
-            # 시도하세요" 가 나가는데, 길이 때문에 거부된 질의에 재표현은 아무 도움이
-            # 안 되므로 **정확히 틀린 조언**이다. `grep` 이 같은 모양을 처리하는 것과 짝이다.
-            #
-            # 질의 원문은 되돌려 싣지 않는다 — 최대 500자라 모델 문맥만 먹는다.
-            if r.get("error"):
-                return (f"질의를 쓸 수 없습니다: {r['error']}", True)
-            hits = r.get("hits", [])
-            if not hits:
-                return ("결과 없음. 다른 표현으로 시도하거나 grep으로 리터럴 검색하세요.", False)
-            lines = [f"{len(hits)}건 (어휘 후보 {r.get('lexicalCandidates',0)} · "
-                     f"학습 힌트 {r.get('learnedHints',0)})", ""]
-            for i, h in enumerate(hits, 1):
-                mark = {"lexical": " ", "learned": "S", "both": "*"}.get(h.get("source"), " ")
-                rel = f" rel={h['reliability']:.2f}" if h.get("reliability") else ""
-                lines.append(f"{mark} {i}. [{h['pageId']}] {h['title']}  ({h.get('space','')}){rel}")
-            lines += ["", "본문은 read(pageId)로 가져오세요. * = 어휘+학습, S = 학습 힌트만"]
-            return ("\n".join(lines), False)
-
-        if name == "read":
-            r = post("/api/read", {
-                "pageId": str(args.get("pageId", "")), "userKey": USER, "sessionId": SESSION,
-            })
-            return (f"# {r.get('title','')}  [{r.get('pageId')}]\n\n{r.get('markdown','')}", False)
-
-        if name == "grep":
-            r = post("/api/grep", {
-                # sessionId 를 안 보낸다 — grep 은 궤적 관측 대상이 아니다(서버의
-                # `Controller.grep` 에 이유가 있다). 보내면 서버가 버리는데, 보내는
-                # 쪽만 보면 "기록되고 있다" 로 읽힌다.
-                "pattern": args.get("pattern", ""), "userKey": USER,
-                "limit": _int(args, "limit", 40), "regex": bool(args.get("regex", False)),
-            })
-            # 패턴 자체가 거부된 경우. 이유를 안 보여주면 "쓸 수 없는 문법" 과
-            # "정말 일치가 없음" 이 똑같이 0건으로 보인다.
-            if r.get("error"):
-                return (f"'{r.get('pattern')}' 을 쓸 수 없습니다: {r['error']}", True)
-            ms = r.get("matches", [])
-            if not ms:
-                return (f"'{r.get('pattern')}' 일치 없음 (문서 {r.get('scanned',0)}개 스캔)", False)
-            out = [f"{len(ms)}건" + (" (잘림)" if r.get("truncated") else "")]
-            for m in ms:
-                out.append(f"  [{m['pageId']}] {m['title']}:{m['line']}  {m['text']}")
-            return ("\n".join(out), False)
-
-        if name == "tree":
-            root_id = args.get("rootId")
-            payload = {"userKey": USER, "depth": _int(args, "depth", 0)}
-            if root_id:
-                payload["rootId"] = str(root_id)
-            r = post("/api/tree", payload)
-            md = r.get("markdown", "")
-            if not md:
-                if root_id:
-                    return ("계층 정보 없음 (해당 rootId를 찾을 수 없거나 권한이 없습니다).", False)
-                return ("계층 정보 없음 (권한이 없거나 색인이 비어 있습니다).", False)
-            return (md, False)
-
+    handler = HANDLERS.get(name)
+    if handler is None:
         return (f"알 수 없는 도구: {name}", True)
-
+    try:
+        return handler(args)
     except urllib.error.HTTPError as e:
         if e.code == 404 and name == "read":
             return ("해당 페이지를 찾을 수 없습니다.", True)
