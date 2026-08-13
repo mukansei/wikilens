@@ -90,13 +90,19 @@ def probe(query: str, gold: str, sid: str, read_gold: bool) -> dict:
     res = post("/api/search", {"query": query, "userKey": USER,
                                "sessionId": sid, "limit": 8})
     ids = [h["pageId"] for h in res.get("hits", [])]
+    err = ""
     if read_gold:
         # **읽어야 궤적이 목적지를 갖는다.** 안 읽으면 `onEnd` 가 빈 스팬을 버린다.
         try:
             post("/api/read", {"pageId": gold, "userKey": USER, "sessionId": sid})
         except urllib.error.HTTPError as e:
-            return {"error": f"read {gold} → HTTP {e.code}", "seconds": time.perf_counter() - t}
+            err = f"read {gold} → HTTP {e.code}"
+    # **실패해도 세션은 닫는다.** 예전에는 read 가 실패하면 여기로 안 와서 서버에
+    # 열린 스팬이 남았고, 다음 회차가 그 상태에서 재는 것이 됐다(`SessionSweeper` 가
+    # 5분 뒤 거두지만 벤치는 그보다 빨리 끝난다).
     post("/api/session/end", {"sessionId": sid})
+    if err:
+        return {"error": err, "seconds": time.perf_counter() - t}
     return {
         "hints": int(res.get("learnedHints", 0)),
         "lexical": int(res.get("lexicalCandidates", 0)),
@@ -127,14 +133,26 @@ def main() -> int:
     ap.add_argument("--out", default="learn.jsonl")
     a = ap.parse_args()
 
-    bad = guard()
-    if bad:
-        print(f"  ✗ {bad}", file=sys.stderr)
-        return 2
-
     groups = [g for g in GROUPS if any(g[0].startswith(p) for p in a.groups)]
     if not groups:
         print("  해당 그룹 없음", file=sys.stderr)
+        return 2
+
+    # **`transfer` 는 학습 단계가 있어야 성립한다.** `--reps 2` 면 학습이 0회인데
+    # 그대로 돌면 시험이 당연히 0 이고, 아래 판정이 **"예측대로"** 라고 찍는다 —
+    # 아무것도 안 재고 예측을 확인한 셈이 된다(`agent.py` 가 같은 이유로 막는다).
+    # `--reps 1` 이하면 회차가 음수가 되어 워밍(rep=-1)과 키까지 충돌한다.
+    if a.pattern == "transfer" and a.reps < 3:
+        print(f"  ✗ --pattern transfer 는 --reps 3 이상이 필요하다 "
+              f"(지금 {a.reps} → 학습 {max(0, a.reps - 2)}회)", file=sys.stderr)
+        return 2
+    if a.reps < 1:
+        print(f"  ✗ --reps 는 1 이상이어야 한다 (지금 {a.reps})", file=sys.stderr)
+        return 2
+
+    bad = guard()
+    if bad:
+        print(f"  ✗ {bad}", file=sys.stderr)
         return 2
 
     t0 = stats()
