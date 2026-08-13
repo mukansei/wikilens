@@ -222,24 +222,19 @@ def mode_split(rs: list, md: bool) -> None:
     if dropped:
         print(f"  공통 질의 {len(common)}개만 센다 (한쪽에만 있는 {dropped}개 제외)")
 
+    cells_of = lambda case, m: [r for r in rs if r.case == case and r.mode == m  # noqa: E731
+                                and (r.group, r.qi) in common]
     deltas = {}
     for case in CASE_ORDER:
         cells = []
         for m in modes:
-            v = [r for r in rs if r.case == case and r.mode == m
-                 and (r.group, r.qi) in common]
-            if not v:
-                cells.append((m, None))
-                continue
-            tok = summarize([float(r.tokens) for r in v])
-            cells.append((m, (sum(r.hit for r in v), len(v), tok["median"])))
+            v = cells_of(case, m)
+            cells.append((m, (sum(r.hit for r in v), len(v),
+                              summarize([float(r.tokens) for r in v])["median"]) if v else None))
         if all(c[1] is None for c in cells):
             continue
-        line = f"  {case:11}"
-        for m, c in cells:
-            line += (f"  {m} {c[0]}/{c[1]} · {c[2]:>8,.0f}tok" if c
-                     else f"  {m} —")
-        print(line)
+        print(f"  {case:11}" + "".join(
+            f"  {m} {c[0]}/{c[1]} · {c[2]:>8,.0f}tok" if c else f"  {m} —" for m, c in cells))
         got = {m: c for m, c in cells if c}
         if len(got) == 2:
             a, b = (got[m][2] for m in modes)
@@ -250,26 +245,30 @@ def mode_split(rs: list, md: bool) -> None:
     print()
     for case, d in deltas.items():
         print(f"    {case:11} 토큰 {d:+.0%}")
-    # 판정은 셋으로 갈린다. **"C 가 안 움직였다" 와 "대조군이 더 움직였다" 는 다른
-    # 상태다** — 뭉치면 학습 효과가 없는 것을 측정 잡음 탓으로 잘못 읽는다.
-    control = [abs(d) for c, d in deltas.items() if not c.startswith("C")]
-    cd = deltas.get("C 서버판")
-    if control and cd is not None:
-        if abs(cd) < 0.05:
-            print(f"\n  C 가 거의 안 움직였다({cd:+.0%}) — 이 표본에서 학습 효과가 안 보인다")
-        elif abs(cd) <= max(control):
-            print(f"\n  ★ 학습이 없는 A·B 가 {max(control):.0%} 움직였다 — "
-                  f"C 의 {abs(cd):.0%} 를 학습 덕으로 읽을 수 없다(측정 변동이 그만큼이다)")
-        else:
-            print(f"\n  대조군(A·B) 변동 {max(control):.0%} 보다 C 의 {abs(cd):.0%} 가 크다 "
-                  "— 학습 기여로 읽을 여지가 있다")
+    print(_verdict(deltas))
     # 표본이 몇 개짜리 판정인지 함께 말한다 — 위 문장만 남으면 3세션짜리 차이가
     # 확정된 사실처럼 읽힌다.
-    smallest = min((len([r for r in rs if r.case == case and r.mode == m
-                         and (r.group, r.qi) in common])
-                    for case in CASE_ORDER for m in modes), default=0)
+    smallest = min((len(cells_of(case, m)) for case in CASE_ORDER for m in modes), default=0)
     if smallest and smallest < 4:
         print(f"  (가장 작은 칸이 {smallest}건이다 — 방향만 보고 크기는 믿지 말 것)")
+
+
+def _verdict(deltas: dict[str, float]) -> str:
+    """
+    **판정은 셋으로 갈린다.** "C 가 안 움직였다" 와 "대조군이 더 움직였다" 는 다른
+    상태인데, 뭉치면 학습 효과가 없는 것을 측정 잡음 탓으로 잘못 읽는다.
+    """
+    control = [abs(d) for c, d in deltas.items() if not c.startswith("C")]
+    cd = deltas.get("C 서버판")
+    if not control or cd is None:
+        return ""
+    if abs(cd) < 0.05:
+        return f"\n  C 가 거의 안 움직였다({cd:+.0%}) — 이 표본에서 학습 효과가 안 보인다"
+    if abs(cd) <= max(control):
+        return (f"\n  ★ 학습이 없는 A·B 가 {max(control):.0%} 움직였다 — "
+                f"C 의 {abs(cd):.0%} 를 학습 덕으로 읽을 수 없다(측정 변동이 그만큼이다)")
+    return (f"\n  대조군(A·B) 변동 {max(control):.0%} 보다 C 의 {abs(cd):.0%} 가 크다 "
+            "— 학습 기여로 읽을 여지가 있다")
 
 
 #: 케이스별로 **보여도 되는** 도구. 벗어나면 격리가 깨진 것이다.

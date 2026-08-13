@@ -86,39 +86,34 @@ def _direct_tokens(client, page_id: str) -> list[str] | None:
     return out
 
 
-def collect(root: Path, client, verbose: bool = False, sleep_s: float = 0.0) -> AclReport:
+def _load_previous(out_path: Path) -> dict[str, list[str]]:
     """
-    싱크된 모든 페이지의 읽기 권한을 모아 `mirror/acl/acl.json` 을 쓴다.
+    앞선 수집 결과. 깨져 있거나 dict 가 아니면 없는 것으로 친다.
 
-    **부분 결과를 쓰지 않는다.** 조회에 실패한 페이지가 하나라도 있으면 그 페이지는
-    기존 값을 유지해야 하는데, 파일을 통째로 새로 쓰면 그럴 수 없다. 그래서 실패분은
-    **이전 파일의 값을 그대로 옮겨 담는다** — 못 읽었다고 공개로 바뀌면 안 된다.
+    **방향이 안전하다** — 옛 값을 못 쓰면 실패분이 빠져 *안 보이게* 되지 실수로
+    열리지는 않는다.
     """
-    started = time.time()
-    state_path = root / "mirror" / ".sync-state.json"
-    state = json.loads(state_path.read_text(encoding="utf-8"))
-    pages: dict = state.get("pages") or {}
+    if not out_path.exists():
+        return {}
+    loaded = None
+    try:
+        loaded = json.loads(out_path.read_text(encoding="utf-8"))
+    except ValueError:
+        pass
+    if isinstance(loaded, dict):
+        return loaded
+    print(f"경고: {out_path} 를 읽을 수 없어 이전 권한 없이 진행합니다.")
+    return {}
 
-    acl_dir = root / "mirror" / "acl"
-    acl_dir.mkdir(parents=True, exist_ok=True)
-    out_path = acl_dir / "acl.json"
-    previous: dict[str, list[str]] = {}
-    if out_path.exists():
-        # 깨져 있거나 dict 가 아니면 없는 것으로 친다. 방향이 안전하다 — 옛 값을 못
-        # 쓰면 실패분이 빠져 **안 보이게** 되지 실수로 열리지는 않는다.
-        loaded = None
-        try:
-            loaded = json.loads(out_path.read_text(encoding="utf-8"))
-        except ValueError:
-            pass
-        if isinstance(loaded, dict):
-            previous = loaded
-        else:
-            print(f"경고: {out_path} 를 읽을 수 없어 이전 권한 없이 진행합니다.")
 
-    rep = AclReport(pages=len(pages))
-    # 싱크 집합 밖의 조상도 대상에 넣는다. 빠뜨리면 `direct` 에 없다는 사실이
-    # "제한 없음" 과 구별되지 않아, 상속을 푸는 쪽에서 조용히 열린다.
+def _fetch_direct(client, pages: dict, rep: AclReport,
+                  verbose: bool, sleep_s: float) -> dict[str, list[str] | None]:
+    """
+    대상 전체의 **직접** 제한을 모은다. `None` 은 조회 실패이고 빈 목록과 다르다.
+
+    **싱크 집합 밖의 조상도 대상에 넣는다.** 빠뜨리면 `direct` 에 없다는 사실이
+    "제한 없음" 과 구별되지 않아, 상속을 푸는 쪽에서 조용히 열린다.
+    """
     outside = {str(a.get("id")) for m in pages.values()
                for a in (m.get("ancestors") or [])} - set(pages)
     targets = list(pages) + sorted(outside)
@@ -132,7 +127,19 @@ def collect(root: Path, client, verbose: bool = False, sleep_s: float = 0.0) -> 
             time.sleep(sleep_s)
         if verbose and i % 200 == 0:
             print(f"  {i}/{len(targets)} …", flush=True)
+    return direct
 
+
+def _resolve(pages: dict, direct: dict[str, list[str] | None],
+             previous: dict[str, list[str]], rep: AclReport) -> dict[str, list[str]]:
+    """
+    직접 제한 + 상속으로 페이지별 최종 토큰을 정한다. **계약이 지키는 규칙 셋이 여기 있다.**
+
+      - **조회 실패는 옛 값을 유지한다** — 못 읽었다고 공개로 바뀌면 안 된다.
+      - **상속은 못 읽은 조상에서 멈춘다** — 계속 올라가면 "없음" 으로 결론 나 자식이 열린다.
+      - **제한 없음은 `@public` 이 아니라 `@space:<KEY>`** — 여러 스페이스를 한 볼트에
+        모으면 사용자마다 볼 수 있는 스페이스가 다르다.
+    """
     result: dict[str, list[str]] = {}
     for pid, meta in pages.items():
         own = direct.get(pid)
@@ -167,6 +174,30 @@ def collect(root: Path, client, verbose: bool = False, sleep_s: float = 0.0) -> 
             rep.restricted += 1
         result[pid] = tokens
         rep.tokens.update(tokens)
+    return result
+
+
+def collect(root: Path, client, verbose: bool = False, sleep_s: float = 0.0) -> AclReport:
+    """
+    싱크된 모든 페이지의 읽기 권한을 모아 `mirror/acl/acl.json` 을 쓴다.
+
+    **부분 결과를 쓰지 않는다.** 조회에 실패한 페이지가 하나라도 있으면 그 페이지는
+    기존 값을 유지해야 하는데, 파일을 통째로 새로 쓰면 그럴 수 없다. 그래서 실패분은
+    **이전 파일의 값을 그대로 옮겨 담는다**([_resolve]) — 못 읽었다고 공개로 바뀌면 안 된다.
+    """
+    started = time.time()
+    state_path = root / "mirror" / ".sync-state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    pages: dict = state.get("pages") or {}
+
+    acl_dir = root / "mirror" / "acl"
+    acl_dir.mkdir(parents=True, exist_ok=True)
+    out_path = acl_dir / "acl.json"
+    previous = _load_previous(out_path)
+
+    rep = AclReport(pages=len(pages))
+    direct = _fetch_direct(client, pages, rep, verbose, sleep_s)
+    result = _resolve(pages, direct, previous, rep)
 
     # **전부 실패했으면 쓰지 않는다.** 배운 게 없는데 파일을 덮으면 그 결과는
     # "권한을 수집했는데 아무 페이지도 없다" 가 되고, 서버는 그것을 **전 페이지가
