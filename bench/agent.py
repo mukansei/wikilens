@@ -213,6 +213,31 @@ def plan(groups: list, reps: int, pattern: str, per_group: int = 0) -> list[tupl
     return out
 
 
+def warmup(w: Writer, g0: tuple, mode: str, budget: float) -> float:
+    """
+    케이스마다 **버리는 1회**를 먼저 돈다. 쓴 비용을 반환하고, 예산에 걸리면 음수.
+
+    **첫 호출만 비싼 경우를 분리한다.** 파일럿에서 C 의 첫 질의가 603K 토큰, 이후
+    183K·259K 였다. MCP 서버 기동이 첫 세션에만 붙는 것으로 보이는데 확정된 것은
+    아니다 — 버리는 1회를 따로 기록해 두면 나중에 확인할 수 있다.
+    """
+    spent = 0.0
+    for cname, builder in CASES:
+        # **워밍도 예산을 쓴다.** 안 보면 `--budget 0.9` 인데 워밍만 $1.41 을 쓰고
+        # 본측정이 0건이 된다(실측). 돈을 쓰는 모든 자리가 같은 가드를 지나야 한다.
+        if spent >= budget:
+            print(f"  ★ 예산 ${budget:.2f} 도달 — 워밍 중 멈춘다")
+            return -1.0
+        r = run_once(builder(g0[3][0]))
+        spent += r.get("cost", 0.0)
+        w.write(record(harness="agent", case=cname, group=g0[0], qi=0,
+                       query=g0[3][0], gold=g0[1], rep=-1, warmup=True,
+                       mode=mode, hit=(r.get("answer") == g0[1]), **r))
+        print(f"  [워밍] {cname:10} ${r.get('cost',0):.3f}")
+    print()
+    return spent
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--groups", nargs="*", default=list(MINIMAL),
@@ -270,24 +295,9 @@ def main() -> int:
     spent = 0.0
     with Writer(out) as w:
         if a.warmup:
-            # **첫 호출만 비싼 경우를 분리한다.** 파일럿에서 C 의 첫 질의가 603K 토큰,
-            # 이후 183K·259K 였다. MCP 서버 기동이 첫 세션에만 붙는 것으로 보이는데
-            # 확정된 것은 아니다 — 버리는 1회를 따로 기록해 두면 나중에 확인할 수 있다.
-            g0 = groups[0]
-            for cname, builder in CASES:
-                # **워밍도 예산을 쓴다.** 안 보면 `--budget 0.9` 인데 워밍만 $1.41 을
-                # 쓰고 본측정이 0건이 된다(실측). 돈을 쓰는 모든 자리가 같은 가드를
-                # 지나야 한다.
-                if spent >= a.budget:
-                    print(f"  ★ 예산 ${a.budget:.2f} 도달 — 워밍 중 멈춘다")
-                    return 0
-                r = run_once(builder(g0[3][0]))
-                spent += r.get("cost", 0.0)
-                w.write(record(harness="agent", case=cname, group=g0[0], qi=0,
-                             query=g0[3][0], gold=g0[1], rep=-1, warmup=True,
-                             mode=mode, hit=(r.get("answer") == g0[1]), **r))
-                print(f"  [워밍] {cname:10} ${r.get('cost',0):.3f}")
-            print()
+            spent = warmup(w, groups[0], mode, a.budget)
+            if spent < 0:                      # 워밍 중 예산 도달
+                return 0
 
         for g, qi, rep in plan(groups, a.reps, a.pattern, a.per_group):
             name, gold, _title, queries = g
