@@ -300,7 +300,7 @@ def main() -> int:
                 spent += r.get("cost", 0.0)
                 w.write(record(harness="agent", case=cname, group=g0[0], qi=0,
                              query=g0[3][0], gold=g0[1], rep=-1, warmup=True,
-                             hit=(r.get("answer") == g0[1]), **r))
+                             mode=mode, hit=(r.get("answer") == g0[1]), **r))
                 print(f"  [워밍] {cname:10} ${r.get('cost',0):.3f}")
             print()
 
@@ -308,7 +308,7 @@ def main() -> int:
             name, gold, _title, queries = g
             q = queries[qi]
             for cname, builder in CASES:
-                k = ("agent", cname, name, qi, rep)
+                k = ("agent", cname, name, qi, rep, mode)
                 if k in done:
                     continue
                 if spent >= a.budget:
@@ -319,7 +319,7 @@ def main() -> int:
                 r = run_once(builder(q))
                 spent += r.get("cost", 0.0)
                 rec = record(harness="agent", case=cname, group=name, qi=qi,
-                           query=q, gold=gold, rep=rep,
+                           query=q, gold=gold, rep=rep, mode=mode,
                            hit=(r.get("answer") == gold),
                            # **이 측정 시점에 서버가 들고 있던 학습량.**
                            # warm 에서 회차가 갈수록 늘고, cold 면 0 근처다.

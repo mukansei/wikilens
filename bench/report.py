@@ -312,6 +312,18 @@ def main() -> int:
             detail = " · ".join(f"{fmt(k)}({n})" for k, n in
                                 sorted(vals.items(), key=lambda x: -x[1]))
             print(f"  ★ {label} 섞여 있다: {detail}")
+    # **cold 와 warm 은 다른 실험이다** — 앞은 검색 엔진 자체를, 뒤는 학습까지 잰다.
+    # 섞였다고 무효는 아니다(권장 순서가 `cold 한 벌 → warm` 이라 섞이는 것이 정상이다).
+    # 다만 아래 비용·적중 표는 둘을 합쳐 내므로 그 사실을 밝힌다.
+    modes = {}
+    for r in rows:
+        if r.mode:
+            modes[r.mode] = modes.get(r.mode, 0) + 1
+    if modes:
+        print("  모드 " + " · ".join(f"{k} {n}건" for k, n in sorted(modes.items())))
+        if len(modes) > 1:
+            print("  ★ cold 와 warm 이 한 표에 있다 — 아래 비용·적중은 둘을 합친 값이다")
+
     stamps = sorted(r.ts for r in rows if r.ts)
     if stamps:
         print(f"  측정 기간 {stamps[0][:16]} ~ {stamps[-1][:16]}")
