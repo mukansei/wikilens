@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # 에이전트 벤치(`agent.py`)에 필요한 격리 환경을 만든다/치운다.
 #
-#   ./setup.sh up cold   준비 (기본) — 궤적을 비운다. 검색 엔진 자체를 잰다
-#   ./setup.sh up warm   준비        — 궤적을 유지한다. 학습 효과를 잰다
-#   ./setup.sh down      정리
+#   ./setup.sh up cold       준비 (기본) — 궤적을 비운다. 검색 엔진 자체를 잰다
+#   ./setup.sh up warm       준비        — 궤적을 유지한다. 학습 효과를 잰다
+#   ./setup.sh server warm   **서버만** — 플러그인을 안 건드린다 (`learn.py` 용)
+#   ./setup.sh down          정리
+#
+# **`learn.py` 는 `up` 이 아니라 `server` 를 쓴다.** 순수 HTTP 라 플러그인 격리가
+# 필요 없는데, `up` 은 설치본을 내리므로 $0 측정 하나 때문에 사용자의 플러그인이
+# 사라진다 — 그 사이에 스크립트가 죽으면 `down` 을 안 불러 안 돌아온다.
 #
 # **격리가 이 벤치의 전제다.** 둘을 만든다:
 #
@@ -22,11 +27,16 @@ NAME=wikilens-bench
 
 MODE="${2:-cold}"
 
-case "${1:-up}" in
-up)
+ACTION="${1:-up}"
+
+case "$ACTION" in
+up|server)
   if [ "$MODE" != "cold" ] && [ "$MODE" != "warm" ]; then
-    echo "usage: $0 up [cold|warm]" >&2; exit 2
+    echo "usage: $0 $ACTION [cold|warm]" >&2; exit 2
   fi
+  if [ "$ACTION" = "server" ]; then
+    echo "  [server] 플러그인·vault-nohint 는 건드리지 않는다 (learn.py 는 HTTP 만 쓴다)"
+  else
   # **설치된 플러그인을 내린다 — 이것이 케이스 격리의 전부다.**
   #
   # `--plugin-dir` 는 플러그인을 **추가**할 뿐 사용자 레벨 설치본을 끄지 않는다.
@@ -60,6 +70,7 @@ up)
   mkdir -p "$HERE/vault-nohint/mirror"
   cp -al "$VAULT/mirror/pages" "$HERE/vault-nohint/mirror/pages"
   echo "  vault-nohint: 문서 $(find "$HERE/vault-nohint/mirror/pages" -name '*.md' | wc -l | tr -d ' ')개 · 심링크 $(find "$HERE/vault-nohint" -type l | wc -l | tr -d ' ')개 · ALIASES/TREE 도달 불가"
+  fi
 
   # C 케이스 서버 — 이미지는 운영과 같은 것을 쓰되 상태만 격리.
   #
@@ -79,7 +90,10 @@ up)
   # 사실을 밝혀야 한다.
   docker rm -f "$NAME" >/dev/null 2>&1 || true
   if [ "$MODE" = "warm" ] && [ -d "$HERE/srv-state" ]; then
-    echo "  [warm] 궤적 유지: $(wc -l < "$HERE/srv-state/trajectories.jsonl" 2>/dev/null || echo 0)건"
+    # `wc -l < 없는파일` 은 리다이렉트가 셸에서 실패해 `2>/dev/null` 이 안 먹는다
+    # (에러가 wc 가 아니라 셸에서 난다). 파일 유무를 먼저 본다.
+    _log="$HERE/srv-state/trajectories.jsonl"
+    echo "  [warm] 궤적 유지: $([ -f "$_log" ] && wc -l < "$_log" | tr -d ' ' || echo 0)건"
   else
     rm -rf "$HERE/srv-state" "$HERE/srv-index"
   fi
@@ -108,8 +122,11 @@ print("  :%s 서버: 문서 %s · 궤적 %s (운영과 격리)"
 down)
   docker rm -f "$NAME" >/dev/null 2>&1 || true
   rm -rf "$HERE/vault-nohint" "$HERE/srv-state" "$HERE/srv-index"
-  # 설치본을 되돌린다. 마켓플레이스가 등록돼 있어야 하는데, 없으면 조용히 지나가지
-  # 말고 알린다 — 사용자는 벤치 뒤에 플러그인이 사라진 줄 모른다.
+  # 설치본을 되돌린다. **`server` 로 띄웠으면 내린 적이 없어 이미 있다** — 그때도
+  # `install` 은 무해하다(이미 설치돼 있으면 그대로다).
+  #
+  # 마켓플레이스가 등록돼 있어야 하는데, 없으면 조용히 지나가지 말고 알린다 —
+  # 사용자는 벤치 뒤에 플러그인이 사라진 줄 모른다.
   for plug in wikilens-local wikilens-client; do
     if ! claude plugin install "$plug@wikilens" >/dev/null 2>&1; then
       echo "  ✗ $plug 재설치 실패 — 손으로 복구할 것: claude plugin install $plug@wikilens" >&2
@@ -118,5 +135,5 @@ down)
   echo "  정리 완료 · 플러그인 복구 (results/ 는 남긴다)"
   ;;
 *)
-  echo "usage: $0 [up [cold|warm]|down]" >&2; exit 2 ;;
+  echo "usage: $0 [up [cold|warm]|server [cold|warm]|down]" >&2; exit 2 ;;
 esac
