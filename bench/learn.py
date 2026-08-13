@@ -138,6 +138,8 @@ def main() -> int:
         return 2
 
     t0 = stats()
+    # `agent.py` 와 같은 판정 — 사람이 주는 플래그가 아니라 서버가 든 궤적으로 정한다.
+    mode = "warm" if t0.get("trajectories", 0) > 0 else "cold"
     print(f"  {SERVER} · 궤적 {t0.get('trajectories', 0)}건 · 포스팅 항 {t0.get('terms', 0)}개")
     if t0.get("trajectories", 0) == 0 and a.pattern == "transfer":
         print("  (cold 에서 시작한다 — transfer 는 학습 단계가 있으므로 정상)")
@@ -165,7 +167,7 @@ def main() -> int:
                 q = queries[qi]
                 r = probe(q, gold, f"learn-{stamp}-{name[:3]}-{qi}-{rep}", learn)
                 w.write(record(harness="learn", case="C 서버판", group=name, qi=qi,
-                               query=q, gold=gold, rep=rep,
+                               query=q, gold=gold, rep=rep, mode=mode,
                                hit=r.get("rank", -1) > 0, rank=r.get("rank", -1),
                                seconds=r.get("seconds", 0.0), error=r.get("error", ""),
                                extra={"hints": r.get("hints", 0), "pattern": a.pattern,

@@ -85,13 +85,21 @@ class Record:
     #: **볼트가 어떤 상태였나.** 문서 수가 다르면 grep 비용도 랭킹도 달라진다.
     corpus: int = 0
 
+    #: **cold 냐 warm 이냐.** 서버에 궤적이 있는 상태에서 잰 것인지가 곧 무엇을 쟀느냐다
+    #: (cold=검색 엔진 자체, warm=학습까지). 한때 이 값을 계산해 화면에만 찍고 기록은
+    #: 안 했는데, 그러면 README 가 권하는 순서(**cold 한 벌 → warm**)를 그대로 따를 때
+    #: 두 곳에서 조용히 깨진다: ① `done_keys` 가 같은 키로 보아 warm 이 통째로
+    #: 건너뛰어지고 ② 파일을 나눠도 `report.collect` 가 같은 키를 접어 **cold 를
+    #: warm 으로 덮는다**(먼저 잰 쪽이 리포트에서 사라진다). 키에 넣어 막는다.
+    mode: str = ""
+
     warmup: bool = False    # 참이면 통계에서 뺀다 — 아래 참고
     error: str = ""
     extra: dict = field(default_factory=dict)
 
     def key(self) -> tuple:
         """이어받기용 식별자. 이 조합이 이미 있으면 다시 안 돈다."""
-        return (self.harness, self.case, self.group, self.qi, self.rep)
+        return (self.harness, self.case, self.group, self.qi, self.rep, self.mode)
 
 
 def record(**kw) -> Record:
