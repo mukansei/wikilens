@@ -286,7 +286,7 @@ def main() -> int:
               file=sys.stderr)
         return 2
     if a.md:
-        print("# 측정 결과\n\n> **`eval/report.py` 가 생성한다.** 손으로 고치지 말 것.\n"
+        print("# 측정 결과\n\n> **`bench/report.py` 가 생성한다.** 손으로 고치지 말 것.\n"
               "> 질의는 [`queries.py`](queries.py), 방법은 [`README.md`](README.md).")
     # **어느 형상에서 잰 값인가.** 섞여 있으면 그대로 비교하면 안 된다 — 코드가
     # 바뀐 전후를 한 표에 넣는 셈이다.

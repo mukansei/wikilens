@@ -18,7 +18,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VAULT="$HOME/.wikilens/vault"
 PORT=8790
-NAME=wikilens-eval
+NAME=wikilens-bench
 
 MODE="${2:-cold}"
 
@@ -92,13 +92,13 @@ up)
     -v "$VAULT":/home/wikilens/.wikilens/vault:ro \
     -v "$HERE/srv-state":/home/wikilens/.wikilens/state \
     -v "$HERE/srv-index":/home/wikilens/.wikilens/index \
-    -e WIKILENS_ADMIN_TOKEN=eval wikilens-wikilens >/dev/null
+    -e WIKILENS_ADMIN_TOKEN=bench wikilens-wikilens >/dev/null
 
   for _ in $(seq 1 40); do
     [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' "localhost:$PORT/api/health" 2>/dev/null)" = "200" ] && break
     sleep 2
   done
-  curl -s -XPOST -H "X-WikiLens-Admin: eval" "localhost:$PORT/api/admin/reindex" >/dev/null
+  curl -s -XPOST -H "X-WikiLens-Admin: bench" "localhost:$PORT/api/admin/reindex" >/dev/null
   curl -s "localhost:$PORT/api/stats" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)

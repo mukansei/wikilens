@@ -36,7 +36,7 @@ import java.nio.file.Path
  * 남은 위험은 이 표본이 아예 못 보는 쪽이다: **정답이 짧은 질의.** 여기엔 그런 사례가
  * 없어서, `b=0` 이 긴 문서로 상위를 덮는 전형적 실패가 보일 자리가 없다.
  *
- * 색인이 없으면(`eval/setup.sh up` 전) 건너뛴다.
+ * 색인이 없으면(`bench/setup.sh up` 전) 건너뛴다.
  */
 class Bm25LengthNormTest {
 
@@ -68,9 +68,9 @@ class Bm25LengthNormTest {
 
     @Test
     fun `b 를 낮추면 순위가 어떻게 되나`() {
-        val dir = Path.of(System.getProperty("user.dir")).parent.resolve("eval/srv-index")
+        val dir = Path.of(System.getProperty("user.dir")).parent.resolve("bench/srv-index")
         assumeTrue(Files.isDirectory(dir) && Files.list(dir).use { it.findAny().isPresent },
-            "색인 없음 — eval/setup.sh up 후에 돈다")
+            "색인 없음 — bench/setup.sh up 후에 돈다")
 
         val a = analyzer()
         MMapDirectory(dir).use { d ->
@@ -161,9 +161,9 @@ class Bm25LengthNormTest {
      */
     @Test
     fun `몇 낱말 이상 맞아야 후보로 걸면 순위가 어떻게 되나`() {
-        val dir = Path.of(System.getProperty("user.dir")).parent.resolve("eval/srv-index")
+        val dir = Path.of(System.getProperty("user.dir")).parent.resolve("bench/srv-index")
         assumeTrue(Files.isDirectory(dir) && Files.list(dir).use { it.findAny().isPresent },
-            "색인 없음 — eval/setup.sh up 후에 돈다")
+            "색인 없음 — bench/setup.sh up 후에 돈다")
 
         val a = analyzer()
         MMapDirectory(dir).use { d ->
