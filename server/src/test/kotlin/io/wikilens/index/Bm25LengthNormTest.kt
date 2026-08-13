@@ -1,12 +1,7 @@
 package io.wikilens.index
 
 import org.apache.lucene.analysis.Analyzer
-import org.apache.lucene.analysis.ko.KoreanAnalyzer
-import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper
 import org.apache.lucene.index.DirectoryReader
-import org.apache.lucene.queryparser.classic.MultiFieldQueryParser
-import org.apache.lucene.queryparser.classic.QueryParser
-import org.apache.lucene.queryparser.classic.QueryParserBase
 import org.apache.lucene.search.IndexSearcher
 import org.apache.lucene.search.similarities.BM25Similarity
 import org.apache.lucene.store.MMapDirectory
@@ -45,26 +40,13 @@ class Bm25LengthNormTest {
     private val cases = listOf(
                                                                                                                                                                                                                                                     )
 
-    private fun analyzer(): Analyzer = PerFieldAnalyzerWrapper(
-        KoreanAnalyzer(),
-        mapOf(
-            Fields.ID to org.apache.lucene.analysis.core.KeywordAnalyzer(),
-            Fields.SPACE to org.apache.lucene.analysis.core.KeywordAnalyzer(),
-            Fields.ACL to org.apache.lucene.analysis.core.KeywordAnalyzer(),
-        ),
-    )
+    // **프로덕션과 같은 것을 쓴다.** 예전에는 분석기와 질의를 여기서 손으로 다시
+    // 만들고 "같은 구성이어야 한다" 는 주석으로 이어 뒀는데, 그 주석은 아무것도 안
+    // 막는다 — 측정 장치가 조용히 다른 질의를 재게 된다. `LuceneQuery` 가 정의처다.
+    private fun analyzer(): Analyzer = LuceneQuery.analyzerFor(AnalyzerKind.KOREAN)
 
-    /** `LuceneIndex.buildTextQuery` 와 같은 구성이어야 한다 — 다르면 다른 것을 재게 된다. */
-    private fun query(text: String, a: Analyzer) = MultiFieldQueryParser(
-        arrayOf(Fields.ANCHOR, Fields.TITLE, Fields.BODY),
-        a,
-        mapOf(
-            Fields.ANCHOR to FieldBoost.ANCHOR,
-            Fields.TITLE to FieldBoost.TITLE,
-            Fields.BODY to FieldBoost.BODY,
-        ),
-    ).apply { defaultOperator = QueryParser.Operator.OR }
-        .parse(QueryParserBase.escape(text))
+    private fun query(text: String, a: Analyzer) =
+        LuceneQuery.textQuery(text, a) ?: error("질의 파싱 실패: $text")
 
     @Test
     fun `b 를 낮추면 순위가 어떻게 되나`() {

@@ -251,6 +251,19 @@ check "코드베이스 배제가 스킬과 MCP 도구 설명 양쪽에 있음 (�
    && grep -q "코드베이스 자체" plugin/client/mcp/wikilens_mcp.py \
    && [ "$(grep -c "NOT_FOR_CODEBASE" plugin/client/mcp/wikilens_mcp.py)" -ge 3 ]'
 
+# **측정 장치가 프로덕션과 같은 질의를 써야 한다.** `Bm25LengthNormTest` 는 유사도를
+# 갈아끼우려고 자기 `IndexSearcher` 를 여는데, 그러면 질의도 자기가 짓게 된다. 한때
+# 분석기와 파서를 손으로 다시 만들고 "같은 구성이어야 한다" 는 주석으로 이어 뒀는데,
+# 그 주석은 아무것도 안 막았다 — 프로덕션이 바뀌면 **측정만 옛 질의를 재게 된다.**
+# 이제 `LuceneQuery` 가 정의처이고 둘 다 그것을 부른다(실측: `LuceneQuery` 의 분석기를
+# KOREAN→Standard 로 바꾸니 측정이 23/30 → 16/30 으로 따라 움직였다).
+# **부스트 변경은 `FieldBoostTest` 가 잡는다** — 이 검사는 복제가 되살아나는 것을 막는다.
+check "측정 테스트가 질의를 손으로 다시 짓지 않음 (LuceneQuery 가 정의처)" \
+  'grep -q "object LuceneQuery" server/src/main/kotlin/io/wikilens/index/LuceneQuery.kt \
+   && grep -q "LuceneQuery.textQuery" server/src/main/kotlin/io/wikilens/index/LuceneIndex.kt \
+   && grep -q "LuceneQuery.textQuery" server/src/test/kotlin/io/wikilens/index/Bm25LengthNormTest.kt \
+   && ! grep -q "MultiFieldQueryParser\|PerFieldAnalyzerWrapper" server/src/test/kotlin/io/wikilens/index/Bm25LengthNormTest.kt'
+
 # 두 판이 대소문자를 다르게 다루면 **판을 옮긴 사용자가 같은 질의에 다른 답을 받는다.**
 # 두 경로가 어긋나기 쉬운 이유는 각자의 기본값이 반대라서다 — ripgrep(로컬판의 Grep)은
 # 대소문자를 구분하고, 서버는 리터럴 경로가 ignoreCase 라 정규식도 거기 맞췄다.

@@ -1,8 +1,6 @@
 package io.wikilens.index
 
 import org.apache.lucene.analysis.Analyzer
-import org.apache.lucene.analysis.ko.KoreanAnalyzer
-import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper
 import org.apache.lucene.document.Document
 import org.apache.lucene.document.Field
 import org.apache.lucene.document.StringField
@@ -13,7 +11,6 @@ import org.apache.lucene.index.IndexWriterConfig
 import org.apache.lucene.search.BooleanClause
 import org.apache.lucene.search.BooleanQuery
 import org.apache.lucene.search.IndexSearcher
-import org.apache.lucene.search.Query
 import org.apache.lucene.search.TermInSetQuery
 import org.apache.lucene.store.MMapDirectory
 import org.apache.lucene.util.BytesRef
@@ -104,22 +101,8 @@ class LuceneIndex(
                 null, null, emptyMap(), TreeIndex.EMPTY, kind, analyzer,
             )
 
-            /**
-             * ID/SPACE/ACL 은 분석하지 않는다 (StringField 이므로 실제로는 무시되지만
-             * 질의 파싱 경로에서 일관성을 위해 명시한다).
-             */
-            fun analyzerFor(kind: AnalyzerKind): Analyzer = PerFieldAnalyzerWrapper(
-                when (kind) {
-                    AnalyzerKind.KOREAN -> KoreanAnalyzer()
-                    AnalyzerKind.ENGLISH -> org.apache.lucene.analysis.en.EnglishAnalyzer()
-                    AnalyzerKind.STANDARD -> org.apache.lucene.analysis.standard.StandardAnalyzer()
-                },
-                mapOf(
-                    Fields.ID to org.apache.lucene.analysis.core.KeywordAnalyzer(),
-                    Fields.SPACE to org.apache.lucene.analysis.core.KeywordAnalyzer(),
-                    Fields.ACL to org.apache.lucene.analysis.core.KeywordAnalyzer(),
-                ),
-            )
+            /** 정의처는 [LuceneQuery] 다 — 측정 테스트가 같은 것을 써야 한다. */
+            fun analyzerFor(kind: AnalyzerKind): Analyzer = LuceneQuery.analyzerFor(kind)
         }
     }
 
@@ -295,7 +278,7 @@ class LuceneIndex(
             val searcher = snap.searcher ?: return@withSnapshot Analyzed(terms, emptyList())
             if (aclTokens.isEmpty()) return@withSnapshot Analyzed(terms, emptyList())
 
-            val text = buildTextQuery(queryText, snap.analyzer)
+            val text = LuceneQuery.textQuery(queryText, snap.analyzer)
                 ?: return@withSnapshot Analyzed(terms, emptyList())
             val acl = TermInSetQuery(Fields.ACL, aclTokens.map { BytesRef(it) })
 
@@ -323,25 +306,6 @@ class LuceneIndex(
         val snap = snapshotRef.get()
         return TreeRenderer(snap.tree, snap.meta).render(canSee, rootId, maxDepth)
     }
-
-    /** 세 필드에 대한 가중 OR. 파싱 실패 시 null 을 반환해 호출부가 조용히 빈 결과를 내게 한다. */
-    private fun buildTextQuery(text: String, analyzer: Analyzer): Query? {
-        val parser = org.apache.lucene.queryparser.classic.MultiFieldQueryParser(
-            arrayOf(Fields.ANCHOR, Fields.TITLE, Fields.BODY),
-            analyzer,
-            mapOf(
-                Fields.ANCHOR to FieldBoost.ANCHOR,
-                Fields.TITLE to FieldBoost.TITLE,
-                Fields.BODY to FieldBoost.BODY,
-            ),
-        )
-        parser.defaultOperator = org.apache.lucene.queryparser.classic.QueryParser.Operator.OR
-        return runCatching { parser.parse(escape(text)) }.getOrNull()
-    }
-
-    /** 사용자 질의를 그대로 파서에 넣으면 특수문자로 예외가 난다. */
-    private fun escape(s: String): String =
-        org.apache.lucene.queryparser.classic.QueryParserBase.escape(s)
 
     /**
      * 서버가 질의를 토큰화한다 — 클라이언트는 원문만 보낸다. 양쪽이 각자 토큰화하면
