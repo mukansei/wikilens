@@ -195,17 +195,39 @@ def mode_split(rs: list, md: bool) -> None:
     **A·B 가 대조군이다.** 둘에는 학습이 아예 없으므로 cold 와 warm 이 같아야 한다.
     거기서 차이가 나면 학습이 아니라 **측정 변동**을 보고 있는 것이고, 그 폭이 C 의
     차이보다 크면 C 의 차이도 못 믿는다. 그 판정을 사람에게 미루지 않고 여기서 한다.
+
+    **두 모드에 다 있는 질의만 센다.** 권장 흐름이 cold 는 여러 그룹, warm 은 한 그룹에
+    몰아주는 모양이라(warm 에서 힌트가 서빙되는 그룹이 하나뿐이다) 그냥 비교하면
+    **학습이 아니라 질의 구성의 차이**를 재게 된다. 실측으로 확인했다: 학습 효과를 0 으로
+    둔 합성 데이터에서 세 케이스 전부 -50% 가 나왔는데, 그것은 warm 쪽에 싼 그룹만
+    있었기 때문이다. 대조군 검사가 그때 "측정 변동" 이라고 말하지만 그것도 틀린 진단이다 —
+    변동이 아니라 **다른 시험지**다.
     """
     modes = sorted({r.mode for r in rs if r.mode})
     if len(modes) < 2:
         return
     print("\n## 학습 기여분 (cold ↔ warm)\n" if md else "\n=== 학습 기여분 (cold ↔ warm) ===")
 
+    # 두 모드에 다 나타난 (그룹, 질의) 만 대상이다.
+    seen = {m: {(r.group, r.qi) for r in rs if r.mode == m} for m in modes}
+    common = set.intersection(*seen.values()) if seen else set()
+    if not common:
+        print("  두 모드에 공통인 질의가 없다 — 비교하면 학습이 아니라 질의 구성을 재게 된다."
+              if not md else
+              "두 모드에 공통인 질의가 없다 — 비교하면 학습이 아니라 질의 구성을 재게 된다.")
+        for m in modes:
+            print(f"    {m}: " + " · ".join(sorted(f"{g}q{q}" for g, q in seen[m])[:6]))
+        return
+    dropped = sum(len(v) for v in seen.values()) - len(common) * len(modes)
+    if dropped:
+        print(f"  공통 질의 {len(common)}개만 센다 (한쪽에만 있는 {dropped}개 제외)")
+
     deltas = {}
     for case in CASE_ORDER:
         cells = []
         for m in modes:
-            v = [r for r in rs if r.case == case and r.mode == m]
+            v = [r for r in rs if r.case == case and r.mode == m
+                 and (r.group, r.qi) in common]
             if not v:
                 cells.append((m, None))
                 continue
@@ -228,16 +250,26 @@ def mode_split(rs: list, md: bool) -> None:
     print()
     for case, d in deltas.items():
         print(f"    {case:11} 토큰 {d:+.0%}")
-    # 대조군(A·B)의 변동 폭이 C 의 변화보다 크면 C 의 변화도 잡음일 수 있다.
+    # 판정은 셋으로 갈린다. **"C 가 안 움직였다" 와 "대조군이 더 움직였다" 는 다른
+    # 상태다** — 뭉치면 학습 효과가 없는 것을 측정 잡음 탓으로 잘못 읽는다.
     control = [abs(d) for c, d in deltas.items() if not c.startswith("C")]
     cd = deltas.get("C 서버판")
     if control and cd is not None:
-        if abs(cd) <= max(control):
-            print(f"\n  ★ 학습이 없는 A·B 도 {max(control):.0%} 움직였다 — "
-                  "C 의 변화를 학습 덕으로 읽을 수 없다(측정 변동이 더 크다)")
+        if abs(cd) < 0.05:
+            print(f"\n  C 가 거의 안 움직였다({cd:+.0%}) — 이 표본에서 학습 효과가 안 보인다")
+        elif abs(cd) <= max(control):
+            print(f"\n  ★ 학습이 없는 A·B 가 {max(control):.0%} 움직였다 — "
+                  f"C 의 {abs(cd):.0%} 를 학습 덕으로 읽을 수 없다(측정 변동이 그만큼이다)")
         else:
             print(f"\n  대조군(A·B) 변동 {max(control):.0%} 보다 C 의 {abs(cd):.0%} 가 크다 "
-                  "— 학습 기여로 읽을 여지가 있다(표본 수를 함께 볼 것)")
+                  "— 학습 기여로 읽을 여지가 있다")
+    # 표본이 몇 개짜리 판정인지 함께 말한다 — 위 문장만 남으면 3세션짜리 차이가
+    # 확정된 사실처럼 읽힌다.
+    smallest = min((len([r for r in rs if r.case == case and r.mode == m
+                         and (r.group, r.qi) in common])
+                    for case in CASE_ORDER for m in modes), default=0)
+    if smallest and smallest < 4:
+        print(f"  (가장 작은 칸이 {smallest}건이다 — 방향만 보고 크기는 믿지 말 것)")
 
 
 #: 케이스별로 **보여도 되는** 도구. 벗어나면 격리가 깨진 것이다.
