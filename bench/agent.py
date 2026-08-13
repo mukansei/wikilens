@@ -5,12 +5,19 @@
 세션 분리가 이 벤치의 핵심이다 — 한 세션에서 세 방식을 다 하면 첫 방식에서 답을
 알아버려 나머지가 무효가 된다. `claude -p` 는 매번 새 프로세스라 컨텍스트가 안 샌다.
 
-    eval/setup.sh up
-    python3 eval/agent.py --groups G01 G05 --reps 3 --budget 20
-    eval/setup.sh down
+    bench/setup.sh up
+    python3 bench/agent.py          # 기본이 최소 집합 — 9세션 약 $5
+    bench/setup.sh down
 
-**비싸다.** 파일럿이 세션당 평균 $0.53 이었다. `--budget` 이 상한이고, 넘으면 멈춘다.
-중단돼도 `--resume`(기본)이 끝난 조합을 건너뛴다.
+**비싸다.** 세션당 $0.5~1.6 이라 기본값을 최소로 잡아 뒀다 — `MINIMAL` 세 그룹의
+q0 만, 반복 없이 9세션이다. 전량(90세션)은 손으로 켜야 한다:
+
+    python3 bench/agent.py --groups G01 G02 … G10 --per-group 0 --reps 3
+
+**순위는 여기서 재지 말 것.** `rank.py` 가 30질의 전량을 $0 에 재고, 세션이 유일하게
+주는 것은 **에이전트가 실제로 얼마나 일하나**다. 그건 세 그룹이면 모양이 다 나온다.
+
+`--budget` 이 상한이고 넘으면 멈춘다. 중단돼도 `--resume`(기본)이 끝난 조합을 건너뛴다.
 """
 from __future__ import annotations
 
@@ -35,7 +42,7 @@ SERVER = "http://127.0.0.1:8790"
 
 sys.path.insert(0, str(HERE))
 from harness import COMMIT, DIRTY, Writer, done_keys, record  # noqa: E402
-from queries import GROUPS  # noqa: E402
+from queries import GROUPS, MINIMAL  # noqa: E402
 
 #: 벤치가 재려는 것은 **볼트 검색**이지 웹 검색이나 위임이 아니다.
 #:
@@ -88,7 +95,7 @@ def server_image() -> str:
     """
     try:
         out = subprocess.run(
-            ["docker", "inspect", "wikilens-eval", "--format", "{{.Image}}"],
+            ["docker", "inspect", "wikilens-bench", "--format", "{{.Image}}"],
             capture_output=True, text=True, timeout=10).stdout.strip()
         return out.replace("sha256:", "")[:12] or "unknown"
     except Exception:  # noqa: BLE001
@@ -109,7 +116,7 @@ def trajectory_count() -> int:
 
 
 def run_once(argv: list[str]) -> dict:
-    env = dict(os.environ, WIKILENS_SERVER=SERVER, WIKILENS_USER="eval")
+    env = dict(os.environ, WIKILENS_SERVER=SERVER, WIKILENS_USER="bench")
     t = time.perf_counter()
     # **프로세스 그룹으로 띄운다.** `subprocess.run(timeout=)` 은 `claude` 만 죽이고
     # 그 자식(MCP 프록시 등)은 남긴다(실측: 타임아웃 뒤 자식 2개 잔존). 90세션에서
@@ -174,7 +181,7 @@ def run_once(argv: list[str]) -> dict:
     }
 
 
-def plan(groups: list, reps: int, pattern: str) -> list[tuple]:
+def plan(groups: list, reps: int, pattern: str, per_group: int = 0) -> list[tuple]:
     """
     측정 순서를 만든다. **warm 실험에서 이 순서가 곧 가설이다.**
 
@@ -195,15 +202,21 @@ def plan(groups: list, reps: int, pattern: str) -> list[tuple]:
     transfer 가 예측을 깨고 성공하면 그것대로 중요하다(항이 적은 질의는 겹침 하나가
     c 를 크게 올린다 — G08 은 q0 항이 4개뿐이다).
     """
+    # **`transfer` 만은 자르지 않는다** — q0 로 학습해 q1·q2 로 시험하는 것이 그 순서의
+    # 정의라, 질의를 줄이면 재려던 것 자체가 사라진다.
+    def qs(g):
+        n = len(g[3])
+        return range(n if (per_group <= 0 or pattern == "transfer") else min(per_group, n))
+
     out = []
     if pattern == "spread":
         for rep in range(reps):
             for g in groups:
-                for qi in range(len(g[3])):
+                for qi in qs(g):
                     out.append((g, qi, rep))
     elif pattern == "repeat":
         for g in groups:
-            for qi in range(len(g[3])):
+            for qi in qs(g):
                 for rep in range(reps):
                     out.append((g, qi, rep))
     else:  # transfer
@@ -217,10 +230,13 @@ def plan(groups: list, reps: int, pattern: str) -> list[tuple]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--groups", nargs="*", default=None, help="예: G01 G05 (기본 전체)")
-    ap.add_argument("--reps", type=int, default=3,
+    ap.add_argument("--groups", nargs="*", default=list(MINIMAL),
+                    help=f"기본 {' '.join(MINIMAL)} (모양이 다른 셋). 전량은 --groups G01 … G10")
+    ap.add_argument("--per-group", type=int, default=1,
+                    help="그룹당 질의 수. 0 이면 전부. transfer 는 무시한다")
+    ap.add_argument("--reps", type=int, default=1,
                     help="같은 조건 반복. **1 이면 통계를 못 낸다** — 변동이 7배다")
-    ap.add_argument("--budget", type=float, default=20.0, help="USD 상한. 넘으면 멈춘다")
+    ap.add_argument("--budget", type=float, default=10.0, help="USD 상한. 넘으면 멈춘다")
     ap.add_argument("--pattern", choices=["spread", "repeat", "transfer"],
                     default="spread",
                     help="질의 순서. warm 실험에서 무엇을 재는지가 이것으로 갈린다")
@@ -248,13 +264,13 @@ def main() -> int:
               f"(지금 {a.reps} → 학습 0회)", file=sys.stderr)
         return 2
 
-    total = len(plan(groups, a.reps, a.pattern)) * len(CASES)
+    total = len(plan(groups, a.reps, a.pattern, a.per_group)) * len(CASES)
     print(f"  대상 {len(groups)}그룹 · {a.pattern} 순서 · {len(CASES)}케이스 = {total}세션")
     t0 = trajectory_count()
     # **서버가 없으면 시작하지 않는다.** 그냥 두면 C 세션이 전부 실패하면서
     # 세션당 $0.53 을 태운다 — 30세션이면 $16 을 버리고 나서야 안다.
     if t0 < 0:
-        print(f"  ✗ {SERVER} 에 못 닿는다 — `eval/setup.sh up` 을 먼저 돌릴 것\n"
+        print(f"  ✗ {SERVER} 에 못 닿는다 — `bench/setup.sh up` 을 먼저 돌릴 것\n"
               "    (C 케이스가 전부 실패하면서 예산만 태운다)", file=sys.stderr)
         return 2
     mode = "warm" if t0 > 0 else "cold"
@@ -288,7 +304,7 @@ def main() -> int:
                 print(f"  [워밍] {cname:10} ${r.get('cost',0):.3f}")
             print()
 
-        for g, qi, rep in plan(groups, a.reps, a.pattern):
+        for g, qi, rep in plan(groups, a.reps, a.pattern, a.per_group):
             name, gold, _title, queries = g
             q = queries[qi]
             for cname, builder in CASES:

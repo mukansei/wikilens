@@ -2,7 +2,7 @@
 """
 정답이 결과 **몇 위**에 오나. 그리고 틀렸을 때 **무엇을 대신 골랐나**.
 
-    python3 eval/rank.py
+    python3 bench/rank.py
 
 **비용은 안 잰다.** 그건 `agent.py` 가 실제 세션에서 실제 토큰으로 재고, 여기서
 흉내내면 시뮬레이션을 측정처럼 보이게 할 뿐이다(예전에 그렇게 만들었다가 두 하네스가
@@ -122,7 +122,7 @@ def server(q: str, gold: str) -> tuple[int, str, str]:
     """
     req = urllib.request.Request(
         SERVER + "/api/search",
-        data=json.dumps({"query": q, "userKey": "eval", "limit": 20}).encode(),
+        data=json.dumps({"query": q, "userKey": "bench", "limit": 20}).encode(),
         headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=30) as r:
         ids = [h["pageId"] for h in json.loads(r.read())["hits"]]
@@ -148,7 +148,7 @@ def main() -> int:
     try:
         urllib.request.urlopen(SERVER + "/api/health", timeout=5).read()
     except Exception as e:  # noqa: BLE001
-        print(f"  ✗ {SERVER} 에 못 닿는다 ({e}) — `eval/setup.sh up` 을 먼저 돌릴 것",
+        print(f"  ✗ {SERVER} 에 못 닿는다 ({e}) — `bench/setup.sh up` 을 먼저 돌릴 것",
               file=sys.stderr)
         return 2
 
@@ -176,7 +176,7 @@ def main() -> int:
                     cells.append(f"{cname} {'%2d위' % r if r > 0 else ' 밖 '}"
                                  + (f"({stage})" if stage not in ("search", "none") else ""))
                 print(f"  q{qi} {q[:44]:46} " + " · ".join(cells))
-    print(f"\n  결과 {out} — 표는 `python3 eval/report.py`")
+    print(f"\n  결과 {out} — 표는 `python3 bench/report.py`")
     return 0
 
 

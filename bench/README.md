@@ -1,9 +1,13 @@
-# eval — 검색 방식 비교
+# bench — 검색 방식 비교
 
-**이것은 지워진 `bench/` 가 아니다.** 그쪽은 합성 코퍼스 시뮬레이션이었고, 절대 수치를
-믿을 수 없어 2026-08-04 에 제거됐다(`DECISIONS.md` D1 참고). 여기는 **실제 코퍼스
-13,933건**에서 재고, 에이전트 벤치는 **실제 Claude Code 세션**을 띄운다. 이름을 달리
-쓰는 이유가 그것이다 — 한 단어가 두 물건을 가리키면 안 된다.
+**같은 이름을 쓴 것이 전에 하나 더 있었다.** 2026-08-04 에 제거된 `bench/` 는 합성
+코퍼스 시뮬레이션이었고 절대 수치를 믿을 수 없어 지웠다(`DECISIONS.md` D1). 여기는
+**실제 코퍼스 13,933건**에서 재고 에이전트 벤치는 **실제 Claude Code 세션**을 띄운다 —
+성질이 정반대다.
+
+그래서 한동안 `eval/` 로 두었는데 2026-08-13 에 `bench/` 로 옮겼다. **대가는 `git log
+-- bench/` 가 두 물건을 섞어 보여주는 것**이고, 가르는 선은 그 날짜다. 옛 것을 찾으려면
+`git log --diff-filter=D -- bench/` 로 삭제 커밋(2026-08-04)을 보면 된다.
 
 세 방식을 비교한다:
 
@@ -28,7 +32,7 @@
 단계에서 찾았는지** 남긴다. 틀렸을 때 **무엇을 대신 골랐는지**가 랭킹 진단의 단서다.
 
 ```bash
-python3 eval/rank.py
+python3 bench/rank.py
 ```
 
 **비용은 안 잰다.** 예전에는 여기서 문자 수·지연도 쟀는데, 그것은 내가 가정한 접근
@@ -43,10 +47,26 @@ python3 eval/rank.py
 비용(`total_cost_usd`)이 나온다.
 
 ```bash
-eval/setup.sh up
-python3 eval/agent.py --groups G01 G05 --reps 3 --budget 20
-eval/setup.sh down
+bench/setup.sh up
+python3 bench/agent.py          # 기본이 최소 집합 — 9세션 약 $5
+bench/setup.sh down
 ```
+
+**기본값이 최소다.** 세션당 $0.5~1.6 이라 전량(90세션)은 켜야 나간다.
+
+| | 세션 | 대략 |
+|---|---|---|
+| 기본 (`MINIMAL` 3그룹 × q0 × 1회) | 9 | $5 |
+| `--per-group 0` (그룹당 3질의) | 27 | $14 |
+| `--groups G01 … G10 --per-group 0 --reps 3` | 81 | $43 |
+
+**순위를 여기서 재지 말 것.** `rank.py` 가 30질의 전량을 $0 에 낸다. 세션이 유일하게
+주는 것은 **에이전트가 실제로 얼마나 일하나**이고, 그건 그룹 셋이면 모양이 다 나온다 —
+셋 다 도달(G04, 비용만 갈림) · 두 판이 반대(G09) · 셋 다 실패(G01, 헤매는 비용).
+고른 근거는 `queries.py` 의 `MINIMAL`.
+
+**`--reps 1` 은 통계를 못 낸다** — 변동이 7배다. 리포트가 표본 부족을 스스로 찍는다.
+우열을 주장하려면 반복을 올려야 하고, 그건 비용을 올린다는 뜻이다.
 
 **중단돼도 이어받는다** — 끝난 조합은 건너뛴다(워밍과 실패는 안 센다). `--budget` 이
 USD 상한이고 **워밍도 그 예산을 쓴다.** `--warmup` 은 케이스마다 버리는 1회를 먼저
@@ -80,8 +100,8 @@ C 서버판     mcp__…__search · read · grep
 ### 실험이 둘이다 — cold 와 warm
 
 ```bash
-eval/setup.sh up cold    # 궤적 비움 (기본)
-eval/setup.sh up warm    # 궤적 유지
+bench/setup.sh up cold    # 궤적 비움 (기본)
+bench/setup.sh up warm    # 궤적 유지
 ```
 
 **궤적을 비울지가 곧 무엇을 재느냐다.**
@@ -105,8 +125,8 @@ eval/setup.sh up warm    # 궤적 유지
 ### warm 에서 질의 순서가 곧 가설이다 — `--pattern`
 
 ```bash
-python3 eval/agent.py --pattern repeat   --reps 5 --groups G04
-python3 eval/agent.py --pattern transfer --reps 5 --groups G04
+python3 bench/agent.py --pattern repeat --reps 5 --groups G04 --per-group 1
+python3 bench/agent.py --pattern transfer --reps 5 --groups G04
 ```
 
 | | 순서 | 재는 것 |
@@ -134,6 +154,9 @@ python3 eval/agent.py --pattern transfer --reps 5 --groups G04
 10그룹 × 3질의. **같은 답을 내야 하는 유사 질의**를 묶었고, 코퍼스를 직접 읽어
 사람이 치는 말로 썼다. 설계 근거와 함정은 그 파일의 독스트링에 있다.
 
+30개 전량은 `rank.py`($0)가 쓰고, **`agent.py` 는 그중 `MINIMAL` 세 그룹만** 쓴다.
+비싼 쪽에만 최소를 적용하는 것이라 순위 데이터는 안 줄어든다.
+
 **순위로 질의를 고르지 않았다** — 랭커에 맞춰 시험지를 고치면 순환 논리가 된다.
 
 ---
@@ -144,8 +167,9 @@ python3 eval/agent.py --pattern transfer --reps 5 --groups G04
 차이보다 클 수 있다 — **단발 측정으로 우열을 주장하면 안 된다.** 리포트가 IQR 겹침을
 스스로 지목하므로 그 판정을 따를 것.
 
-**쉬운 그룹은 변별하지 못한다.** 세 방식이 다 맞히면 돈만 쓰고 정보가 없다.
-예산이 한정되면 `rank.py` 로 먼저 순위를 보고 **갈리는 그룹**부터 돌릴 것.
+**쉬운 그룹은 변별하지 못한다.** 세 방식이 다 맞히면 돈만 쓰고 정보가 없다 —
+`MINIMAL` 기본값이 그래서 셋뿐이다. 그룹을 늘릴 때도 `rank.py` 로 먼저 순위를 보고
+**갈리는 그룹**부터 고를 것.
 
 **궤적이 쌓인다.** C 케이스는 MCP 프록시가 `sessionId` 를 보내므로 질의가 학습으로
 기록된다. `setup.sh` 가 전용 서버를 띄우는 이유이고, **운영 서버로 돌리면 안 된다.**
@@ -159,7 +183,7 @@ python3 eval/agent.py --pattern transfer --reps 5 --groups G04
 
 ```
 === 형상 ===
-  eval-baseline-2026-08-12                              90건
+  bench-baseline-2026-08-12                              90건
   (기록 없음)                                            9건
   ★ 형상이 섞여 있다 — 코드가 바뀐 전후를 한 표에 넣고 있다
 ```
@@ -168,14 +192,14 @@ python3 eval/agent.py --pattern transfer --reps 5 --groups G04
 사실이 아니다. C 케이스는 **서버 이미지 ID** 도 남긴다: 소스를 고치고 다시 안 지으면
 옛 이미지가 도는데(실제로 겪었다), 커밋만으로는 그것을 못 잡는다.
 
-기준 태그는 `eval-baseline-2026-08-12` 다. **옮기지 말 것** — 코드가 바뀌면 새 태그를
+기준 태그는 `bench-baseline-2026-08-12` 다. **옮기지 말 것** — 코드가 바뀌면 새 태그를
 단다. 옮기면 옛 결과가 어느 형상에서 나왔는지 복원할 수 없다.
 
 ## 결과 보기
 
 ```bash
-python3 eval/report.py                    # 표
-python3 eval/report.py --md > eval/RESULTS.md
+python3 bench/report.py                    # 표
+python3 bench/report.py --md > bench/RESULTS.md
 ```
 
 **손으로 옮겨 적은 표는 두지 않는다.** 그렇게 했더니 질의를 바꾼 순간 문서가 조용히
