@@ -6,6 +6,8 @@ import io.wikilens.api.SearchResponse
 
 import io.wikilens.acl.AclRegistry
 import io.wikilens.index.LuceneIndex
+import io.wikilens.index.Scored
+import io.wikilens.learn.Hint
 import io.wikilens.learn.TrajectoryStore
 import org.springframework.stereotype.Service
 
@@ -92,10 +94,19 @@ class SearchService(
             acl.canSee(tokens, pid) && index.metaOf(pid) != null
         }
 
-        data class Acc(var score: Double, var source: String, var rel: Double?)
-        val acc = LinkedHashMap<String, Acc>()
-        val meta = lexical.associateBy { it.id }
+        val hits = materialize(fuse(lexical, hints), lexical.associateBy { it.id }, limit)
+        return SearchResponse(req.query, terms, lexical.size, hints.size, hits)
+    }
 
+    /** 융합 중 한 후보의 누적 상태. */
+    private data class Acc(var score: Double, var source: String, var rel: Double?)
+
+    /**
+     * 어휘 결과와 학습 힌트를 RRF 로 합친다. 둘 다에서 나온 페이지는 `both` 가 되고
+     * 점수가 더해진다 — 그것이 가장 신뢰도 높은 신호다.
+     */
+    private fun fuse(lexical: List<Scored>, hints: List<Hint>): Map<String, Acc> {
+        val acc = LinkedHashMap<String, Acc>()
         lexical.forEachIndexed { rank, s ->
             acc[s.id] = Acc(1.0 / (RRF_K + rank + 1), "lexical", null)
         }
@@ -108,11 +119,20 @@ class SearchService(
                 acc[h.pageId] = Acc(boost, "learned", h.reliability)
             }
         }
+        return acc
+    }
 
-        // 학습 힌트로만 발견된 페이지는 메타 캐시에서 채운다. 여기서 버리면
-        // `source="learned"` 가 도달 불가능한 분기가 되는데, **어휘 검색이 못 찾는 문서를
-        // 찾아주는 것이 학습 레이어의 존재 이유다.** `take` 는 필터 **뒤에** 와야 한다.
-        val hits = acc.entries
+    /**
+     * 점수순으로 제목·스페이스를 채워 응답 형태로 만든다.
+     *
+     * 학습 힌트로만 발견된 페이지는 메타 캐시에서 채운다. 여기서 버리면
+     * `source="learned"` 가 도달 불가능한 분기가 되는데, **어휘 검색이 못 찾는 문서를
+     * 찾아주는 것이 학습 레이어의 존재 이유다.** [limit] 은 필터 **뒤에** 걸린다 —
+     * 앞에 걸면 버려질 후보가 슬롯을 먹는다.
+     */
+    private fun materialize(acc: Map<String, Acc>, meta: Map<String, Scored>,
+                            limit: Int): List<SearchHit> =
+        acc.entries
             .sortedByDescending { it.value.score }
             .mapNotNull { (pid, a) ->
                 val title: String
@@ -127,7 +147,4 @@ class SearchService(
                 SearchHit(pid, title, space, a.score, a.source, a.rel)
             }
             .take(limit)
-
-        return SearchResponse(req.query, terms, lexical.size, hints.size, hits)
-    }
 }
