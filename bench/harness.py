@@ -1,10 +1,13 @@
 """
-두 하네스가 공유하는 것 — 결과 스키마 · 이어받기 · 통계.
+세 하네스가 공유하는 것 — 대상 서버 · 결과 스키마 · 이어받기 · 통계.
 
 **출력 모양을 하나로 묶는 것이 이 파일의 요점이다.** 예전에는 `static.py` 와
 `agent.py` 가 각자 다른 모양으로 찍어서 나란히 놓고 볼 수가 없었고, 결과를 손으로
 문서에 옮기다 보니 질의를 바꾼 순간 그 문서가 조용히 낡았다(실제로 겪었다).
-이제 둘 다 `Record` 로 내고 `report.py` 가 그것만 읽는다.
+이제 셋 다 `Record` 로 내고 `report.py` 가 그것만 읽는다.
+
+**주소와 사용자도 여기 있다.** 각자 들고 있으면 한쪽만 고쳤을 때 두 하네스가 다른
+서버를 재고, 그것이 결과에 안 보인다 — 이 저장소가 실제로 겪었다(`df048e9c`).
 """
 from __future__ import annotations
 
@@ -12,12 +15,21 @@ import json
 import pathlib
 import subprocess
 import sys
+import urllib.request
 from datetime import datetime
 import statistics
 from dataclasses import asdict, dataclass, field, fields
 
 HERE = pathlib.Path(__file__).resolve().parent
 RESULTS = HERE / "results"
+
+#: `setup.sh` 가 띄우는 전용 서버. **운영(:8787)을 재면 벤치 질의가 그대로 학습으로
+#: 쌓인다** — MCP 프록시는 항상 `sessionId` 를 보내고, 궤적은 유일한 복구 불가 자산이다.
+SERVER = "http://127.0.0.1:8790"
+
+#: 벤치가 쓰는 식별자. ACL 이 꺼져 있어 값 자체는 아무거나 되지만, 셋이 같아야
+#: 궤적이 한 사람의 것으로 모인다.
+BENCH_USER = "bench"
 
 
 def _git(*args: str) -> str:
@@ -190,6 +202,63 @@ class Writer:
 
     def __exit__(self, *a):
         self.close()
+
+
+def api_post(path: str, body: dict, timeout: float = 30) -> dict:
+    """벤치 서버에 POST. 셋이 같은 주소를 쓰게 하는 것이 요점이다."""
+    req = urllib.request.Request(SERVER + path, data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read() or b"{}")
+
+
+def api_get(path: str, timeout: float = 10) -> dict:
+    with urllib.request.urlopen(SERVER + path, timeout=timeout) as r:
+        return json.loads(r.read() or b"{}")
+
+
+def select_groups(groups: list, wanted: list[str] | None) -> list:
+    """접두어로 고른다 — `G01` 이 `G01 <그룹명>` 를 잡는다."""
+    if wanted is None:
+        return list(groups)
+    return [g for g in groups if any(g[0].startswith(p) for p in wanted)]
+
+
+def require_server(need_plugins: bool) -> str:
+    """
+    벤치 서버에 닿나. 못 닿으면 **무엇을 돌려야 하는지**를 문장으로 돌려준다.
+
+    **`need_plugins` 가 안내를 가른다.** `agent.py` 만 플러그인 격리가 필요하고
+    (`setup.sh up`), `rank.py`·`learn.py` 는 순수 HTTP 라 서버만 있으면 된다
+    (`setup.sh server`). 안내를 한 문장으로 두면 $0 측정 하나 때문에 사용자의
+    플러그인이 내려가고, 그 사이에 스크립트가 죽으면 `down` 을 안 불러 안 돌아온다.
+
+    **운영 서버를 재지 않는지도 여기서 본다.** `agent.py`·`learn.py` 는 `sessionId` 를
+    보내므로 질의가 그대로 학습으로 쌓이고, 궤적은 되돌릴 수 없다. [SERVER] 를 고치는
+    것이 유일한 경로이므로 검사도 그 한 곳에서 한다 — 하네스마다 두면 한쪽만 고쳐진다.
+    """
+    if not SERVER.endswith(":8790"):
+        return (f"SERVER 가 {SERVER} 다 — 벤치는 :8790 이어야 한다. 운영 서버를 재면 "
+                "벤치 질의가 그대로 학습으로 쌓이고 되돌릴 수 없다")
+    try:
+        api_get("/api/health", timeout=5)
+    except Exception as e:  # noqa: BLE001
+        how = "up" if need_plugins else "server"
+        return (f"{SERVER} 에 못 닿는다 ({e}) — `bench/setup.sh {how}` 를 먼저 돌릴 것"
+                + ("\n    (C 케이스가 전부 실패하면서 예산만 태운다)" if need_plugins else ""))
+    return ""
+
+
+def trajectory_count() -> int:
+    """
+    서버가 든 궤적 수. **모드를 사람이 아니라 서버에 묻는 근거다** — 플래그로 받으면
+    cold 로 띄워놓고 warm 이라 적는 일이 생기고, 결과 파일이 거짓말을 하면 나중에
+    구별할 방법이 없다. 못 닿으면 -1.
+    """
+    try:
+        return int(api_get("/api/stats").get("trajectories", 0))
+    except Exception:  # noqa: BLE001
+        return -1
 
 
 def summarize(values: list[float]) -> dict:
