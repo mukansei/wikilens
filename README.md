@@ -1,5 +1,26 @@
 # WikiLens
 
+<!--
+  배지는 **정적**이다 — 이 저장소는 비공개라 shields.io 가 빌드·라이선스 상태를 못 읽는다.
+  그래서 여기 적힌 버전은 손으로 복제한 값이고, 정본은 `server/build.gradle.kts` 와
+  `cli/pyproject.toml` 이다. **어긋나면 `shared_contract.sh` 가 빨개진다** — 이 저장소가
+  "두 곳이 같아야 하는데 연결이 없다" 로 반복해서 물린 자리라 검사를 붙였다.
+
+  **개수는 배지에 넣지 않는다**(계약 N개·테스트 N개). 늘 때마다 낡고, 돌리면 바로 나온다.
+-->
+
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](cli/)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.4-7F52FF?logo=kotlin&logoColor=white)](server/)
+[![JVM](https://img.shields.io/badge/JVM-25-437291?logo=openjdk&logoColor=white)](server/build.gradle.kts)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F?logo=springboot&logoColor=white)](server/)
+
+[![Lucene](https://img.shields.io/badge/Lucene-9.11-D22128)](server/src/main/kotlin/io/wikilens/index/)
+[![Nori](https://img.shields.io/badge/Nori-%ED%95%9C%EA%B5%AD%EC%96%B4%20%ED%98%95%ED%83%9C%EC%86%8C-D22128)](#적용-범위)
+[![RE2](https://img.shields.io/badge/regex-RE2%20%28re2j%29-4285F4)](DECISIONS.md)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-plugin%20%C3%97%202-D97757?logo=anthropic&logoColor=white)](#어느-것을-쓰나요)
+[![MCP](https://img.shields.io/badge/MCP-stdio%20JSON--RPC-000000)](plugin/client/mcp/)
+[![read-only](https://img.shields.io/badge/Confluence-%EC%9D%BD%EA%B8%B0%20%EC%A0%84%EC%9A%A9-555555)](#미해결)
+
 **Confluence 를 에이전트가 다룰 수 있는 네 가지 연산으로 바꿉니다.**
 
 에이전트는 위키를 못 읽습니다 — 인증이 필요하고, API 는 레이트리밋이 있고, 무엇보다
