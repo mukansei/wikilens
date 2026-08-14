@@ -105,6 +105,24 @@ class TrajectoryStore(
     private val declaredCount = AtomicInteger()
 
     /**
+     * 진술된 궤적 중 **폴백이 같은 답을 골랐을** 수. 나머지는 폴백이 틀렸다는 뜻이다.
+     *
+     * **이것이 `dest = reads.last()` 추정의 오류율을 직접 잰다.** 모델이 답을 말한
+     * 궤적에서는 정답(모델 기준)과 추정을 나란히 볼 수 있으므로, 추가 관측 없이
+     * 공짜로 계산된다 — 진술이 오는 만큼 표본이 저절로 쌓인다.
+     *
+     * 손으로 잰 값은 n=3 이었다(읽기 2건 이상에서 3건 중 2건 어긋남,
+     * `docs/declared-answer-design.md`). 그 수를 **데이터가 대신 내게** 하는 자리다.
+     *
+     * **읽기가 1건이면 자명하게 일치한다** — 그것까지 세면 비율이 낙관적으로 부풀므로
+     * 2건 이상만 센다(`fallbackChecked`).
+     */
+    private val fallbackAgreed = AtomicInteger()
+
+    /** 위 비교의 분모. 진술이 있고 **읽기가 2건 이상**인 궤적만 센다. */
+    private val fallbackChecked = AtomicInteger()
+
+    /**
      * 지금까지 본 **권한 범위**들(`AclRegistry.scopeOf`). 신원이 아니다.
      *
      * 1 이면 학습이 균질하다. 2 이상이면 권한 폭이 다른 관측이 한 포스팅에 섞이는 중이고,
@@ -270,7 +288,15 @@ class TrajectoryStore(
         trajCount.incrementAndGet()
         // **여기서 센다 — `finalize` 가 아니다.** 재생(`replay`)도 이 경로를 지나므로
         // 재기동 뒤에도 값이 복구된다. `finalize` 에서 세면 그때마다 0 부터 시작한다.
-        if (t.declared) declaredCount.incrementAndGet()
+        if (t.declared) {
+            declaredCount.incrementAndGet()
+            // 진술이 있으면 폴백이 무엇을 골랐을지 알 수 있다 — 그 둘을 대조한다.
+            // 읽기 1건은 두 값이 정의상 같으므로 분모에서 뺀다.
+            if (t.reads.size >= 2) {
+                fallbackChecked.incrementAndGet()
+                if (t.reads.last() == t.dest) fallbackAgreed.incrementAndGet()
+            }
+        }
         byKind.computeIfAbsent(t.kind) { AtomicInteger() }.incrementAndGet()
         if (t.scope.isNotEmpty()) scopesSeen.add(t.scope)
         // 셋으로 나눈다 — 읽은 게 없는데 힌트만 서빙된 것은 **실패가 아니라 미판정**이다
@@ -413,6 +439,14 @@ class TrajectoryStore(
             // **진술 설계의 성립 조건.** 0 이면 모델이 `answer` 를 안 부르는 것이고
             // 폴백만 돌아 아무것도 안 바뀐다 — 그 사실이 여기서만 보인다.
             "declaredDest" to declaredCount.get(),
+            // **추정의 오류율.** 진술이 있는 궤적에서 `reads.last()` 폴백이 같은 답을
+            // 골랐는가. 읽기 2건 이상만 센다(1건은 자명하게 일치한다).
+            // 낮으면 진술 없는 궤적의 `dest` 를 그만큼 못 믿는다는 뜻이다.
+            "fallbackChecked" to fallbackChecked.get(),
+            "fallbackAgreed" to fallbackAgreed.get(),
+            "fallbackAgreeRate" to fallbackChecked.get().let {
+                if (it > 0) fallbackAgreed.get().toDouble() / it else null
+            },
             // 0 이 아니면 세션 상한이나 sessionId 길이 상한에 걸려 **관측을 버리는 중**이다.
             "droppedSessions" to droppedSessions.get(),
             "trajectories" to trajCount.get(),

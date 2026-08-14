@@ -123,6 +123,38 @@ class DeclaredDestTest {
                      "진술 뒤에 연 111 이 지나침으로 안 걸렸다")
     }
 
+    /**
+     * **추정의 오류율을 데이터가 내게 한다.**
+     *
+     * 진술이 있는 궤적에서는 정답(모델 기준)과 폴백(`reads.last()`)을 나란히 볼 수
+     * 있으므로, 추가 관측 없이 폴백이 얼마나 틀리는지 계산된다. 손으로 잰 n=3 을
+     * 대체하는 자리다.
+     *
+     * **읽기 1건은 분모에서 뺀다** — 두 값이 정의상 같아서, 세면 비율이 낙관적으로
+     * 부풀고 "폴백은 대체로 맞다" 는 틀린 결론이 나온다.
+     */
+    @Test
+    fun `폴백이 진술과 갈리는 비율을 센다`() {
+        val (s, _) = capture()
+
+        // ① 읽기 1건 — 자명한 일치라 분모에 안 들어간다
+        s.onQuery("a", "질의", listOf("가")); s.onRead("a", "1"); s.onAnswer("a", "1"); s.onEnd("a")
+        // ② 읽기 2건 · 마지막이 답 — 폴백 일치
+        s.onQuery("b", "질의", listOf("가")); s.onRead("b", "1"); s.onRead("b", "2")
+        s.onAnswer("b", "2"); s.onEnd("b")
+        // ③ 읽기 2건 · 앞엣것이 답 — 폴백 불일치
+        s.onQuery("c", "질의", listOf("가")); s.onRead("c", "1"); s.onRead("c", "2")
+        s.onAnswer("c", "1"); s.onEnd("c")
+        // ④ 진술 없음 — 대조할 정답이 없어 분모 밖
+        s.onQuery("d", "질의", listOf("가")); s.onRead("d", "1"); s.onRead("d", "2"); s.onEnd("d")
+
+        val st = s.stats()
+        assertEquals(3, st["declaredDest"], "진술은 셋")
+        assertEquals(2, st["fallbackChecked"], "읽기 2건 이상인 진술만 분모")
+        assertEquals(1, st["fallbackAgreed"])
+        assertEquals(0.5, st["fallbackAgreeRate"])
+    }
+
     @Test
     fun `재생해도 진술 수가 복구된다`() {
         val (s, out) = capture()
