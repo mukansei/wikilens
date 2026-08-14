@@ -207,16 +207,36 @@ def _write_aliases(
     for e, terms in sorted(with_alias, key=lambda x: -x[0].indeg):
         lines.append(f"{e.space} | {e.title} | {' · '.join(terms)} | {e.indeg} | {e.path}")
 
-    if without:
+    # **둘을 갈라 적는다.** 한때 한 절에 묶고 인링크 수를 `0` 으로 **찍어** 넣었는데,
+    # 그 둘은 정반대의 것이다 — 아무도 안 링크한 문서와, 다들 제목 그대로 링크하는
+    # 문서다. 실측(13,933건): 그 절 13,469건 중 **1,258건이 인링크가 있었고** 가장
+    # 심한 것은 115개였다. 이 파일을 grep 하는 쪽은 그 `0` 과 "고아 문서 후보" 를
+    # 그대로 읽으므로, 가장 정본에 가까운 페이지를 고아로 보고하고 있었다.
+    by_title_only = sorted([e for e in without if e.indeg > 0], key=lambda x: -x.indeg)
+    orphans = [e for e in without if e.indeg <= 0]
+
+    if by_title_only:
+        lines += [
+            "",
+            "## 제목 그대로만 링크된 페이지",
+            "",
+            "링크는 있는데 전부 제목 그대로라 별칭이 안 생긴 페이지입니다.",
+            "**고아가 아닙니다** — 인링크가 많을수록 오히려 정본에 가깝습니다.",
+            "",
+        ]
+        for e in by_title_only:
+            lines.append(f"{e.space} | {e.title} | (제목으로만) | {e.indeg} | {e.path}")
+
+    if orphans:
         lines += [
             "",
             "## 별칭 없는 페이지",
             "",
-            "어느 문서도 링크하지 않았거나 제목 그대로만 링크된 페이지입니다.",
+            "어느 문서도 링크하지 않은 페이지입니다.",
             "검색으로만 도달 가능하므로 **고아 문서 후보**입니다.",
             "",
         ]
-        for e in sorted(without, key=lambda x: x.title):
+        for e in sorted(orphans, key=lambda x: x.title):
             lines.append(f"{e.space} | {e.title} | (별칭 없음) | 0 | {e.path}")
 
     lines.append("")

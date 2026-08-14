@@ -246,6 +246,49 @@ def test_orphan_detected(tmp_path):
     assert "고아 문서 후보" in aliases
 
 
+def test_title_only_links_are_not_reported_as_orphans(tmp_path):
+    """
+    **제목 그대로만 링크된 페이지를 고아로 보고하던 자리.**
+
+    별칭은 "제목과 다른 표현" 이라 제목 그대로 링크하면 안 생긴다. 그런데 그런
+    페이지가 "별칭 없는 페이지 … **고아 문서 후보**" 절에 들어가고, 인링크 수가
+    **하드코딩된 `0`** 으로 찍혔다. 정반대다 — 다들 제목 그대로 부른다는 것은
+    그 제목이 정본이라는 뜻이다.
+
+    실코퍼스 실측(13,933건): 그 절 13,469건 중 **1,258건이 인링크가 있었고** 가장
+    심한 것은 115개였다. 로컬판은 이 파일을 grep 해서 답하므로 그대로 모델에 간다.
+    """
+    root = tmp_path / "vault"
+    pages = {
+        "900000001": {"title": "결재 정책", "space": "DOCS",
+                      "xhtml": "<p>정책입니다.</p>"},
+        "900000002": {"title": "안내", "space": "DOCS", "xhtml": """
+            <p><ac:link><ri:page ri:content-title="결재 정책"/>
+            <ac:plain-text-link-body><![CDATA[결재 정책]]></ac:plain-text-link-body></ac:link></p>
+        """},
+        "900000003": {"title": "공지", "space": "DOCS", "xhtml": """
+            <p><ac:link><ri:page ri:content-title="결재 정책"/>
+            <ac:plain-text-link-body><![CDATA[결재 정책]]></ac:plain-text-link-body></ac:link></p>
+        """},
+    }
+    state = {"cursor": None, "pages": {}}
+    for pid, m in pages.items():
+        layout.ensure_parent(layout.raw_path(root, pid)).write_text(m["xhtml"], encoding="utf-8")
+        state["pages"][pid] = {"title": m["title"], "space": m["space"],
+                               "version": 1, "updated": ""}
+    layout.ensure_parent(layout.sync_state_path(root)).write_text(
+        json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    build(root)
+    aliases = layout.aliases_path(root).read_text(encoding="utf-8")
+
+    head, _, tail = aliases.partition("## 별칭 없는 페이지")
+    assert "결재 정책" not in tail, "제목으로만 링크된 페이지가 고아 목록에 있다"
+    assert "DOCS | 결재 정책 | (제목으로만) | 2 |" in head, (
+        f"인링크 수가 실제 값이어야 한다 — 하드코딩된 0 이 아니다:\n{aliases}"
+    )
+
+
 def test_aliases_puts_path_next_to_alias(tmp_path):
     """
     grep 결과에서 경로가 같은 블록에 나와야 한다.
