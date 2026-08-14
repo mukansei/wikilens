@@ -14,31 +14,6 @@ WikiLens는 **다른 문서들이 각 페이지를 링크할 때 쓴 표현**(�
 더해집니다 — 남들이 같은 질문으로 찾아간 문서가 위로 올라옵니다.
 
 
-## Windows
-
-**MCP 도구 다섯은 Windows 에서 그대로 됩니다** — MCP 프록시가 순수 파이썬이라
-셸이 필요 없습니다. 파이썬만 있으면 됩니다.
-
-다만 **인터프리터 이름이 다릅니다.** macOS·리눅스는 `python3`, Windows 는 대개
-`python` 또는 `py` 입니다. 플러그인은 `python3` 를 기본으로 쓰되 환경변수로 바꿀 수
-있게 해뒀습니다 — `python3` 로 안 뜨면 이것을 설정하세요:
-
-```powershell
-setx WIKILENS_PYTHON python      # 또는 py
-```
-
-설정 후 Claude Code 를 재시작하세요. `/plugin` 목록에서 `wiki` 서버가 연결됐는지
-확인하고, 안 되면 `python --version` 으로 그 이름이 맞는지 먼저 보세요.
-
-**진단 명령은 셸에 따라 형태가 다릅니다**(https://code.claude.com/docs/en/setup).
-Git for Windows 가 있으면 Bash 도구를 쓰고
-(`python3 "${CLAUDE_PLUGIN_ROOT}/..."`), 없으면 PowerShell 도구를 씁니다
-(`python "$env:CLAUDE_PLUGIN_ROOT\..."`). 변수 문법이 다르니 그대로 복사하지 마세요.
-
-> **로컬판(`wikilens-local`)은 아직 Bash 가 필요합니다** — 볼트를 만드는 래퍼가 셸
-> 스크립트입니다. Windows 에서 로컬판을 쓰려면 Git for Windows 를 설치하거나 WSL 을
-> 쓰세요. 서버판 사용자는 볼트를 만들지 않으므로 해당 없습니다.
-
 ## 설치
 
 ```
@@ -78,6 +53,34 @@ python3 ~/.claude/plugins/cache/wikilens/wikilens-client/*/mcp/wikilens_mcp.py -
 
 주소·식별자·서버 연결·색인 크기·등록된 사용자 수를 한 번에 보여주고,
 막힌 지점이 있으면 무엇을 해야 하는지 알려줍니다.
+
+**Windows 라면 아래 절을 먼저 보세요** — 인터프리터 이름 때문에 위 명령이 그대로는
+안 될 수 있습니다. macOS·리눅스면 [쓰는 법](#쓰는-법) 으로 넘어가세요.
+
+## Windows 라면
+
+**MCP 도구 다섯은 Windows 에서 그대로 됩니다** — MCP 프록시가 순수 파이썬이라
+셸이 필요 없습니다. 파이썬만 있으면 됩니다.
+
+다만 **인터프리터 이름이 다릅니다.** macOS·리눅스는 `python3`, Windows 는 대개
+`python` 또는 `py` 입니다. 플러그인은 `python3` 를 기본으로 쓰되 환경변수로 바꿀 수
+있게 해뒀습니다 — `python3` 로 안 뜨면 이것을 설정하세요:
+
+```powershell
+setx WIKILENS_PYTHON python      # 또는 py
+```
+
+설정 후 Claude Code 를 재시작하세요. `/plugin` 목록에서 `wiki` 서버가 연결됐는지
+확인하고, 안 되면 `python --version` 으로 그 이름이 맞는지 먼저 보세요.
+
+**진단 명령은 셸에 따라 형태가 다릅니다**(https://code.claude.com/docs/en/setup).
+Git for Windows 가 있으면 Bash 도구를 쓰고
+(`python3 "${CLAUDE_PLUGIN_ROOT}/..."`), 없으면 PowerShell 도구를 씁니다
+(`python "$env:CLAUDE_PLUGIN_ROOT\..."`). 변수 문법이 다르니 그대로 복사하지 마세요.
+
+> **로컬판(`wikilens-local`)은 아직 Bash 가 필요합니다** — 볼트를 만드는 래퍼가 셸
+> 스크립트입니다. Windows 에서 로컬판을 쓰려면 Git for Windows 를 설치하거나 WSL 을
+> 쓰세요. 서버판 사용자는 볼트를 만들지 않으므로 해당 없습니다.
 
 ## 쓰는 법
 
