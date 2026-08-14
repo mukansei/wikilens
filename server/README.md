@@ -121,6 +121,11 @@ wikilens sync --root ~/.wikilens/vault && wikilens acl --root ~/.wikilens/vault 
 
 **루트로 안 돕니다**(uid 10001). 마운트한 디렉터리를 그 uid 가 읽을 수 있어야 합니다.
 
+**이미지를 밖으로 배포한다면 OpenJDK 라이선스를 보세요.** 베이스가
+`eclipse-temurin:25-jre` 라 GPLv2 + Classpath Exception 이 딸려 갑니다 — CE 덕에 이
+저장소 코드(MIT)에는 안 옮지만, 이미지 재배포에는 그쪽 조건이 걸립니다. 사내에서
+직접 빌드해 쓰는 지금 방식에는 해당 없습니다.
+
 > 확인한 것: 볼트 마운트 → 색인 2건, 등록 → 검색·읽기·grep(engine=ripgrep) 정상,
 > `docker restart` 후 사용자 등록과 궤적이 그대로 남음(`/state` 볼륨).
 
