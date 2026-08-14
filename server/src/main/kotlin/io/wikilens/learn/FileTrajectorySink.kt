@@ -2,6 +2,7 @@ package io.wikilens.learn
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
+import io.wikilens.vault.VaultText
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
@@ -67,7 +68,20 @@ class FileTrajectorySink(stateDir: Path, private val mapper: ObjectMapper) : Tra
         var n = 0
         var bad = 0
         var firstError: String? = null
-        Files.newBufferedReader(file).useLines { lines ->
+        // **관대한 디코더를 쓴다.** 기본 `newBufferedReader` 는 REPORT 라 깨진 바이트에서
+        // `MalformedInputException` 을 던지는데, 그것은 줄 단위 `runCatching` **밖**이라
+        // 재생이 통째로 죽고 이 빈은 기동 시점에 만들어져 **서버가 아예 안 뜬다.**
+        // 실측: 마지막 줄이 한글 중간에서 잘린 로그 하나로 `replayed=0 · replaySkipped=0`
+        // — 첫 배포와 구별도 안 된다.
+        //
+        // 잘린 줄은 디스크가 차거나 프로세스가 쓰기 도중 죽으면 남는다(append-only 라
+        // 항상 **마지막 한 줄**이다). 한 줄 때문에 서버 전체가 멈추면 운영자가 유일한
+        // 복구 불가 자산을 손으로 편집하게 된다 — `StateDirLock` 이 기동을 막는 것과는
+        // 반대다(그쪽은 이미 정상 서버가 떠 있어 진단 경로가 살아 있다).
+        //
+        // REPLACE 로 읽으면 그 줄이 U+FFFD 를 품은 채 JSON 파싱에서 실패하고, 아래
+        // 줄 단위 경로가 세어 **이미 있는 error 로그**로 시끄럽게 알린다.
+        VaultText.reader(file).useLines { lines ->
             for (line in lines) {
                 if (line.isBlank()) continue
                 runCatching { store.replay(mapper.readValue<Trajectory>(line)) }

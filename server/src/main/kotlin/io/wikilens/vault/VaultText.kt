@@ -18,9 +18,13 @@ import java.nio.file.Path
  * 볼트는 Python 싱크가 UTF-8 로 쓰므로 정상 경로에서는 안 생긴다. 디스크가 차거나
  * 싱크가 도중에 죽으면 남는다.
  *
- * **네 소비자가 같은 디코더를 써야 한다** — `read`(ContentService) · JVM 스캔 ·
- * rg 의 stdout · **색인**(`VaultReader.readBody`). 한 벌만 REPORT 로 되돌아가면
- * 그 경로만 갈린다.
+ * **다섯 소비자가 같은 디코더를 써야 한다** — `read`(ContentService) · JVM 스캔 ·
+ * rg 의 stdout · **색인**(`VaultReader.readBody`) · **궤적 재생**
+ * (`FileTrajectorySink.replayInto`). 한 벌만 REPORT 로 되돌아가면 그 경로만 갈린다.
+ *
+ * **다섯째는 볼트 파일이 아니다** — 궤적 로그는 서버가 쓴다. 그래도 같은 디코더를 쓰는
+ * 이유는 실패 모양이 같아서다: 쓰기 도중 죽으면 마지막 줄이 글자 중간에서 잘리고,
+ * REPORT 면 그 한 줄이 재생을 통째로 죽여 **서버가 안 뜬다**(실측).
  *
  * **rg 는 디코더만으로 부족하다.** stdout 을 이 리더로 읽어도 rg 가 `--json` 에서
  * UTF-8 아닌 줄을 `lines.text` 가 아니라 `lines.bytes`(base64)로 내므로, 그쪽을 안 풀면
