@@ -29,4 +29,12 @@ data class Trajectory(
      * 오래 머문 것이 같은가. 기록만 한다.
      */
     val readTs: List<Long> = emptyList(),
+    /**
+     * [dest] 가 **모델의 진술**인가, `reads.last()` 추정인가.
+     *
+     * 로그가 append-only 라 나중에 넣으면 그전 궤적에는 영영 없다 — 옛 궤적은 전부
+     * `false` 로 읽히고 그게 사실이다(그때는 추정뿐이었다). 재생에도 실려 재기동
+     * 뒤에도 구별된다.
+     */
+    val declared: Boolean = false,
 )

@@ -96,6 +96,15 @@ class TrajectoryStore(
     private val abandonedCount = AtomicInteger()
 
     /**
+     * `dest` 를 **모델이 말해준** 궤적 수. 나머지는 `reads.last()` 추정이다.
+     *
+     * **이 값이 진술 설계의 성립 조건이다** — 0 에 가까우면 모델이 `answer` 를 안
+     * 부르는 것이고, 그러면 폴백만 돌아 아무것도 안 바뀐다. 스킬 지시가 먹히는지를
+     * 이 비율로만 알 수 있어서 `/api/stats` 가 낸다.
+     */
+    private val declaredCount = AtomicInteger()
+
+    /**
      * 지금까지 본 **권한 범위**들(`AclRegistry.scopeOf`). 신원이 아니다.
      *
      * 1 이면 학습이 균질하다. 2 이상이면 권한 폭이 다른 관측이 한 포스팅에 섞이는 중이고,
@@ -172,6 +181,29 @@ class TrajectoryStore(
         }
     }
 
+    /**
+     * 모델이 **답이라고 말한다.** 안 부르면 `reads.last()` 폴백이라 퇴행은 없다.
+     *
+     * **읽은 것 중에서만 받는다.** 안 읽은 페이지를 답이라고 하면 `reads` 와 `dest` 가
+     * 어긋나 `passedOver = reads - {dest}` 가 무의미해진다(읽은 것 전부가 지나침이
+     * 된다). 거부하면 그 궤적은 폴백으로 남으므로 손실이 없다.
+     *
+     * **마지막 진술이 이긴다** — 모델이 답을 고쳐 말할 수 있고, 그때 나중 것이 맞다.
+     *
+     * 받아들였는지를 반환한다 — 조용히 버려지는 경로가 셋(없는 세션·열린 스팬 없음·
+     * 안 읽은 페이지)이라, 클라이언트가 그 사실을 알 방법이 이것뿐이다.
+     */
+    fun onAnswer(sessionId: String, pageId: String): Boolean {
+        val s = sessions[sessionId] ?: return false
+        synchronized(s) {
+            val span = s.current ?: return false
+            if (pageId !in span.reads) return false
+            span.declaredDest = pageId
+            s.lastTouch = System.currentTimeMillis()
+            return true
+        }
+    }
+
     fun onEnd(sessionId: String): Int {
         val s = sessions.remove(sessionId) ?: return 0
         synchronized(s) {
@@ -203,18 +235,29 @@ class TrajectoryStore(
         if ((span.reads.isEmpty() && span.served.isEmpty()) || span.finalized) return
         span.finalized = true
         recordedSinceStart.incrementAndGet()
+        // **모델이 답을 말했으면 그것, 아니면 마지막 읽기로 추정한다.**
+        //
+        // 폴백이 계약이다 — 안 부르는 클라이언트(옛 프록시·로컬판)는 지금 동작
+        // 그대로여야 한다. 그리고 **진술은 읽은 것 중에서만 받는다**(`onAnswer` 가
+        // 검사한다) — 안 읽은 페이지를 답이라고 하면 `reads` 와 `dest` 가 어긋나
+        // `passedOver` 계산이 무의미해진다.
+        //
+        // 추정이 틀리는 빈도는 `QuerySpan.declaredDest` 의 KDoc 에 실측이 있다.
+        val declared = span.declaredDest?.takeIf { it.isNotEmpty() }
+        val dest = declared ?: span.reads.lastOrNull().orEmpty()
         val t = Trajectory(
             ts = System.currentTimeMillis(),
             session = sessionId,
             keywords = span.keywords,
             kind = span.kind,
             reads = span.reads.toList(),
-            dest = span.reads.lastOrNull().orEmpty(),
+            dest = dest,
             success = success && span.reads.isNotEmpty(),
             served = span.served,
-            rank = span.reads.lastOrNull()?.let { span.ranked.indexOf(it) } ?: -1,
+            rank = span.ranked.indexOf(dest),
             scope = scope,
             readTs = span.readTs.toList(),
+            declared = declared != null,
         )
         sink.append(t)
         apply(t)
@@ -225,6 +268,9 @@ class TrajectoryStore(
 
     private fun apply(t: Trajectory) {
         trajCount.incrementAndGet()
+        // **여기서 센다 — `finalize` 가 아니다.** 재생(`replay`)도 이 경로를 지나므로
+        // 재기동 뒤에도 값이 복구된다. `finalize` 에서 세면 그때마다 0 부터 시작한다.
+        if (t.declared) declaredCount.incrementAndGet()
         byKind.computeIfAbsent(t.kind) { AtomicInteger() }.incrementAndGet()
         if (t.scope.isNotEmpty()) scopesSeen.add(t.scope)
         // 셋으로 나눈다 — 읽은 게 없는데 힌트만 서빙된 것은 **실패가 아니라 미판정**이다
@@ -359,6 +405,9 @@ class TrajectoryStore(
             // 읽은 것이 있는 세션 중 실패 비율. good abandonment 는 분모에서 뺀다.
             "sessionFailureRate" to if (n > 0) m.toDouble() / n else null,
             "abandonedWithHints" to abandonedCount.get(),
+            // **진술 설계의 성립 조건.** 0 이면 모델이 `answer` 를 안 부르는 것이고
+            // 폴백만 돌아 아무것도 안 바뀐다 — 그 사실이 여기서만 보인다.
+            "declaredDest" to declaredCount.get(),
             // 0 이 아니면 세션 상한이나 sessionId 길이 상한에 걸려 **관측을 버리는 중**이다.
             "droppedSessions" to droppedSessions.get(),
             "trajectories" to trajCount.get(),

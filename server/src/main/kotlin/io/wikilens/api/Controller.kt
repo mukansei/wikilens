@@ -63,6 +63,19 @@ class Controller(
     }
 
     /**
+     * 모델이 답을 정했을 때. **안 불러도 동작이 같다** — `dest` 가 `reads.last()` 로
+     * 폴백한다. 그래서 응답이 `accepted` 를 낸다: 읽지 않은 페이지나 없는 세션은
+     * 조용히 버려지는데, 클라이언트가 그 사실을 알 방법이 이것뿐이다.
+     *
+     * 오류로 만들지 않는 이유는 이 호출이 **부가 신호**이기 때문이다 — 실패해도
+     * 검색·읽기는 이미 끝났고, 4xx 를 던지면 모델이 그걸 고치려 든다.
+     */
+    @PostMapping("/answer")
+    fun answer(@RequestBody req: AnswerRequest): Map<String, Any> {
+        return mapOf("accepted" to store.onAnswer(req.sessionId, req.pageId))
+    }
+
+    /**
      * 원문 스캔. **궤적 관측 대상이 아니다** — `search`·`read` 와 달리 `store` 를
      * 부르지 않는다.
      *
