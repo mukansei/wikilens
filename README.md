@@ -934,6 +934,12 @@ Confluence 에서 그룹이 바뀌어도 모르고, 빠져도 운영자가 지�
 
 ## 라이선스
 
-[MIT](LICENSE). 의존성도 전부 permissive 입니다 — Apache-2.0 (Spring Boot · Lucene ·
-Kotlin · Jackson) · BSD-3-Clause (re2j) · MIT (BeautifulSoup · markdownify) ·
-Apache-2.0 (requests).
+[MIT](LICENSE).
+
+**의존성 라이선스는 여기 옮겨 적지 않습니다.** 낡습니다 — 정본은
+`server/build.gradle.kts` 와 `cli/pyproject.toml` 이고, 전이 의존성까지 세면
+JVM 99개 · 파이썬 12개라 손으로 적을 수 있는 양이 아닙니다.
+
+직접 의존성에는 copyleft 가 없습니다. 다만 하나는 알아둘 것 —
+**배포용 Docker 이미지에는 OpenJDK 가 들어갑니다**(GPLv2 + Classpath Exception).
+Classpath Exception 덕에 이 코드에 옮지는 않지만 permissive 는 아닙니다.
