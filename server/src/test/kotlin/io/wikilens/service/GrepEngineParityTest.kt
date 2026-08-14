@@ -46,6 +46,16 @@ class GrepEngineParityTest {
         ).forEach { (id, body) ->
             Files.writeString(root.resolve("mirror/pages/00/$id.md"), body)
         }
+        // **깨진 UTF-8 을 하나 섞는다.** 볼트는 Python 싱크가 UTF-8 로 쓰지만 디스크가
+        // 차거나 싱크가 도중에 죽으면 남고, 두 엔진이 그 줄을 **다르게 다룬다** —
+        // JVM 은 `VaultText` 의 REPLACE 디코더로 U+FFFD 를 넣고, rg 는 `--json` 에서
+        // 그 줄을 `lines.text` 가 아니라 `lines.bytes`(base64)로 낸다. 픽스처를
+        // `writeString` 으로만 만들면 이 갈림이 영영 안 보인다.
+        Files.write(
+            root.resolve("mirror/pages/00/400.md"),
+            "# 깨진\n".toByteArray() + byteArrayOf(-1, -2) +
+                " acme 깨진 줄.\n정상 꼬리 루트.\n".toByteArray(),
+        )
         return root
     }
 
@@ -53,6 +63,7 @@ class GrepEngineParityTest {
         PageRef("100", "루트"),
         PageRef("200", "자식A"),
         PageRef("300", "고아B"),
+        PageRef("400", "깨진"),
     )
 
     @Test

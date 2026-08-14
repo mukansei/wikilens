@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.wikilens.api.GrepMatch
 import io.wikilens.vault.VaultText
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
@@ -128,9 +129,29 @@ class RipgrepEngine(private val mapper: ObjectMapper) : GrepEngine {
         val id = path.substringAfterLast('/').removeSuffix(".md")
         val page = visible[id] ?: return null          // ACL 로 걸러진 문서
         seen.add(id)
-        val text = data.path("lines").path("text").asText()
+        val text = lineText(data.path("lines"))
         val no = data.path("line_number").asInt()
         return GrepMatch(page.id, page.title, no, text.trim().take(JvmGrepEngine.SNIPPET))
+    }
+
+    /**
+     * `--json` 의 한 필드를 문자열로. **UTF-8 이 아닌 줄은 `text` 가 아니라
+     * `bytes`(base64)로 온다** — rg 의 `--json` 규약이다.
+     *
+     * `text` 만 읽으면 그 줄의 스니펫이 **빈 문자열**이 된다(매치는 그대로 나오므로
+     * 사용자에게는 "본문 없는 매치" 로 보인다). JVM 경로는 `VaultText` 의 REPLACE
+     * 디코더로 U+FFFD 를 넣어 원문을 살리므로 **두 엔진이 갈렸다** — `GrepEngineParityTest`
+     * 픽스처가 전부 `writeString` 이라 오래 안 보였다.
+     *
+     * `String(ByteArray, UTF_8)` 이 곧 REPLACE 다(잘못된 바이트열마다 U+FFFD). 그래서
+     * 디코더를 따로 만들지 않는다 — [VaultText] 와 같은 결과를 낸다.
+     */
+    private fun lineText(lines: JsonNode): String {
+        if (lines.has("text")) return lines.path("text").asText()
+        val b64 = lines.path("bytes").asText("")
+        if (b64.isEmpty()) return ""
+        return runCatching { String(Base64.getDecoder().decode(b64), Charsets.UTF_8) }
+            .getOrDefault("")
     }
 
     companion object {

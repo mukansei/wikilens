@@ -22,6 +22,10 @@ import java.nio.file.Path
  * rg 의 stdout · **색인**(`VaultReader.readBody`). 한 벌만 REPORT 로 되돌아가면
  * 그 경로만 갈린다.
  *
+ * **rg 는 디코더만으로 부족하다.** stdout 을 이 리더로 읽어도 rg 가 `--json` 에서
+ * UTF-8 아닌 줄을 `lines.text` 가 아니라 `lines.bytes`(base64)로 내므로, 그쪽을 안 풀면
+ * 그 줄만 빈 문자열이 된다 — `RipgrepEngine.lineText`.
+ *
  * **넷째가 오래 빠져 있었다.** 색인만 `Files.readString` 을 쓰고 실패를 빈 문자열로
  * 삼켜서, 깨진 파일 하나가 `grep`·`read` 에서는 정상인데 `search` 에서만 사라졌다
  * (실측 2026-08-12). 이 목록이 셋이라고 적혀 있던 것이 그 결함을 가렸다 —
