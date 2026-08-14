@@ -208,6 +208,20 @@ def test_힌트를_받은_질의만_학습기여분에_센다(tmp_path, capsys, 
     assert "-3%" in out and "학습 효과가 안 보인다" in out
 
 
+def test_rank_는_결과를_제자리에_덮어쓰지_않는다():
+    """
+    **`rank.py` 의 `--groups` 처리만 read-modify-write 다**(나머지 쓰기는 `Writer` 의
+    append 라 O_APPEND 로 원자적이다). 제자리에 쓰면 도중에 죽었을 때 잘린 파일이
+    남고, 다음 실행이 그 반쪽을 유효한 기록으로 읽는다.
+
+    소스를 검사하는 것은 동작이 아니라 **구조**를 잠그기 때문이다 — 원자성은 정상
+    실행에서 관측되지 않는다(죽어봐야 드러난다).
+    """
+    src = (BENCH / "rank.py").read_text(encoding="utf-8")
+    assert "tmp.replace(out)" in src, "원자 교체가 사라졌다"
+    assert "out.write_text(" not in src, "결과 파일을 제자리에 덮어쓴다"
+
+
 def test_토큰이_늘면_학습기여로_읽지_않는다():
     """
     **방향을 봐야 한다** — 학습이 일하면 토큰이 준다. 한때 `abs()` 로만 비교해
