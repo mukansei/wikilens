@@ -145,11 +145,18 @@ def main() -> int:
     out = HERE / "results" / a.out
     # **`--groups` 를 줬을 때 파일을 통째로 지우면 안 된다** — 다른 그룹의 앞선 측정이
     # 조용히 사라진다. 이번에 다시 잴 그룹의 줄만 걷어낸다.
+    #
+    # **원자 교체로 쓴다.** 이 자리만 read-modify-write 이고(다른 쓰기는 전부 `Writer` 의
+    # append 다), 제자리에 쓰면 도중에 죽었을 때 **잘린 파일**이 남는다 — 앞선 측정이
+    # 반쯤 남아 다음 `--resume` 이 그것을 유효한 기록으로 읽는다. `acl.py` 의 `collect`
+    # 가 같은 이유로 tmp+replace 를 쓴다.
     if out.exists():
         names = {g[0] for g in groups}
         kept = [ln for ln in out.read_text(encoding="utf-8").splitlines()
                 if ln.strip() and json.loads(ln).get("group") not in names]
-        out.write_text(("\n".join(kept) + "\n") if kept else "", encoding="utf-8")
+        tmp = out.with_suffix(".jsonl.tmp")
+        tmp.write_text(("\n".join(kept) + "\n") if kept else "", encoding="utf-8")
+        tmp.replace(out)
 
     with Writer(out) as w:
         for name, gold, _title, queries in groups:
