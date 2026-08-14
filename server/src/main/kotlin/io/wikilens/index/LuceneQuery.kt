@@ -37,7 +37,12 @@ internal object LuceneQuery {
         ),
     )
 
-    /** 세 필드에 대한 가중 OR. 파싱 실패 시 null 을 반환해 호출부가 조용히 빈 결과를 내게 한다. */
+    /**
+     * 세 필드에 대한 가중 OR. 파싱 실패 시 null 을 반환해 호출부가 빈 결과를 내게 한다.
+     *
+     * **질의는 문법이 아니라 글자다.** 사용자·모델이 넣는 것은 사람이 쓰는 말이지
+     * Lucene 질의식이 아니다 — 스킬이 "사용자의 표현을 **그대로** 넣으세요" 라고 지시한다.
+     */
     fun textQuery(text: String, analyzer: Analyzer): Query? {
         val parser = MultiFieldQueryParser(
             arrayOf(Fields.ANCHOR, Fields.TITLE, Fields.BODY),
@@ -49,7 +54,17 @@ internal object LuceneQuery {
             ),
         )
         parser.defaultOperator = QueryParser.Operator.OR
-        // 사용자 질의를 그대로 넣으면 특수문자로 예외가 난다.
-        return runCatching { parser.parse(QueryParserBase.escape(text)) }.getOrNull()
+        // **`escape` 만으로는 부족하다 — 낱말꼴 연산자가 남는다.**
+        //
+        // `escape` 는 `+ - ( ) : ^ [ ] " { } ~ * ? | & /` 를 막지만 `AND`·`OR`·`NOT` 은
+        // 글자라 못 막는다. 그래서 대문자로 쓴 순간 그 질의는 문법으로 읽힌다 —
+        // 실측: `NOT NULL` 0건 · `not null` 1건(같은 색인·같은 문서). SQL 이나 영문
+        // 약어를 그대로 친 질의가 **에러 없이 통째로 사라진다.**
+        //
+        // 소문자로 내리면 파서가 연산자를 못 본다. **항은 안 바뀐다** — 세 분석기
+        // (Nori·English·Standard)가 전부 `LowerCaseFilter` 를 거치므로 어차피 소문자가
+        // 되고, 한글은 대소문자가 없다. `lowercase()` 는 Kotlin 이 ROOT 로 하므로
+        // 터키어 I 문제도 없다.
+        return runCatching { parser.parse(QueryParserBase.escape(text).lowercase()) }.getOrNull()
     }
 }
