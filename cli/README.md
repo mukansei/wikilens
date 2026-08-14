@@ -1,6 +1,10 @@
-# WikiLens CLI — 싱크 + 로컬판
+# WikiLens CLI — 볼트를 만드는 유일한 곳
 
-> 프로젝트 전체 안내는 [../README.md](../README.md) 참조
+> 프로젝트 전체 안내는 [../README.md](../README.md) · 로컬판 사용 안내는
+> [../plugin/local/README.md](../plugin/local/README.md)
+>
+> **두 판이 이 CLI 로 볼트를 만듭니다** — 로컬판은 각자, 서버판은 서비스 계정으로
+> 한 번. 서버는 Confluence 를 크롤하지 않고 그 결과를 읽기만 합니다.
 
 Confluence 위키를 로컬 마크다운으로 미러링하고, **다른 문서들이 각 페이지를 실제로
 부르는 이름**을 모은 별칭 색인을 만듭니다. 서버 없음, 인덱스 서버 없음, 그냥 파일과 grep.
@@ -27,37 +31,45 @@ mirror/pages/04/200000004.md       ← "온보딩 체크리스트". OAuth 문서
 
 그 표현으로 *링크한* 페이지지, 찾으려는 문서가 아닙니다. 이 차이가 이 도구의 전부입니다.
 
-## 설치
+## 설치와 첫 싱크
+
+**자리는 `~/.wikilens/venv` 로 정해져 있습니다.** 어디에 깔렸는지 찾는 단계를 없애려고
+정한 것이라(`DECISIONS.md` D15) 다른 곳에 깔면 래퍼가 CLI 를 못 찾습니다 — 실제로
+`cli/.venv` 에 깔았다가 겪었습니다. 고치면서 쓸 때만 `pip install -e ./cli` 하세요.
 
 ```bash
-pip install -e .
+python3 -m venv ~/.wikilens/venv && ~/.wikilens/venv/bin/pip install ./cli
+WL=~/.wikilens/venv/bin/wikilens        # 이 자리는 PATH 에 없습니다
 ```
 
-## 사용
-
-```bash
-export CONFLUENCE_URL=https://mycompany.atlassian.net
-export CONFLUENCE_EMAIL=me@mycompany.com     # Cloud만. Server/DC는 생략
-export CONFLUENCE_TOKEN=...                   # 개인 API 토큰 또는 PAT
-
-wikilens --root ~/.wikilens/vault sync --space PLATFORM --space ENG
-wikilens --root ~/.wikilens/vault stats
-```
-
-**`export` 는 그 셸에서만 삽니다.** 그래서 CLI 는 환경변수가 없으면
-`~/.wikilens/env.sh`(권한 600)를 읽습니다 — cron 이나 Claude Code 처럼 `export` 가
-없는 환경에서도 그냥 동작합니다. 환경변수가 있으면 그쪽이 이깁니다(일회성 재정의).
+**자격증명은 파일에 둡니다 — `export` 가 아니라.** `export` 는 그 셸에서만 살아서
+cron 이나 Claude Code 처럼 `export` 가 없는 환경에서는 `sync` 가 조용히 죽습니다.
+CLI 는 환경변수가 없으면 `~/.wikilens/env.sh`(600)를 읽습니다(환경변수가 있으면
+그쪽이 이깁니다 — 일회성 재정의).
 
 ```bash
 mkdir -p ~/.wikilens && chmod 700 ~/.wikilens
-printf 'export CONFLUENCE_URL=%s\nexport CONFLUENCE_TOKEN=%s\n' "$CONFLUENCE_URL" "$CONFLUENCE_TOKEN" \
-  > ~/.wikilens/env.sh && chmod 600 ~/.wikilens/env.sh
+cat > ~/.wikilens/env.sh <<'EOF'
+export CONFLUENCE_URL=https://mycompany.atlassian.net
+export CONFLUENCE_EMAIL=me@mycompany.com     # Cloud 만. Server/DC 는 생략
+export CONFLUENCE_TOKEN=<개인 API 토큰 또는 PAT>
+EOF
+chmod 600 ~/.wikilens/env.sh
 ```
 
-플러그인을 쓴다면 `/wikilens-local:setup` 이 만들어 줍니다
+플러그인을 쓴다면 `/wikilens-local:setup` 이 이 둘을 다 해 줍니다
 (`setup_vault.py --capture-env` 가 지금 셸의 값을 화면에 안 찍고 옮깁니다).
-셸 스크립트로 두는 이유는 자기 터미널에서 `source ~/.wikilens/env.sh` 로 그대로
-재사용하기 위해서입니다.
+JSON 이 아니라 셸 스크립트인 이유는 자기 터미널에서 `source ~/.wikilens/env.sh` 로
+그대로 재사용하기 위해서입니다.
+
+```bash
+$WL doctor                                          # 연결·인증·스페이스 확인
+$WL sync --space PLATFORM --space ENG --root ~/.wikilens/vault
+$WL stats --root ~/.wikilens/vault
+```
+
+`--root` 는 서브커맨드 앞뒤 어디에 와도 되고, 플러그인을 통해 부르면 래퍼가
+`~/.wikilens/config.json` 의 볼트 경로로 자동으로 채웁니다.
 
 `sync`는 원본만 받고 자동으로 `build`를 이어서 실행합니다.
 `build`는 순수 로컬이라 네트워크 없이 몇 번이든 다시 돌릴 수 있습니다.
@@ -99,22 +111,27 @@ wikilens --root ~/.wikilens/vault acl && curl -XPOST -H "X-WikiLens-Admin: $TOKE
 ### 도입 판단
 
 ```console
-$ wikilens --root ~/.wikilens/vault stats
-페이지 13926개
-  별칭 보유 1720 (12%)
-  고아 후보 12206 (88%)
+$ $WL stats --root ~/.wikilens/vault
+페이지 13933개
+  인링크 보유 1722 (12%)
+  └ 그중 별칭 보유 464 (3%) — 나머지는 제목 그대로만 링크됨
+  고아 후보 12211 (88%)
   인링크 최대 145 · 중앙값 0
 
 제목과 어휘가 안 겹치는 별칭을 가진 페이지: 163 (1%)
 ```
 
-**이 비율이 낮으면 이 도구는 값어치가 없습니다.** 어휘 격차가 없다는 뜻이니까요.
+**마지막 줄이 낮으면 이 도구는 값어치가 없습니다.** 어휘 격차가 없다는 뜻이니까요.
 먼저 재보고 판단하세요.
+
+**셋이 다른 것을 셉니다.** 인링크는 "누가 링크했나", 별칭은 "**제목과 다르게** 불렀나",
+어휘 격차는 "제목 토큰과 아예 안 겹치나". 뒤로 갈수록 좁고, 앵커 층이 실제로 메우는
+격차는 마지막 것입니다.
 
 위 출력은 지어낸 예시가 아니라 **실제 코퍼스(Acme CWDOMESTICDT)** 이고, 1% 는 낮은
 쪽입니다. 이 위키는 문서끼리 링크를 거의 안 걸어서(인링크 중앙값 0 · 고아 88%)
 앵커라는 신호 자체가 얇습니다. 그렇다고 `ALIASES.md` 가 쓸모없다는 뜻은 아닙니다:
-그 163개는 **다른 방법으로는 못 찾는** 페이지고, 파일 자체는 전체 13,926개를 담습니다
+그 163개는 **다른 방법으로는 못 찾는** 페이지고, 파일 자체는 전체 13,933개를 담습니다
 (별칭 없는 것은 제목만). 1% 는 "부가 정보의 커버리지"지 도달 범위가 아닙니다.
 
 > 이 값은 **한 스페이스만 싱크했을 때 2,383건 · 42건(2%)** 였습니다. 코퍼스가 커지면서
@@ -123,19 +140,19 @@ $ wikilens --root ~/.wikilens/vault stats
 
 ## Claude Code 플러그인
 
-```bash
-/plugin marketplace add <저장소 경로 또는 비공개 git URL>
-/plugin install wikilens-local@wikilens
-/reload-plugins
-```
+설치 안내는 [`../plugin/local/README.md`](../plugin/local/README.md) 에 있습니다 —
+여기는 그 플러그인이 **무엇인지**만 적습니다.
 
 스킬만 담긴 플러그인입니다. MCP 서버도 훅도 없습니다 — 에이전트가 네이티브
-grep과 Read로 볼트를 쓰고, 스킬은 "본문보다 `ALIASES.md`를 먼저 보라"는 순서만 알려줍니다.
+grep 과 Read 로 볼트를 쓰고, 스킬은 "본문보다 `ALIASES.md` 를 먼저 보라" 는 순서만
+알려줍니다. 검색 경로에 **런타임 의존성이 0** 인 것이 로컬판의 정의적 성질입니다
+(`DECISIONS.md` D8).
 
 ## 구조
 
 ```
 ALIASES.md                        별칭 색인. 한 줄에 스페이스·제목·별칭·인링크수·경로
+TREE.md                           계층 목차. 링크 없는 '고아' 문서에 닿는 유일한 경로
 mirror/raw/{id뒤2}/{id}.xhtml     Confluence 원본. 무손실. 권위
 mirror/pages/{id뒤2}/{id}.md      마크다운. 사람·grep용
 mirror/structure/{id뒤2}/{id}.json  구조 서명 (제목·헤딩·링크집합)
@@ -177,7 +194,7 @@ derived/anchors.jsonl             별칭 원자료
 - **랭킹하지 않습니다.** grep 순서가 전부입니다. IDF도 BM25도 없습니다
 - **세션 간 학습이 없습니다.** 1인 사용에서는 통계가 쌓이지 않아 어차피 무의미합니다
 
-이 셋이 필요하면 서버판 영역입니다 → **[../server/](../server/)**.
+이 셋이 필요하면 서버판 영역입니다 → **[`../server/README.md`](../server/README.md)**.
 로컬판이 실제로 쓰이는지 먼저 확인하세요.
 
 ## 테스트
@@ -186,5 +203,7 @@ derived/anchors.jsonl             별칭 원자료
 python -m pytest -q        # 이 디렉터리에서는 CLI 테스트만
 ```
 
-멱등성 테스트가 중요합니다 — 두 번 빌드해서 바이트가 달라지면 서버판에서
-`git diff` 기반 무효화가 매번 전체 발화합니다.
+멱등성 테스트가 중요합니다 — 두 번 빌드해서 바이트가 달라지면 **아무것도 안 바뀌었는데
+전 파일이 변경으로 잡힙니다.** 지금 당장은 `_write_if_changed` 가 헛쓰기를 막는 정도지만,
+증분 build 를 도입하면 `git diff -- structure/` 가 무효화 대상을 뽑는 근거가 되므로
+그때는 정확성 문제가 됩니다(`DECISIONS.md` D7). 계약이 픽스처와 **바이트로** 대조합니다.

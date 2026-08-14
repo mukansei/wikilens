@@ -15,10 +15,12 @@ WikiLens는 **다른 문서들이 각 페이지를 링크할 때 쓴 표현**(�
 ## 설치
 
 ```
-/plugin marketplace add <저장소 경로 또는 git URL>
+/plugin marketplace add https://github.com/example-org/wikilens.git
 /plugin install wikilens-local@wikilens
-/reload-plugins
 ```
+
+> **비공개 저장소입니다.** 첫 줄이 되려면 `example-org` 조직 접근 권한과 git
+> 자격증명(`gh auth login`)이 먼저 있어야 합니다.
 
 그다음은 **그냥 물어보면 됩니다.** 설정이 안 돼 있으면 Claude가 알아서 알아채고
 지금 할지 물어봅니다 — 커맨드를 외울 필요 없습니다.
@@ -35,22 +37,19 @@ Claude: (일반 지식으로 답변) …
 
 | | |
 |---|---|
-| `CONFLUENCE_URL` | 예: `https://wiki.mycompany.com` |
-| 인증 토큰 | 대개 **개인 액세스 토큰(PAT)** 하나면 됩니다 |
+| **Confluence 주소** | 예: `https://wiki.mycompany.com` |
+| **인증 토큰** | 대개 개인 액세스 토큰(PAT) 하나면 됩니다 |
 
-setup이 이 값들을 `~/.wikilens/env.sh`(권한 600)에 넣어줍니다. **한 번만 하면 됩니다** —
-`.zshrc` 에 export 해두는 것과 달리 Claude Code 안에서도 그대로 동작합니다.
-
-셸에 이미 export 해두셨다면 그 값을 그대로 옮기고, 아니면 직접 채울 파일을 만들어
-줍니다(**토큰은 본인만 입력합니다**). 자기 터미널에서 CLI를 직접 쓸 때도 같은 파일을
-씁니다:
-
-```bash
-source ~/.wikilens/env.sh
-```
+물어보는 것은 setup 이 하고, 값은 `~/.wikilens/env.sh`(권한 600)에 넣어줍니다.
+**한 번만 하면 됩니다** — `.zshrc` 에 export 해두는 것과 달리 Claude Code 안에서도
+그대로 동작합니다. 셸에 이미 export 해두셨다면 그 값을 옮기고, 아니면 직접 채울 파일을
+만들어 줍니다(**토큰은 본인만 입력합니다**).
 
 SSO를 쓰는 조직이어도 대개 PAT가 따로 동작합니다. 안 되면 setup이 다른 방식
 (Cloud API 토큰 · 자체 IAM · 리버스 프록시)을 안내합니다.
+
+<sub>같은 파일을 자기 터미널에서도 씁니다 — `source ~/.wikilens/env.sh` 하면 CLI 를
+직접 부를 수 있습니다. setup 을 끝낸 뒤의 이야기입니다.</sub>
 
 > 인증이 이상하게 실패하면 `CONFLUENCE_PREFIX=""` 를 **탈출구로** 써보세요.
 > 게이트웨이 구성에 따라 주소 자동 판별이 속을 수 있습니다. 다만 첫 번째로
@@ -94,9 +93,17 @@ Confluence에서 직접 하세요. 볼트 파일을 고쳐도 다음 싱크에 �
 rm -rf ~/.wikilens        # 볼트·설정·CLI 가 전부 여기 있습니다
 ```
 
-(볼트 위치를 옮겼다면 그 경로도 함께 지우세요.)
+볼트 위치를 옮겼다면 그 경로도 함께 지우세요. **서버판도 쓰고 있다면** 그쪽 설정
+(서버 주소·본인 식별자)이 같은 디렉터리에 있으므로 함께 사라집니다 —
+`/wikilens-client:setup` 을 다시 돌리면 됩니다.
 
 ## 문제가 생기면
+
+**먼저 상태를 보세요.** 아래 표의 `STRAY=`·`OTHER=` 는 이 출력에 나오는 값입니다.
+
+```bash
+python3 ~/.claude/plugins/cache/wikilens/wikilens-local/*/scripts/vault_status.py
+```
 
 | 증상 | 확인 |
 |---|---|
@@ -108,12 +115,6 @@ rm -rf ~/.wikilens        # 볼트·설정·CLI 가 전부 여기 있습니다
 | 문서는 있는데 안 나옴 | 링크가 하나도 없는 '고아' 문서일 수 있습니다. "OO 영역 문서 목록 보여줘" 처럼 물으면 계층으로 찾습니다 |
 | `STRAY=` 가 0이 아니라고 함 | 볼트에 규칙 밖 파일이 섞인 것입니다(`.DS_Store` 등). 싱크로는 안 지워지니 알려준 경로를 `rm` 하세요 |
 | `OTHER=` 에 값이 있다고 함 | 서버판도 함께 켜져 있다는 뜻입니다. 그쪽이 우선이니 그대로 두거나, 아래처럼 한쪽을 끄세요 |
-
-현재 상태를 직접 보려면:
-
-```bash
-python3 ~/.claude/plugins/cache/wikilens/wikilens-local/*/scripts/vault_status.py
-```
 
 ## 서버판과의 관계
 
