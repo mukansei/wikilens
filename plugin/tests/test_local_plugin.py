@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -752,3 +753,31 @@ def test_phrase_grep_fails_where_token_and_succeeds(tmp_path):
     # 낱말 AND 는 걸린다
     hit = [l for l in rows if all(t in l for t in ("<직군명>", "동의"))]
     assert len(hit) == 1 and "POLICY" in hit[0]
+
+
+# --------------------------------------------------------------- 래퍼
+
+def test_wrapper_still_diagnoses_when_the_helper_dies(tmp_path):
+    """
+    **보조 스크립트가 죽으면 래퍼가 아무 말 없이 종료했다.**
+
+    `set -e` 아래에서 대입문의 종료 코드는 명령 치환의 것이다. `ENV_FILE=` 줄이
+    `vault_status.py` 를 부르는데 그것이 죽으면(설치 누락·파이썬 환경 파손) 거기서
+    **exit 1** 이고, `2>/dev/null` 이라 단서가 하나도 안 남는다. 사용자에게는
+    `/wikilens-local:sync` 가 그냥 안 되는 것으로 보인다.
+
+    끝까지 가면 CLI 탐색이 실패하면서 "setup 을 실행하세요" 를 찍는다 — 그 진단
+    경로가 살아 있어야 한다. 바로 아래 `_vault=` 줄은 이미 `|| true` 였다.
+    """
+    work = tmp_path / "w"
+    work.mkdir()
+    shutil.copy(REPO / "plugin" / "local" / "scripts" / "wikilens_cli.sh", work)
+    (work / "vault_status.py").write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
+
+    r = subprocess.run(["bash", str(work / "wikilens_cli.sh"), "--help"],
+                       capture_output=True, text=True)
+
+    assert "setup" in r.stderr, (
+        f"보조 스크립트가 죽자 래퍼가 조용히 끝났다 (rc={r.returncode}, "
+        f"stderr={r.stderr!r})"
+    )
