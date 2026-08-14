@@ -37,7 +37,10 @@ def main() -> int:
     want = {
         "Python": _two(grab(r'requires-python\s*=\s*">=([\d.]+)"', py, "pyproject requires-python")),
         "Kotlin": _two(grab(r'kotlin\("jvm"\) version "([\d.]+)"', gr, "gradle kotlin")),
-        "JVM": grab(r"jvmToolchain\((\d+)\)", gr, "gradle jvmToolchain"),
+        # 라벨이 `JVM` 이 아니라 `Java` 인 이유: 빌드는 JDK(`temurin:25-jdk`)이고
+        # 런타임은 JRE(`temurin:25-jre`)다. `JDK 25` 는 런타임에 대해 틀리고,
+        # `JVM 25` 는 아무도 안 쓰는 표기다 — 버전은 "Java 25" 라고 부른다.
+        "Java": grab(r"jvmToolchain\((\d+)\)", gr, "gradle jvmToolchain"),
         # 배지 라벨에는 공백이 `%20` 으로 들어간다.
         "Spring%20Boot": _two(grab(r'springframework\.boot"\) version "([\d.]+)"', gr, "gradle spring boot")),
         "Lucene": _two(grab(r'luceneVersion = "([\d.]+)"', gr, "gradle lucene")),
@@ -45,12 +48,14 @@ def main() -> int:
 
     bad = []
     for label, v in want.items():
-        m = re.search(r"img\.shields\.io/badge/" + re.escape(label) + r"-([^-?]+)-", rd)
+        # **메시지의 앞 숫자만** 본다. 뒤에 무엇이 붙든(`9.11%20%28Nori%29`,
+        # `3.10%2B`) 대조하려는 것은 버전 하나다 — 메시지 전체를 잡으면 배지 문구를
+        # 손볼 때마다 계약이 빨개지고, 그러면 계약이 아니라 잔소리가 된다.
+        m = re.search(r"img\.shields\.io/badge/" + re.escape(label) + r"-([\d.]+)", rd)
         if not m:
             bad.append(f"{label}: 배지가 없음 (빌드는 {v})")
             continue
-        # `3.10+` 는 URL 에서 `3.10%2B` 다.
-        got = m.group(1).replace("%2B", "").replace("+", "")
+        got = m.group(1)
         if got != v:
             bad.append(f"{label}: 배지 {got} · 빌드 {v}")
 
