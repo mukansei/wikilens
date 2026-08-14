@@ -92,6 +92,37 @@ class DeclaredDestTest {
         assertEquals(2, t.rank, "rank 가 추정된 dest 를 보고 있다")
     }
 
+    /**
+     * **진술 뒤에 연 문서가 미스를 안 먹던 자리.**
+     *
+     * `passedOver` 가 `reads.dropLast(1) - {dest}` 였다. 추정 시절에는
+     * `dest == reads.last()` 라 그 둘이 같은 집합이었는데, 진술이 들어오면서
+     * 갈라졌다 — **답을 말한 뒤에 확인용으로 연 문서**가 `dropLast(1)` 에 잘려
+     * 벌점을 피한다. 하필 진술 설계가 겨냥한 바로 그 문서다.
+     */
+    @Test
+    fun `진술보다 나중에 읽은 것도 지나침으로 센다`() {
+        // 문턱 0 — 여기서 보려는 것은 서빙 여부가 아니라 **미스가 걸렸나**다.
+        val s = TrajectoryStore(sink = { }, serveThreshold = 0.0)
+        // 미스는 **이미 배운 페이지**에만 걸리므로(`byPage[pid] ?: continue`) 먼저 배운다.
+        s.onQuery("a", "질의", listOf("가"))
+        s.onServed("a", hinted = emptyList(), ranked = listOf("111"))
+        s.onRead("a", "111")
+        s.onEnd("a")
+        val before = s.hints(listOf("가")).single { it.pageId == "111" }
+
+        // 3위가 답이었고, 1위는 그 뒤에 확인용으로 열었다.
+        s.onQuery("b", "질의", listOf("가"))
+        s.onServed("b", hinted = emptyList(), ranked = listOf("111", "222", "333"))
+        s.onRead("b", "333")
+        s.onRead("b", "111")
+        s.onAnswer("b", "333")
+        s.onEnd("b")
+        val after = s.hints(listOf("가")).single { it.pageId == "111" }
+        assertEquals(before.misses + 1, after.misses,
+                     "진술 뒤에 연 111 이 지나침으로 안 걸렸다")
+    }
+
     @Test
     fun `재생해도 진술 수가 복구된다`() {
         val (s, out) = capture()

@@ -292,10 +292,15 @@ class TrajectoryStore(
 
         if (!t.kind.cacheable) return   // 경로 의존 질의는 간선을 만들지 않는다
 
-        // 읽었지만 답이 아니었던 것들. `dest = reads.last()` 전제("탐색은 성공에서
-        // 멈춘다")를 따르면 앞서 읽은 것은 **열어보고 지나친** 페이지다 — 읽기 개수가 곧
+        // 읽었지만 답이 아니었던 것들 — 열어보고 **지나친** 페이지다. 읽기 개수가 곧
         // 확신도가 된다(1건이면 미스 0, 6건이면 5).
-        val passedOver = if (t.success) t.reads.dropLast(1).toSet() - setOf(t.dest) else emptySet()
+        //
+        // **`dest` 를 빼는 것이지 마지막을 빼는 것이 아니다.** 한때
+        // `reads.dropLast(1)` 였는데, `dest = reads.last()` 추정 시절에는 두 집합이
+        // 같아서 티가 안 났다. 진술(`onAnswer`)이 들어오면서 갈라진다 — 답을 말한
+        // **뒤에** 확인용으로 연 문서가 `dropLast(1)` 에 잘려 벌점을 피했고, 하필
+        // 진술 설계가 겨냥한 바로 그 문서다. `DeclaredDestTest` 가 잠근다.
+        val passedOver = if (t.success) t.reads.toSet() - setOf(t.dest) else emptySet()
 
         val weight = hitWeight(t.rank)
         for (term in normalize(t.keywords)) {
