@@ -24,23 +24,73 @@ WikiLens 가 노출하는 것은 **연산 넷**입니다. 두 배포판이 같�
 
 Claude Code 플러그인으로 설치하면 **어느 프로젝트에서든** 팀 위키에 물어볼 수 있습니다.
 
+## 목차
+
+**처음이라면 위에서 세 절만 읽으세요** — 무엇인지 · 어느 것을 쓰는지 · 어떻게 시작하는지.
+그 아래는 왜 이렇게 만들었는지이고, 마지막 두 절은 만드는 사람을 위한 것입니다.
+
+| | |
+|---|---|
+| [한눈에](#한눈에) | 다섯 줄 요약 |
+| [어느 것을 쓰나요](#어느-것을-쓰나요) | 로컬판·서버판 — 어느 쪽이 내 상황인가 |
+| [시작하기](#시작하기) | [로컬판 5분](#로컬판--5분) · [서버판 운영자](#서버판--운영자) · [사이에 둘 한 단계](#사이에-한-단계를-두세요) |
+| [어떻게 동작하나](#어떻게-동작하나) | Confluence → 볼트 → 두 판으로 갈리는 흐름 |
+| [학습 레이어](#학습-레이어-서버판만) | 서버판만 — 팀의 탐색 이력이 랭킹을 보정하는 방식 |
+| [적용 범위](#적용-범위) | Cloud·Server/DC 양쪽 · 언어 · Windows |
+| [무엇이 실제로 값어치를 하나](#무엇이-실제로-값어치를-하나) | **층 넷을 각자 판정합니다** — 여기부터 읽어도 됩니다 |
+| [저장소 구조](#저장소-구조) | 어느 디렉터리가 무엇을 하나 |
+| [만드는 사람을 위해](#만드는-사람을-위해) | [검증 절차](#변경-후-이것-하나가-통과해야-합니다) · [검증 상태](#검증-상태) · [측정 지표](#측정-지표--층마다-다릅니다) |
+| [미해결](#미해결) | 아직 못 푼 것 — **배포 전에 읽으세요** |
+
 ---
 
-## TL;DR
+## 한눈에
 
-**무엇** — 위키를 찾기·읽기·본문 스캔·계층 네 연산으로 노출합니다. 두 판이 같은
-넷을 주고, 미러가 어디 있느냐로 갈립니다. 랭킹 층(앵커·형태소·학습)은 그 위의 선택입니다.
+- **무엇** — 위키를 찾기·읽기·본문 스캔·계층 네 연산으로 노출합니다. Claude Code
+  플러그인으로 설치하면 어느 프로젝트에서든 팀 위키에 물어볼 수 있습니다.
+- **판이 둘** — 미러를 내 노트북에 두는 **로컬판**과 팀 서버에 두는 **서버판**.
+  같은 연산 넷을 주고, 갈리는 것은 미러가 어디 있느냐입니다.
+- **어느 것** — 혼자거나 소규모 팀이면 로컬판, 여러 사람이 한 서버를 쓰면 서버판.
+- **지금 배포한다면 로컬판입니다** — 서버판은 신원이 아직 자기주장이라 신뢰 경계
+  안에서만 쓸 수 있습니다([미해결](#미해결)).
+- **먼저 재보세요** — 랭킹 층은 코퍼스가 어떻게 생겼는지에 달려 있습니다. 첫 싱크 뒤
+  `wikilens stats` 한 줄이 그 판단을 줍니다([무엇이 실제로 값어치를 하나](#무엇이-실제로-값어치를-하나)).
 
-**어느 것을 쓰나** — 혼자거나 소규모 팀이면 로컬판, 여러 사람이 한 서버를 쓰면
-서버판. 지금 배포한다면 로컬판입니다(서버판은 신원이 자기주장입니다 →
-[미해결](#미해결)).
+---
 
-### 로컬판 실행 (각자, 5분)
+## 어느 것을 쓰나요
 
-Claude Code 안에서 세 줄입니다. **저장소를 clone 할 필요가 없습니다** — 마켓플레이스가
-알아서 받아옵니다. 다만 **비공개 저장소라 `cw-smart-catalogue` 조직 접근 권한과 git
-자격증명이 먼저 있어야 합니다**(`gh auth login` 또는 credential helper). 없으면 첫 줄이
-인증을 물으며 멈춥니다:
+**둘 다 코어는 같습니다** — 같은 볼트를 읽습니다. 갈리는 것은 어느 랭킹 층을
+얹느냐이고, 그래서 업그레이드 경로가 아니라 서로 다른 물건입니다.
+
+| | **로컬판** | **서버판** |
+|---|---|---|
+| 코어 (미러 + 파일 연산) | ✅ 같은 볼트 | ✅ 같은 볼트 |
+| 계층 (`TREE.md`) | ✅ | ✅ |
+| 앵커 (`ALIASES.md`) | ✅ grep | ✅ 색인 + 가중 |
+| 형태소 검색 (BM25/Nori) | ❌ ripgrep 이라 언어 무관 | ✅ |
+| 학습 (궤적) | ❌ 관측할 서버가 없음 | ✅ |
+| 누구에게 | 혼자 · 소규모 팀 | 팀 배포 |
+| 권한 | 내 토큰 = 내 범위 (**자동**) | 서버가 요청마다 확인 |
+| 오프라인 | **가능** | 불가 |
+
+**지금 팀에 배포한다면 로컬판입니다.** 서버판은 권한 수집까지 만들었지만 신원이
+아직 자기주장이라(`userKey` 를 아무 값으로 적을 수 있습니다) 신뢰 경계 안에서만
+쓸 수 있습니다 — 리버스 프록시(SSO)를 앞에 두면 풀립니다(→ [미해결](#미해결)).
+로컬판의 대가는 Confluence 부하가 사용자 수에 비례하는 것이라 소규모 팀에 한합니다.
+
+**정했으면 [시작하기](#시작하기) 로 가세요.** 설치를 이미 마쳤고 쓰는 법만 필요하다면
+사용 안내가 따로 있습니다 — [로컬판](plugin/local/README.md) ·
+[서버판](plugin/client/README.md).
+
+---
+
+## 시작하기
+
+### 로컬판 — 5분
+
+Claude Code 안에서 **세 줄**입니다. 저장소를 clone 할 필요가 없습니다 — 마켓플레이스가
+알아서 받아옵니다.
 
 ```
 /plugin marketplace add https://github.com/cw-smart-catalogue/wikilens.git
@@ -48,31 +98,93 @@ Claude Code 안에서 세 줄입니다. **저장소를 clone 할 필요가 없�
 /wikilens-local:setup          # 자격증명·볼트·CLI·첫 싱크까지 한 번에
 ```
 
-준비물은 **Confluence 주소와 개인 토큰(PAT)** 둘뿐입니다. 이미 볼트가 있으면 옮기지
-말고 그 경로를 등록하면 됩니다.
+**준비물은 둘뿐입니다** — Confluence 주소와 개인 액세스 토큰(PAT).
+
+> **비공개 저장소입니다.** `cw-smart-catalogue` 조직 접근 권한과 git 자격증명
+> (`gh auth login` 또는 credential helper)이 먼저 있어야 합니다. 없으면 첫 줄이
+> 인증을 물으며 멈춥니다.
+
+`setup` 이 하는 일: 자격증명을 `~/.wikilens/env.sh`(600)에 고정하고, 볼트 위치를
+`~/.wikilens/config.json` 에 적고, CLI 를 `~/.wikilens/venv` 에 설치하고, 첫 싱크까지.
+**이미 볼트가 있으면 옮기지 말고 그 경로를 등록하면 됩니다.**
+
+첫 싱크는 스페이스 하나에 수천 페이지면 **수 분**이 걸립니다. 한 번만 하면 되고,
+중단돼도 다음에 이어받습니다.
+
+싱크가 끝나면 `stats` 가 "제목과 어휘가 안 겹치는 별칭을 가진 페이지" 비율을 냅니다.
+**여기서 판단하세요 — 낮으면 어휘 격차가 없다는 뜻이고, 이 도구 전체가 값어치가 없습니다.**
 
 <sub>저장소를 이미 clone 해 뒀고 그 사본으로 시험하려면 `/plugin marketplace add ./` 로
 저장소 루트를 직접 가리켜도 됩니다. 고치면서 쓸 때만 그렇게 하세요 — 설치본이 저장소를
 따라가지 않아 소스만 고치면 조용히 구버전이 돕니다.</sub>
 
-### 서버판 실행 (관리자)
+<details>
+<summary><b>플러그인 없이 CLI 만</b> — cron·서버 운영자용</summary>
 
-**사용자는 Confluence 자격증명이 필요 없습니다.** 서비스 계정 하나로 한 번 싱크합니다.
+```bash
+git clone https://github.com/cw-smart-catalogue/wikilens.git && cd wikilens
+python3 -m venv ~/.wikilens/venv && ~/.wikilens/venv/bin/pip install ./cli
 
-**전제 셋:** **운영자는 저장소가 필요합니다** — `compose.yml`·`cli/`·MCP 프록시가 전부
-저장소 안에 있고 아래 경로가 그것에 상대적입니다(사용자는 플러그인만 설치하므로 해당
-없습니다). CLI 는 `~/.wikilens/venv` 에 깔려 **PATH 에 없습니다** — 아래처럼 절대경로로
-부르거나 `WL=~/.wikilens/venv/bin/wikilens` 로 별칭을 잡으세요.
+mkdir -p ~/.wikilens && chmod 700 ~/.wikilens
+cat > ~/.wikilens/env.sh <<'EOF'
+export CONFLUENCE_URL=https://confluence.mycompany.com
+export CONFLUENCE_TOKEN=<개인 액세스 토큰>
+EOF
+chmod 600 ~/.wikilens/env.sh
 
-그리고 **볼트는 `~/.wikilens/vault` 입니다.** 로컬판·서버판·`compose.yml` 이 전부 이
-자리를 기본으로 봅니다 — 지우는 방법이 `rm -rf ~/.wikilens` 하나로 유지되고, 서버가
-`~/.wikilens/config.json` 의 `vault` 를 폴백으로 읽으므로 경로를 따로 알려줄 일도
-없습니다(`DECISIONS.md` D15). 다른 자리에 두려면 `--root` 와
-`--wikilens.vault-root` 를 **함께** 바꾸세요.
+~/.wikilens/venv/bin/wikilens doctor                       # 연결·인증·스페이스 확인
+~/.wikilens/venv/bin/wikilens sync --space PLATFORM --root ~/.wikilens/vault   # 수 분
+~/.wikilens/venv/bin/wikilens stats --root ~/.wikilens/vault
+```
 
-**권한 시행은 기본이 꺼짐입니다**(`acl-enforced=false`). 그래서 기본 구성에서는 **서버에
-닿는 사람 전원이 서비스 계정의 권한 범위 전부를 봅니다.** 그래도 되는 팀이면 아래 세
-단계가 전부이고, 아니면 [시행을 켜세요](#권한-시행을-켜려면).
+자격증명은 `export` 가 아니라 파일에 둡니다. `export` 는 그 셸에서만 살아서
+Claude Code 를 앱으로 띄우면 없는 것과 같고, 실제로 **검색은 되는데 `sync` 만 조용히
+죽는** 상태를 오래 겪었습니다(→ `DECISIONS.md` D10). CLI 는 환경변수가 없으면
+이 파일을 읽습니다 — cron 에서도 그냥 동작합니다.
+
+`--root` 는 서브커맨드 앞뒤 어디에 와도 되고, 플러그인을 통해 부르면 래퍼가
+`~/.wikilens/config.json` 의 볼트 경로로 자동으로 채웁니다.
+
+</details>
+
+<details>
+<summary><b>인증이 안 되면</b> — SSO · 게이트웨이 · 접두사 자동판별</summary>
+
+**SSO 환경이어도 대개 PAT 가 따로 동작합니다.** Server/DC 의 PAT 를 먼저 시도하세요.
+그것이 막혀 있을 때만 IAM OAuth2 가 필요합니다. 인증은 넷을 지원하고
+(`CONFLUENCE_TOKEN` PAT · Cloud API 토큰 + `CONFLUENCE_EMAIL` · 자체 IAM OAuth2 ·
+리버스 프록시 헤더 주입) 전부 `cli/wikilens/auth.py` 한 곳에 격리돼 있습니다.
+
+**배포 형태를 잘못 판별하면** — `detect_prefix()` 가 Cloud(`/wiki`)와 Server/DC(빈 접두사)를
+자동 판별합니다. 리버스 프록시가 일부 엔드포인트만 허용하는 구성에 속은 적이 있어
+이중 검증을 넣었지만, 게이트웨이 구성은 조직마다 달라 또 속을 수 있습니다:
+
+```bash
+export CONFLUENCE_PREFIX=""        # Server/DC 강제
+# export CONFLUENCE_PREFIX="/wiki" # Cloud 강제
+```
+
+**첫 번째로 의심할 자리는 아닙니다** — 이중 검증 이후로는 강제 지정 없이 동작하는 것을
+실측했습니다(2026-08-06). 자격증명이 파일에 제대로 있는지를 먼저 보세요.
+
+</details>
+
+### 서버판 — 운영자
+
+**사용자는 Confluence 자격증명이 필요 없습니다.** 서비스 계정 하나로 한 번 싱크하고,
+사용자는 플러그인만 설치합니다.
+
+먼저 알아둘 것 셋입니다.
+
+| | |
+|---|---|
+| **운영자는 저장소가 필요합니다** | `compose.yml`·`cli/`·MCP 프록시가 저장소 안에 있고 아래 경로가 그것에 상대적입니다. 사용자는 플러그인만 설치하므로 해당 없습니다 |
+| **CLI 는 PATH 에 없습니다** | `~/.wikilens/venv` 에 깔립니다. 아래처럼 절대경로로 부르거나 `WL=~/.wikilens/venv/bin/wikilens` 로 별칭을 잡으세요 |
+| **볼트는 `~/.wikilens/vault` 입니다** | 로컬판·서버판·`compose.yml` 이 전부 이 자리를 기본으로 봅니다 — 지우는 방법이 `rm -rf ~/.wikilens` 하나로 유지되고, 서버가 `config.json` 의 `vault` 를 폴백으로 읽으므로 경로를 따로 알려줄 일도 없습니다(`DECISIONS.md` D15). 다른 자리에 두려면 `--root` 와 `--wikilens.vault-root` 를 **함께** 바꾸세요 |
+
+> **권한 시행은 기본이 꺼짐입니다**(`acl-enforced=false`). 그래서 기본 구성에서는
+> **서버에 닿는 사람 전원이 서비스 계정의 권한 범위 전부를 봅니다.** 그래도 되는 팀이면
+> 아래 세 단계가 전부이고, 아니면 [시행을 켜세요](#권한-시행을-켜려면).
 
 ```bash
 git clone https://github.com/cw-smart-catalogue/wikilens.git && cd wikilens
@@ -95,8 +207,9 @@ WIKILENS_SERVER=http://localhost:8787 WIKILENS_USER=alice@corp \
   python3 plugin/client/mcp/wikilens_mcp.py --status
 ```
 
-사용자는 플러그인만 설치합니다 — `/plugin install wikilens-client@wikilens` 후
-`/wikilens-client:setup` 에 **서버 주소와 본인 식별자** 둘.
+<sub>Docker 대신 직접 띄우려면 `cd server && ./gradlew bootRun` — 기동 시 볼트를 찾아
+전량 색인합니다. 다만 Docker 쪽이 ripgrep 을 갖고 있고 경로가 절대경로로 못 박혀 있어
+권장입니다.</sub>
 
 **3번이 중요한 이유** — 이 시스템의 실패는 대부분 **에러가 아니라 0건**으로 나타나고,
 0건은 "문서가 없다" 와 구별되지 않습니다:
@@ -108,6 +221,21 @@ WIKILENS_SERVER=http://localhost:8787 WIKILENS_USER=alice@corp \
 | 볼트 경로가 틀림 | 검색은 되는데 **읽기만 404** | `docs>0` 인데 `pages=0` |
 | (시행을 켰다면) 사용자 등록 | 모든 검색 0건 | `ACL_USERS=0` |
 | (시행을 켰다면) 등록 토큰 ≠ 페이지 토큰 | 모든 검색 0건 | `ACL_TOKEN_OVERLAP=0` |
+
+#### 사용자에게는 두 줄입니다
+
+볼트를 받지 않고, 값 둘(**서버 주소**·**본인 식별자**)만 넣으면 됩니다.
+
+```
+/plugin install wikilens-client@wikilens
+/wikilens-client:setup
+```
+
+| 설정 | 안 주면 | 어떻게 보이나 |
+|---|---|---|
+| 볼트 경로 | `~/.wikilens/config.json` 의 `vault` 를 읽습니다 — CLI 가 만든 볼트를 그대로 찾습니다 | 정상. 다른 자리면 `--wikilens.vault-root=/절대/경로`(**명시가 항상 이깁니다**) |
+| 사용자의 `user` | 서버가 요청자를 식별 못 합니다 | **결과가 항상 빔** — "문서가 없다" 처럼 보입니다 |
+| `WIKILENS_ADMIN_TOKEN` | `/api/admin` 이 전부 404 | 등록·재색인이 아예 안 됩니다 |
 
 #### 권한 시행을 켜려면
 
@@ -133,8 +261,9 @@ curl -XPOST -H "X-WikiLens-Admin: $WIKILENS_ADMIN_TOKEN" \
 뒤집지 않으려는 의도된 동작입니다). 돌린 뒤 문서가 줄었다면 원인은 시행이 아니라
 수집 실패이고, 기동 로그의 `unresolved` 가 그 수를 냅니다.
 
-**자동화는 cron 한 줄입니다.** `&&` 가 필수입니다 — 실패했는데 재색인하면 반쪽
-상태가 반영됩니다:
+#### 정기 갱신은 cron 한 줄입니다
+
+`&&` 가 필수입니다 — 실패했는데 재색인하면 반쪽 상태가 반영됩니다:
 
 ```bash
 WL=~/.wikilens/venv/bin/wikilens
@@ -148,54 +277,37 @@ $WL sync --root ~/.wikilens/vault \
 cron 에서는 **절대경로가 특히 중요합니다** — cron 의 PATH 는 대개 `/usr/bin:/bin`
 입니다. 자격증명도 `export` 가 아니라 `~/.wikilens/env.sh`(600)에서 읽습니다.
 
-**첫 싱크가 끝나면 `$WL stats` 를 보세요.** 그 수가 어느 랭킹 층이 값어치를
-하는지 알려줍니다 — 코어(미러 + grep)는 어차피 돌지만, 앵커 층은 별칭이 있어야
-일합니다. 이 개발 코퍼스(13,926건)에서는 별칭 보유 12% · 어휘 격차 1% 였습니다.
-자세한 해석은 [무엇이 실제로 값어치를 하나](#무엇이-실제로-값어치를-하나).
+#### 첫 싱크가 끝나면 `$WL stats` 를 보세요
+
+그 수가 **어느 랭킹 층이 값어치를 하는지** 알려줍니다 — 코어(미러 + grep)는 어차피
+돌지만, 앵커 층은 별칭이 있어야 일합니다. 이 개발 코퍼스(13,926건)에서는 별칭 보유
+12% · 어휘 격차 1% 였습니다. 해석은
+[무엇이 실제로 값어치를 하나](#무엇이-실제로-값어치를-하나).
+
+배포·운영 절차 전체(분석기 선택 · 백업 대상 · 상태 디렉터리 락 · Docker 볼륨)는
+[`server/README.md`](server/README.md).
+
+### 사이에 한 단계를 두세요
+
+로컬판에서 서버판으로 바로 가지 마세요. **서버를 혼자 띄워 궤적이 실제로 쌓이는지만**
+먼저 봅니다 — 같은 서버지만 플러그인 배포가 없습니다:
+
+```bash
+cd server && ./gradlew bootRun
+curl -XPOST localhost:8787/api/search -H 'Content-Type: application/json' \
+  -d '{"query":"...","userKey":"me","sessionId":"t1"}'
+curl localhost:8787/api/stats     # trajectories · termPagePairs 가 느는지
+```
+
+**측정할 것은 비링크 도달 비율과 질의 중복률.** 낮으면 학습 레이어가 링크 그래프의
+복사본으로 퇴화하는 중이라 배포해봐야 얻는 게 없습니다.
+
+이 순서는 **실패해도 산출물이 남게** 짜여 있습니다 — 1단계에서 멈춰도 볼트와 별칭
+색인은 그대로 쓸 수 있습니다.
 
 ---
 
-**더 읽으실 분은** [어느 것을 쓰나요](#어느-것을-쓰나요) → [시작하기](#시작하기) 두 절이면
-충분합니다. 그 아래는 만드는 사람을 위한 것입니다.
-
-| | |
-|---|---|
-| [어느 것을 쓰나요](#어느-것을-쓰나요) | 로컬판과 서버판 — 어느 쪽이 내 상황인가 |
-| [어떻게 동작하나](#어떻게-동작하나) | Confluence → 볼트 → 두 판으로 갈리는 흐름 |
-| [시작하기](#시작하기) | [로컬판 5분](#로컬판--5분) · [서버판 운영자](#서버판--운영자) · [사이에 둘 한 단계](#사이에-한-단계를-두세요) |
-| [학습 레이어](#학습-레이어-서버판만) | 서버판만 — 팀의 탐색 이력이 랭킹을 보정하는 방식 |
-| [저장소 구조](#저장소-구조) | 어느 디렉터리가 무엇을 하나 |
-| [적용 범위](#적용-범위) | Cloud·Server/DC 양쪽 · 언어는 한국어 기본 |
-| [무엇이 실제로 값어치를 하나](#무엇이-실제로-값어치를-하나) | **층 넷을 각자 판정합니다** — 여기부터 읽어도 됩니다 |
-| [만드는 사람을 위해](#만드는-사람을-위해) | [검증 절차](#변경-후-이것-하나가-통과해야-합니다) · [검증 상태](#검증-상태) · [측정 지표](#측정-지표--층마다-다릅니다) |
-| [미해결](#미해결) | 아직 못 푼 것 — 배포 전에 읽으세요 |
-
----
-
-## 어느 것을 쓰나요
-
-**둘 다 코어는 같습니다** — 같은 볼트를 읽습니다. 갈리는 것은 어느 랭킹 층을
-얹느냐이고, 그래서 업그레이드 경로가 아니라 서로 다른 물건입니다.
-
-| | **로컬판** | **서버판** |
-|---|---|---|
-| 코어 (미러 + 파일 연산) | ✅ 같은 볼트 | ✅ 같은 볼트 |
-| 계층 (`TREE.md`) | ✅ | ✅ |
-| 앵커 (`ALIASES.md`) | ✅ grep | ✅ 색인 + 가중 |
-| 형태소 검색 (BM25/Nori) | ❌ ripgrep 이라 언어 무관 | ✅ |
-| 학습 (궤적) | ❌ 관측할 서버가 없음 | ✅ |
-| 누구에게 | 혼자 · 소규모 팀 | 팀 배포 |
-| 권한 | 내 토큰 = 내 범위 (**자동**) | 서버가 요청마다 확인 |
-| 오프라인 | **가능** | 불가 |
-
-**지금 팀에 배포한다면 로컬판입니다.** 서버판은 권한 수집까지 만들었지만 신원이
-아직 자기주장이라(`userKey` 를 아무 값으로 적을 수 있습니다) 신뢰 경계 안에서만
-쓸 수 있습니다 — 리버스 프록시(SSO)를 앞에 두면 풀립니다(→ [미해결](#미해결)).
-로컬판의 대가는 Confluence 부하가 사용자 수에 비례하는 것이라 소규모 팀에 한합니다.
-
-설치해서 쓰기만 한다면 여기서 멈추고 사용 안내로 가세요 —
-[**로컬판**](plugin/local/README.md) · [서버판](plugin/client/README.md).
-아래부터는 만드는 사람을 위한 것입니다.
+여기까지가 설치입니다. **아래부터는 왜 이렇게 만들었는지**이고, 쓰는 데는 필요 없습니다.
 
 ---
 
@@ -312,138 +424,6 @@ flowchart TB
 서버판은 여기에 **학습 레이어**를 얹습니다 — 검색하고 읽은 궤적이 쌓여, 남들이 같은
 질문으로 찾아간 문서가 위로 올라옵니다. 훅은 없습니다. 읽기가 서버를 거치므로
 서버가 궤적을 직접 관측합니다.
-
----
-
-## 시작하기
-
-### 로컬판 — 5분
-
-비공개 저장소라 **git 자격증명이 먼저** 있어야 합니다(`gh auth login`).
-
-```
-/plugin marketplace add https://github.com/cw-smart-catalogue/wikilens.git
-/plugin install wikilens-local@wikilens
-/wikilens-local:setup
-```
-
-`setup` 이 전부 합니다 — 자격증명을 `~/.wikilens/env.sh`(600)에 고정하고, 볼트 위치를
-`~/.wikilens/config.json` 에 적고, CLI 를 `~/.wikilens/venv` 에 설치하고, 첫 싱크까지.
-준비할 것은 **Confluence 주소와 개인 액세스 토큰(PAT)** 둘뿐입니다.
-이미 볼트가 있으면 옮기지 말고 그 경로를 등록하면 됩니다.
-
-싱크가 끝나면 `stats` 가 "제목과 어휘가 안 겹치는 별칭을 가진 페이지" 비율을 냅니다.
-**여기서 판단하세요 — 낮으면 어휘 격차가 없다는 뜻이고, 이 도구 전체가 값어치가 없습니다.**
-
-<details>
-<summary><b>플러그인 없이 CLI 만</b> — cron·서버 운영자용</summary>
-
-```bash
-git clone https://github.com/cw-smart-catalogue/wikilens.git && cd wikilens
-python3 -m venv ~/.wikilens/venv && ~/.wikilens/venv/bin/pip install ./cli
-
-mkdir -p ~/.wikilens && chmod 700 ~/.wikilens
-cat > ~/.wikilens/env.sh <<'EOF'
-export CONFLUENCE_URL=https://confluence.mycompany.com
-export CONFLUENCE_TOKEN=<개인 액세스 토큰>
-EOF
-chmod 600 ~/.wikilens/env.sh
-
-~/.wikilens/venv/bin/wikilens doctor                       # 연결·인증·스페이스 확인
-~/.wikilens/venv/bin/wikilens sync --space PLATFORM --root ~/.wikilens/vault   # 수 분
-~/.wikilens/venv/bin/wikilens stats --root ~/.wikilens/vault
-```
-
-자격증명은 `export` 가 아니라 파일에 둡니다. `export` 는 그 셸에서만 살아서
-Claude Code 를 앱으로 띄우면 없는 것과 같고, 실제로 **검색은 되는데 `sync` 만 조용히
-죽는** 상태를 오래 겪었습니다(→ `DECISIONS.md` D10). CLI 는 환경변수가 없으면
-이 파일을 읽습니다 — cron 에서도 그냥 동작합니다.
-
-`--root` 는 서브커맨드 앞뒤 어디에 와도 되고, 플러그인을 통해 부르면 래퍼가
-`~/.wikilens/config.json` 의 볼트 경로로 자동으로 채웁니다.
-
-</details>
-
-<details>
-<summary><b>인증이 안 되면</b> — SSO · 게이트웨이 · 접두사 자동판별</summary>
-
-**SSO 환경이어도 대개 PAT 가 따로 동작합니다.** Server/DC 의 PAT 를 먼저 시도하세요.
-그것이 막혀 있을 때만 IAM OAuth2 가 필요합니다. 인증은 넷을 지원하고
-(`CONFLUENCE_TOKEN` PAT · Cloud API 토큰 + `CONFLUENCE_EMAIL` · 자체 IAM OAuth2 ·
-리버스 프록시 헤더 주입) 전부 `cli/wikilens/auth.py` 한 곳에 격리돼 있습니다.
-
-**배포 형태를 잘못 판별하면** — `detect_prefix()` 가 Cloud(`/wiki`)와 Server/DC(빈 접두사)를
-자동 판별합니다. 리버스 프록시가 일부 엔드포인트만 허용하는 구성에 속은 적이 있어
-이중 검증을 넣었지만, 게이트웨이 구성은 조직마다 달라 또 속을 수 있습니다:
-
-```bash
-export CONFLUENCE_PREFIX=""        # Server/DC 강제
-# export CONFLUENCE_PREFIX="/wiki" # Cloud 강제
-```
-
-**첫 번째로 의심할 자리는 아닙니다** — 이중 검증 이후로는 강제 지정 없이 동작하는 것을
-실측했습니다(2026-08-06). 자격증명이 파일에 제대로 있는지를 먼저 보세요.
-
-</details>
-
-### 서버판 — 운영자
-
-```bash
-# 운영자는 저장소가 필요합니다 — compose.yml · cli/ · MCP 프록시가 그 안에 있습니다
-git clone https://github.com/cw-smart-catalogue/wikilens.git && cd wikilens
-python3 -m venv ~/.wikilens/venv && ~/.wikilens/venv/bin/pip install ./cli
-WL=~/.wikilens/venv/bin/wikilens          # 이 자리는 PATH 에 없습니다
-
-# 서비스 계정으로 1회 싱크 (사용자별 싱크 없음 → Confluence 부하 1배)
-CONFLUENCE_TOKEN=<서비스계정> $WL sync --space PLATFORM --root ~/.wikilens/vault
-CONFLUENCE_TOKEN=<서비스계정> $WL acl  --root ~/.wikilens/vault   # 시행을 켤 때만
-
-# 권장 — Docker. 이미지가 ripgrep 을 갖고 있고 경로가 절대경로로 못 박혀 있습니다.
-export WIKILENS_ADMIN_TOKEN=<임의의 긴 ASCII 문자열>
-docker compose up -d --build   # compose 기본값이 ~/.wikilens/vault 입니다
-
-# 또는 직접 — 기동 시 볼트를 찾아 전량 색인합니다
-cd server && ./gradlew bootRun
-```
-
-**ACL 시행을 켰다면 등록 전까지 전원이 빈손입니다**(fail-closed, 기본은 꺼짐).
-어떤 토큰을 줄지는 `wikilens acl` 출력의 토큰 목록이 알려줍니다:
-
-```bash
-curl -XPOST -H "X-WikiLens-Admin: $TOKEN" \
-  'localhost:8787/api/admin/acl/user?userKey=alice@corp' \
-  -H 'Content-Type: application/json' -d '["@space:PLATFORM"]'
-```
-
-사용자는 볼트를 받지 않습니다 — 플러그인만 설치하고 값 둘(`서버 주소`·`본인 식별자`)을
-넣으면 됩니다: `/plugin install wikilens-client@wikilens` → `/wikilens-client:setup`.
-
-| 설정 | 안 주면 | 어떻게 보이나 |
-|---|---|---|
-| 볼트 경로 | `~/.wikilens/config.json` 의 `vault` 를 읽습니다 — CLI 가 만든 볼트를 그대로 찾습니다 | 정상. 다른 자리면 `--wikilens.vault-root=/절대/경로`(**명시가 항상 이깁니다**) |
-| 사용자의 `user` | 서버가 요청자를 식별 못 합니다 | **결과가 항상 빔** — "문서가 없다" 처럼 보입니다 |
-| `WIKILENS_ADMIN_TOKEN` | `/api/admin` 이 전부 404 | 등록·재색인이 아예 안 됩니다 |
-
-배포·운영 절차(cron 자동화 · ACL 등록 · 분석기 선택 · 백업 대상)는
-[`server/README.md`](server/README.md).
-
-### 사이에 한 단계를 두세요
-
-로컬판에서 서버판으로 바로 가지 마세요. **서버를 혼자 띄워 궤적이 실제로 쌓이는지만**
-먼저 봅니다 — 같은 서버지만 플러그인 배포가 없습니다:
-
-```bash
-cd server && ./gradlew bootRun
-curl -XPOST localhost:8787/api/search -H 'Content-Type: application/json' \
-  -d '{"query":"...","userKey":"me","sessionId":"t1"}'
-curl localhost:8787/api/stats     # trajectories · termPagePairs 가 느는지
-```
-
-**측정할 것은 비링크 도달 비율과 질의 중복률.** 낮으면 학습 레이어가 링크 그래프의
-복사본으로 퇴화하는 중이라 배포해봐야 얻는 게 없습니다.
-
-이 순서는 **실패해도 산출물이 남게** 짜여 있습니다 — 1단계에서 멈춰도 볼트와 별칭
-색인은 그대로 쓸 수 있습니다.
 
 ---
 
@@ -587,26 +567,6 @@ EB 하한은 이미 확률이라 순위로 뭉개면 보정된 정보를 버리�
 
 ---
 
-## 저장소 구조
-
-| 경로 | 내용 | 언어 |
-|---|---|---|
-| **`cli/`** | Confluence 싱크 · 파싱 · 앵커 전치 — **볼트를 만드는 유일한 곳** | Python |
-| **`server/`** | Lucene/Nori 색인 · 학습 레이어 · HTTP API | Kotlin |
-| **`plugin/local/`** | 스킬 + 커맨드 2개 ([사용 안내](plugin/local/README.md)) | Python |
-| **`plugin/client/`** | MCP 도구 5개 + 스킬 ([사용 안내](plugin/client/README.md)) | Python |
-| `contract/` | 교차 언어 계약 검사 + 공유 골든 픽스처 | — |
-| `docs/` | [아키텍처](docs/architecture.md) · 설계 제안(임베딩 · [진술된 답](docs/declared-answer-design.md)) · 코드 리뷰와 [실험 기록](docs/experiment-2026-08-14-learning.md) | — |
-| `.claude-plugin/` | 마켓플레이스 매니페스트 (**반드시 저장소 루트**) | — |
-
-Python 과 Kotlin 은 **파일로만** 연결됩니다. 볼트 포맷이 곧 인터페이스입니다.
-그래서 한쪽만 바꾸면 에러 없이 조용히 틀어지고, `contract/shared_contract.sh` 가
-그것을 막습니다.
-
-[`DECISIONS.md`](DECISIONS.md) — 뒤집힌 결정과 지우면 안 되는 것들. **되돌리기 전에 읽으세요.**
-
----
-
 ## 적용 범위
 
 **특정 회사에 묶여 있지 않습니다.** Confluence Cloud 와 Server/Data Center 양쪽,
@@ -720,6 +680,26 @@ setx WIKILENS_PYTHON python
 
 자세한 근거는 [`docs/architecture.md`](docs/architecture.md), 기각된 안과 뒤집힌 결정의
 이력은 [`DECISIONS.md`](DECISIONS.md).
+
+---
+
+## 저장소 구조
+
+| 경로 | 내용 | 언어 |
+|---|---|---|
+| **`cli/`** | Confluence 싱크 · 파싱 · 앵커 전치 — **볼트를 만드는 유일한 곳** | Python |
+| **`server/`** | Lucene/Nori 색인 · 학습 레이어 · HTTP API | Kotlin |
+| **`plugin/local/`** | 스킬 + 커맨드 2개 ([사용 안내](plugin/local/README.md)) | Python |
+| **`plugin/client/`** | MCP 도구 5개 + 스킬 ([사용 안내](plugin/client/README.md)) | Python |
+| `contract/` | 교차 언어 계약 검사 + 공유 골든 픽스처 | — |
+| `docs/` | [아키텍처](docs/architecture.md) · 설계 제안(임베딩 · [진술된 답](docs/declared-answer-design.md)) · 코드 리뷰와 [실험 기록](docs/experiment-2026-08-14-learning.md) | — |
+| `.claude-plugin/` | 마켓플레이스 매니페스트 (**반드시 저장소 루트**) | — |
+
+Python 과 Kotlin 은 **파일로만** 연결됩니다. 볼트 포맷이 곧 인터페이스입니다.
+그래서 한쪽만 바꾸면 에러 없이 조용히 틀어지고, `contract/shared_contract.sh` 가
+그것을 막습니다.
+
+[`DECISIONS.md`](DECISIONS.md) — 뒤집힌 결정과 지우면 안 되는 것들. **되돌리기 전에 읽으세요.**
 
 ---
 
