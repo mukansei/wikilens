@@ -7,19 +7,19 @@
   "두 곳이 같아야 하는데 연결이 없다" 로 반복해서 물린 자리라 검사를 붙였다.
 
   **개수는 배지에 넣지 않는다**(계약 N개·테스트 N개). 늘 때마다 낡고, 돌리면 바로 나온다.
+
+  **여섯이다.** 한때 열이었는데 넷은 스펙 요약이 아니었다 — `RE2` 는 결정(D12)이고,
+  `MCP` 는 Claude Code 배지에 이미 함축돼 있고, `Confluence 읽기 전용` 은 스펙이 아니라
+  **주장**이라 본문과 `CLAUDE.md` 가 훨씬 강하게 말한다. `Nori` 는 Lucene 에 합쳤다.
+  배지가 늘면 각각이 덜 읽힌다.
 -->
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](cli/)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4-7F52FF?logo=kotlin&logoColor=white)](server/)
-[![JVM](https://img.shields.io/badge/JVM-25-437291?logo=openjdk&logoColor=white)](server/build.gradle.kts)
+[![Java](https://img.shields.io/badge/Java-25-437291?logo=openjdk&logoColor=white)](server/build.gradle.kts)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F?logo=springboot&logoColor=white)](server/)
-
-[![Lucene](https://img.shields.io/badge/Lucene-9.11-D22128)](server/src/main/kotlin/io/wikilens/index/)
-[![Nori](https://img.shields.io/badge/Nori-%ED%95%9C%EA%B5%AD%EC%96%B4%20%ED%98%95%ED%83%9C%EC%86%8C-D22128)](#적용-범위)
-[![RE2](https://img.shields.io/badge/regex-RE2%20%28re2j%29-4285F4)](DECISIONS.md)
+[![Lucene](https://img.shields.io/badge/Lucene-9.11%20%28Nori%29-D22128)](#적용-범위)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-plugin%20%C3%97%202-D97757?logo=anthropic&logoColor=white)](#어느-것을-쓰나요)
-[![MCP](https://img.shields.io/badge/MCP-stdio%20JSON--RPC-000000)](plugin/client/mcp/)
-[![read-only](https://img.shields.io/badge/Confluence-%EC%9D%BD%EA%B8%B0%20%EC%A0%84%EC%9A%A9-555555)](#미해결)
 
 **Confluence 를 에이전트가 다룰 수 있는 네 가지 연산으로 바꿉니다.**
 
