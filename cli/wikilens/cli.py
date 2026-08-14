@@ -161,12 +161,21 @@ def _cmd_stats(args) -> int:
         print("derived/anchors.jsonl 이 비어 있습니다. 싱크된 페이지가 없는지 확인하세요.")
         return 1
 
-    with_alias = [e for e in entries if e["indeg"] > 0]
-    orphans = total - len(with_alias)
+    # **`indeg > 0` 은 "인링크가 있다" 이지 "별칭이 있다" 가 아니다.** 별칭은 제목과
+    # **다른** 표현만 세므로(`build._alias_terms`), 다들 제목 그대로 링크한 문서는
+    # 인링크가 100개여도 별칭이 0 이다. 한때 이 줄이 `별칭 보유` 라고 찍었고 그 수가
+    # 문서 넷에 인용됐다 — 실측으로 12% 대 3% 였다. 같은 혼동을 `ALIASES.md` 에서도
+    # 한 번 겪었다(제목으로만 링크된 페이지를 "고아 문서 후보" 로 실었다).
+    linked = [e for e in entries if e["indeg"] > 0]
+    with_alias = [e for e in linked
+                  if {a["text"].strip() for a in e["anchors"]} - {e["title"], ""}]
+    orphans = total - len(linked)
     indegs = sorted((e["indeg"] for e in entries), reverse=True)
 
     print(f"페이지 {total}개")
-    print(f"  별칭 보유 {len(with_alias)} ({100*len(with_alias)/total:.0f}%)")
+    print(f"  인링크 보유 {len(linked)} ({100*len(linked)/total:.0f}%)")
+    print(f"  └ 그중 별칭 보유 {len(with_alias)} ({100*len(with_alias)/total:.0f}%)"
+          f" — 나머지는 제목 그대로만 링크됨")
     print(f"  고아 후보 {orphans} ({100*orphans/total:.0f}%)")
     if indegs:
         print(f"  인링크 최대 {indegs[0]} · 중앙값 {indegs[len(indegs)//2]}")
