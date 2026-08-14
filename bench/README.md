@@ -97,6 +97,13 @@ C 서버판     mcp__…__search · read · grep
 **`down` 이 되돌린다 — 벤치가 죽으면 안 돌아오므로 끝나면 반드시 부를 것.**
 도구 이름은 매 측정에 기록되므로, 격리가 깨지면 결과 파일에서 바로 보인다.
 
+**권한도 벤치가 스스로 정한다.** 개발자 머신의 `.claude/settings.local.json` 에는
+대화 세션에서 하나씩 승인된 도구가 누적돼 있고 `claude -p` 가 그것을 상속한다 —
+**새 MCP 도구를 추가하면 벤치에서만 조용히 거부된다.** 실제로 겪었다: 모델이
+`answer` 를 부르는데 서버 진술이 계속 0 이었고, 도구 **응답**을 기록하기 전까지
+원인이 안 보였다(`Claude requested permissions … but you haven't granted it yet`).
+`case_c` 가 `--allowedTools` 로 MCP 서버를 통째로 허용해 그 의존을 끊는다.
+
 ### 실험이 둘이다 — cold 와 warm
 
 ```bash

@@ -52,6 +52,10 @@ from queries import GROUPS, MINIMAL  # noqa: E402
 #: 깨끗하다 — 그러면 각 세션이 자기 플러그인만 본다(실측 확인).
 DENY = "WebFetch,WebSearch,Task,Edit,Write,NotebookEdit"
 
+#: C 케이스의 MCP 서버. `--allowedTools` 에 **서버 이름만** 주면 그 서버의 도구 전부가
+#: 허용된다 — 도구가 늘어도 여기를 안 고쳐도 된다.
+MCP_SERVER = "mcp__plugin_wikilens-client_wiki"
+
 
 #: MCP 프록시가 `search` 결과 첫 줄에 찍는 `학습 힌트 N`. 형식이 바뀌면 여기도 바꿔야
 #: 하는데, 안 바꾸면 **힌트를 0 으로 읽어 warm 측정이 통째로 제외된다** — 조용하지 않게
@@ -81,10 +85,22 @@ def case_b(q: str) -> list[str]:
 
 
 def case_c(q: str) -> list[str]:
-    """서버판 — MCP 도구 4개."""
+    """
+    서버판 — MCP 도구.
+
+    **MCP 서버를 통째로 허용한다.** 개발자 머신의 `.claude/settings.local.json` 에는
+    대화 세션에서 하나씩 승인된 도구가 누적돼 있는데, 벤치의 `claude -p` 가 그것을
+    상속한다 — **새 도구를 추가하면 벤치에서만 조용히 거부된다.** 실측으로 겪었다:
+    모델이 `answer` 를 부르는데 서버 진술이 계속 0 이었고, 도구 응답을 기록하기 전까지
+    원인이 안 보였다(`Claude requested permissions … but you haven't granted it yet`).
+
+    이름을 나열하지 않고 서버 단위로 주는 이유도 같다 — 나열하면 도구가 늘 때마다
+    여기도 고쳐야 하고, 안 고치면 같은 실패가 되돌아온다.
+    """
     return ["claude", "-p", f"질문: {q}\n\n{ASK}",
             "--output-format", "stream-json", "--verbose",
             "--disallowed-tools", DENY,
+            "--allowedTools", MCP_SERVER,
             "--plugin-dir", str(REPO / "plugin" / "client")]
 
 
@@ -131,6 +147,7 @@ def run_once(argv: list[str]) -> dict:
     # 파일을 안 보는지는 도구 이름으로만 확인된다.
     tools: list[str] = []
     args: list[dict] = []
+    results: list[str] = []
     hints = 0
     d = None
     for line in out.splitlines():
@@ -167,6 +184,10 @@ def run_once(argv: list[str]) -> dict:
                 m = _HINTS.search(text)
                 if m:
                     hints += int(m.group(1))
+                # **도구가 뭐라고 답했는지도 남긴다.** 인자만으로는 "불렀다" 까지만
+                # 알고 "먹혔나" 를 모른다 — `answer` 가 조용히 거부되는 것을 그래서
+                # 못 봤다(모델은 부르는데 서버 진술이 0 이었다).
+                results.append(text[:200])
         elif ev.get("type") == "result":
             d = ev
     if d is None:
@@ -197,7 +218,7 @@ def run_once(argv: list[str]) -> dict:
         "hints": hints,
         "extra": {"out_tokens": u.get("output_tokens", 0),
                   "cache_read": u.get("cache_read_input_tokens", 0),
-                  "tools": tools, "args": args},
+                  "tools": tools, "args": args, "results": results},
     }
 
 
@@ -248,7 +269,8 @@ def plan(groups: list, reps: int, pattern: str, per_group: int = 0) -> list[tupl
     return out
 
 
-def warmup(w: Writer, g0: tuple, mode: str, budget: float) -> float:
+def warmup(w: Writer, g0: tuple, mode: str, budget: float,
+           cases: list = CASES) -> float:
     """
     케이스마다 **버리는 1회**를 먼저 돈다. 쓴 비용을 반환하고, 예산에 걸리면 음수.
 
@@ -257,7 +279,7 @@ def warmup(w: Writer, g0: tuple, mode: str, budget: float) -> float:
     아니다 — 버리는 1회를 따로 기록해 두면 나중에 확인할 수 있다.
     """
     spent = 0.0
-    for cname, builder in CASES:
+    for cname, builder in cases:
         # **워밍도 예산을 쓴다.** 안 보면 `--budget 0.9` 인데 워밍만 $1.41 을 쓰고
         # 본측정이 0건이 된다(실측). 돈을 쓰는 모든 자리가 같은 가드를 지나야 한다.
         if spent >= budget:
@@ -277,6 +299,10 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--groups", nargs="*", default=list(MINIMAL),
                     help=f"기본 {' '.join(MINIMAL)} (모양이 다른 셋). 전량은 --groups G01 … G10")
+    ap.add_argument("--cases", nargs="*", default=None,
+                    help="접두어로 케이스를 고른다(A·B·C). 기본은 셋 다. "
+                         "**세 방식 비교에는 셋이 다 필요하다** — 하나만 쓰는 것은 "
+                         "그 방식 안에서 무언가를 잴 때다(예: 서버 궤적의 dest 추정).")
     ap.add_argument("--per-group", type=int, default=1,
                     help="그룹당 질의 수. 0 이면 전부. transfer 는 무시한다")
     ap.add_argument("--reps", type=int, default=1,
@@ -308,8 +334,13 @@ def main() -> int:
               f"(지금 {a.reps} → 학습 0회)", file=sys.stderr)
         return 2
 
-    total = len(plan(groups, a.reps, a.pattern, a.per_group)) * len(CASES)
-    print(f"  대상 {len(groups)}그룹 · {a.pattern} 순서 · {len(CASES)}케이스 = {total}세션")
+    cases = [c for c in CASES
+             if a.cases is None or any(c[0].startswith(p) for p in a.cases)]
+    if not cases:
+        print("  해당 케이스 없음", file=sys.stderr)
+        return 2
+    total = len(plan(groups, a.reps, a.pattern, a.per_group)) * len(cases)
+    print(f"  대상 {len(groups)}그룹 · {a.pattern} 순서 · {len(cases)}케이스 = {total}세션")
     # **서버가 없으면 시작하지 않는다.** 그냥 두면 C 세션이 전부 실패하면서
     # 세션당 $0.53 을 태운다 — 30세션이면 $16 을 버리고 나서야 안다.
     # 이쪽만 플러그인 격리가 필요하므로 `up` 을 안내한다.
@@ -330,14 +361,14 @@ def main() -> int:
     spent = 0.0
     with Writer(out) as w:
         if a.warmup:
-            spent = warmup(w, groups[0], mode, a.budget)
+            spent = warmup(w, groups[0], mode, a.budget, cases)
             if spent < 0:                      # 워밍 중 예산 도달
                 return 0
 
         for g, qi, rep in plan(groups, a.reps, a.pattern, a.per_group):
             name, gold, _title, queries = g
             q = queries[qi]
-            for cname, builder in CASES:
+            for cname, builder in cases:
                 k = ("agent", cname, name, qi, rep, mode)
                 if k in done:
                     continue
