@@ -2,6 +2,7 @@
   "name": "wikilens-client",
   "description": "팀 공용 서버가 색인한 Confluence 위키를 검색합니다. 다른 문서가 이 페이지를 부르는 이름(앵커 텍스트)까지 색인해 제목에 없는 표현으로도 찾습니다. 한국어 형태소 분석 + 팀의 탐색 이력 학습. 내 디스크에는 아무것도 받지 않고, 서버가 요청마다 권한을 확인합니다.",
   "version": "0.14.10",
+  "license": "MIT",
   "keywords": [
     "confluence",
     "wiki",
