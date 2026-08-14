@@ -54,6 +54,11 @@ class IndexingServiceTest {
             assertTrue(r.skipped, "건너뛰었음을 호출부에 알려야 한다")
             assertEquals(before, index.docCount, "색인이 지워졌다 — 재싱크해야 복구된다")
             assertEquals(before, r.indexed, "보고도 남아 있는 색인 기준이어야 한다")
+            // **ACL 페이지 맵도 살아남는다**(`AclRegistry.replacePages` 의 빈 목록 가드).
+            // 색인만 지키고 이쪽이 비면 검색은 되는데 읽기가 전부 404 다 — 조용히 실패
+            // 12·14번이 정확히 그 모양이었다. 둘을 함께 단언해야 그 짝이 잠긴다.
+            assertEquals(before, r.aclPages, "권한 맵이 비었다 — 읽기가 전부 404 가 된다")
+            assertTrue(acl.canSee(setOf("@public"), "100"), "읽기 권한이 사라졌다")
         }
     }
 
