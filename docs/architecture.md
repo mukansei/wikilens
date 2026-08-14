@@ -39,7 +39,7 @@ flowchart TB
     end
 
     subgraph CLIENT["plugin/client/ · Python · 세션마다"]
-        MCPT["MCP 프록시 (stdio↔HTTP)<br/>search · read · grep · tree"]
+        MCPT["MCP 프록시 (stdio↔HTTP)<br/>search · read · grep · tree · answer"]
     end
 
     subgraph SRV["server/ · Kotlin · 상주"]
@@ -149,10 +149,14 @@ flowchart LR
 
 ## 아직 결정하지 않은 것
 
-- **서버판 인증** — `sync` 가 권한을 안 가져와 모든 페이지가 `@public` 이고,
-  `/api/admin/*` 에는 인증이 없어 누구나 스스로 권한을 부여할 수 있으며, 사용자 등록은
-  메모리 전용이라 재기동하면 사라진다. 셋이 한 묶음이고 다중 사용자 배포 전 필수다
-  (CLAUDE.md 우선순위 1).
+- **서버판 신원** — 여기 적혀 있던 셋(권한 미수집 · 관리 API 무인증 · 등록 휘발)은
+  전부 만들었다: `wikilens acl` 이 상속까지 풀어 수집하고, `/api/admin` 하위가 경로로
+  잠기며(기본이 잠김), 등록은 `acl-users.json` 에 원자적으로 남는다. **남은 것은
+  `userKey` 가 자기주장이라는 것**이고, 그건 리버스 프록시(SSO)가 헤더로 신원을
+  주입해야 풀린다 — PAT 을 받는 안이 왜 안 되는지는 D22. 그때까지 다중 사용자
+  배포는 신뢰 경계 안에 한한다.
+- **사람 쪽 권한 갱신** — 페이지 권한은 `wikilens acl` 이 따라가지만 사용자 토큰은
+  운영자가 손으로 고친다. 낡는 방향이 "덜 보임" 이 아니라 **"더 보임"** 이다.
 - **"유용했다" 판정** — 신호는 다섯이다(마지막 읽기 · 질의 재구성 · 서빙 후 안 읽힌
   힌트 · 지나친 읽기 · `dest` 의 검색 순위). 셋째가 유일하게 학습을 **되돌린다.**
   노이즈 크기는 `pWrong`(거부/서빙)으로만 알 수 있고, `dest = reads.last()` 라는
