@@ -35,7 +35,13 @@ fi
 # `Path.home()` 이 같은 자리가 아닐 수 있다(Windows 에서 파이썬은 `USERPROFILE` 을
 # 보는데 Git Bash 의 `HOME` 은 다를 수 있다). 갈리면 래퍼가 소싱한 파일과 CLI 가 읽는
 # 파일이 달라져 **자격증명이 있는데 없다고 죽는다.** 해석처는 `vault_status.py` 하나다.
-ENV_FILE="${WIKILENS_ENV:-$($PY "$_here/vault_status.py" --env-path 2>/dev/null)}"
+#
+# **`|| true` 가 필요하다.** `set -e` 아래에서 대입문의 종료 코드는 명령 치환의 것이라,
+# `vault_status.py` 가 죽으면(설치 누락·파이썬 환경 파손) 여기서 **아무 말 없이 exit 1**
+# 이 된다 — stderr 도 버리고 있어 단서가 0 이다(실측). 계속 진행하면 몇 줄 아래
+# CLI 탐색이 실패하면서 "setup 을 실행하세요" 를 찍는다. 아래 `_vault=` 는 이미 그렇게
+# 돼 있었고 여기만 빠져 있었다.
+ENV_FILE="${WIKILENS_ENV:-$($PY "$_here/vault_status.py" --env-path 2>/dev/null || true)}"
 if [ -f "$ENV_FILE" ]; then
   # 이미 export 된 값이 있으면 그쪽이 이긴다 — 일회성 재정의(토큰 교체 등)를 파일이
   # 덮으면 낡은 자격증명으로 조용히 인증한다.
