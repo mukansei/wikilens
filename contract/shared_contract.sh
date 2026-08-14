@@ -599,7 +599,7 @@ check "클라이언트가 주는 limit 을 두 경로 모두 상한으로 죔 (s
 check "429 백오프가 모든 GET 에 걸리고, 전부 실패하면 acl.json 을 안 씀" \
   'grep -q "if r.status_code != 429:" cli/wikilens/sync.py \
    && ! grep -q "if r.status_code == 429:" cli/wikilens/sync.py \
-   && grep -q "rep.failed >= len(pages)" cli/wikilens/acl.py \
+   && grep -q "rep.page_failed >= len(pages)" cli/wikilens/acl.py \
    && grep -q "rep.wrote" cli/wikilens/cli.py'
 
 # 궤적 로그는 append-only 이고 유일한 복구 불가 자산이다. 거기로 흘러가는 것 — 항 목록·

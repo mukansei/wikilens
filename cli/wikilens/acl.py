@@ -53,7 +53,12 @@ class AclReport:
     pages: int = 0
     restricted: int = 0
     inherited: int = 0
+    #: 조회 실패 건수. **싱크 집합 밖의 조상도 포함한다** — 사용자에게는 그것도
+    #: 실패이므로 함께 센다. 다만 "전부 실패" 판정에는 쓰면 안 된다([page_failed]).
     failed: int = 0
+    #: 그중 **싱크된 페이지** 의 실패. 두 모집단을 갈라 두는 이유는 밖의 조상이
+    #: 애초에 싱크가 안 가져온 페이지라 **권한이 없어 실패하기 가장 쉬운 쪽**이어서다.
+    page_failed: int = 0
     #: 자신은 읽었지만 **조상을 못 읽어** 권한을 확정하지 못한 페이지
     unresolved: int = 0
     #: acl.json 을 실제로 썼는가. 전부 실패하면 안 쓴다 — 옛 파일이 그대로 남는다.
@@ -123,6 +128,8 @@ def _fetch_direct(client, pages: dict, rep: AclReport,
         direct[pid] = _direct_tokens(client, pid)
         if direct[pid] is None:
             rep.failed += 1
+            if pid in pages:
+                rep.page_failed += 1
         if sleep_s:
             time.sleep(sleep_s)
         if verbose and i % 200 == 0:
@@ -205,7 +212,12 @@ def collect(root: Path, client, verbose: bool = False, sleep_s: float = 0.0) -> 
     # 재기동이 멀쩡한 색인을 지우던 것과 같은 자리다 — 못 읽은 것과 없는 것은 다르다.
     #
     # 부분 실패는 그대로 진행한다. 그건 설계된 완만한 열화다(옛 값 유지 · 새 페이지 생략).
-    if pages and rep.failed >= len(pages):
+    #
+    # **세는 것은 페이지 실패뿐이다.** `rep.failed` 는 싱크 집합 밖의 조상도 함께 세는데,
+    # 그쪽은 싱크가 안 가져온 페이지라 **권한이 없어 실패하기 가장 쉽다** — 두 모집단을
+    # 섞으면 페이지가 전부 성공해도 문턱을 넘을 수 있다(실측: 페이지 2건 성공 · 밖의
+    # 조상 3건 실패 → 안 씀). 그러면 새로 잠긴 페이지가 옛 값으로 계속 서빙된다.
+    if pages and rep.page_failed >= len(pages):
         rep.elapsed_s = time.time() - started
         rep.wrote = False
         return rep
