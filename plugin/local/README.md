@@ -35,9 +35,9 @@ Claude: (일반 지식으로 답변) …
 
 ### 미리 준비할 것
 
-| | |
+| 물어보는 것 | 예 |
 |---|---|
-| **Confluence 주소** | 예: `https://wiki.mycompany.com` |
+| **Confluence 주소** | `https://wiki.mycompany.com` |
 | **인증 토큰** | 대개 개인 액세스 토큰(PAT) 하나면 됩니다 |
 
 물어보는 것은 setup 이 하고, 값은 `~/.wikilens/env.sh`(권한 600)에 넣어줍니다.
