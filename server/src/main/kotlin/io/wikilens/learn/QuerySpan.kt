@@ -24,6 +24,23 @@ class QuerySpan(val keywords: List<String>, val kind: QueryKind) {
     /** on_query와 on_end가 같은 스팬을 두 번 확정하는 것을 막는다. */
     var finalized = false
 
+    /**
+     * 모델이 **답이라고 말한** 페이지. 비면 [reads] 의 마지막으로 추정한다(폴백).
+     *
+     * 위 [readTs] 가 재려던 그 미해결을 **다르게 푼다** — 체류 시간으로 추정하는 대신
+     * 물어본다. 실측(2026-08-14, C 케이스 6세션 `docs/declared-answer-design.md`):
+     * 읽기 1건은 3/3 자명하게 일치하는데 **2건 이상은 3건 중 2건이 어긋났다.**
+     * 마지막 읽기가 답이 아니라 *확인*이나 *배제*인 경우가 흔하다.
+     *
+     * 한 번 틀리면 셋이 함께 틀린다 — 간선(`postings[항][dest]`) · 미스
+     * (`passedOver = reads - {dest}`) · 깊이 가중(`rank`)이 전부 이 값에 걸려 있다.
+     *
+     * **진술이 맞다는 보장은 아니다.** 모델이 오답을 확신하면 그 오답이 `dest` 가 된다
+     * — 그건 미스 벌점이 잡을 몫이고, 이 필드가 정확히 하는 것은 *"모델이 무엇을
+     * 답이라 여겼나"* 뿐이다.
+     */
+    var declaredDest: String? = null
+
     fun addRead(pageId: String, at: Long = System.currentTimeMillis()) {
         // 같은 페이지를 연속으로 읽으면 한 번으로 센다. 시각은 **첫 읽기**를 남긴다 —
         // 체류 시간은 "언제부터 봤나" 로 재야 하고, 연속 재요청은 같은 열람이다.
