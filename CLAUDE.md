@@ -33,7 +33,7 @@ API 로는 안 되는 것들이다(인증·레이트리밋, 무엇보다 grep �
 ```
 cli/       Python  싱크·파싱·앵커 전치·로컬판        pytest
 server/    Kotlin  Lucene/Nori 색인 + 학습 레이어    JUnit · 배선 검증됨(Acme 실데이터)
-plugin/    local=스킬+커맨드 · client=MCP 도구 4개   tests/ 는 배포 밖 · 안내 포함
+plugin/    local=스킬+커맨드 · client=MCP 도구 5개   tests/ 는 배포 밖 · 안내 포함
 contract/  교차 언어 계약 + 공유 픽스처
 docs/      아키텍처 · 설계 제안(임베딩·진술된 답) · 코드 리뷰·실험 기록
 ```

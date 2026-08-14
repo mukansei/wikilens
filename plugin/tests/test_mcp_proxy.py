@@ -98,6 +98,9 @@ class Fake(BaseHTTPRequestHandler):
             payload = {"markdown": "- [SPACE] 팀 홈 — 111354187\n"
                                     "  - 참고. 조직 R&R 정리 — 167164533\n",
                        "truncated": False}
+        elif self.path == "/api/answer":
+            # 실제 서버는 **읽은 것만** 받아들인다. `999` 를 거부해 그 경로를 흉내낸다.
+            payload = {"accepted": body.get("pageId") != "999"}
         elif self.path == "/api/session/end":
             payload = {"finalized": 1}
         else:
@@ -164,7 +167,7 @@ def main() -> int:
         print("\n=== 2. tools/list ===")
         r = rpc(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         names = [t["name"] for t in r["result"]["tools"]]
-        check("도구 4개", names == ["search", "read", "grep", "tree"], f"실제={names}")
+        check("도구 5개", names == ["search", "read", "grep", "tree", "answer"], f"실제={names}")
         check("스키마 있음", all("inputSchema" in t for t in r["result"]["tools"]))
         # **목록과 처리기가 어긋나면 목록에는 보이는데 부르면 "알 수 없는 도구" 가 된다.**
         # 도구별 처리가 `HANDLERS` dict 로 나뉘면서 두 곳이 같아야 하는 자리가 생겼다.
@@ -252,6 +255,21 @@ def main() -> int:
         _, body = received[-1]
         check("userKey 전달", body.get("userKey") == "alice@corp")
         check("sessionId 미포함 (계층은 궤적 관측 대상 아님)", "sessionId" not in body)
+
+        print("\n=== 7-1. answer (진술) ===")
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 71, "method": "tools/call",
+                       "params": {"name": "answer", "arguments": {"pageId": "200000001"}}})
+        text = r["result"]["content"][0]["text"]
+        check("기록됨", "기록했습니다" in text, text[:40])
+        _, body = received[-1]
+        check("sessionId 전달 (스팬을 찾아야 한다)", str(body.get("sessionId", "")).startswith("mcp-"))
+        check("userKey 미포함 (권한은 read 에서 이미 걸렸다)", "userKey" not in body)
+        # **거부돼도 오류가 아니다** — 부가 신호라 실패해도 답 자체는 사용자에게 간다.
+        # 오류로 만들면 모델이 그걸 고치려 들고, 그건 이 호출의 목적이 아니다.
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 72, "method": "tools/call",
+                       "params": {"name": "answer", "arguments": {"pageId": "999"}}})
+        check("거부는 isError 가 아님", not r["result"].get("isError"))
+        check("거부 사유를 알려줌", "read 로 연 문서만" in r["result"]["content"][0]["text"])
 
         print("\n=== 8. 알 수 없는 메서드 ===")
         r = rpc(proc, {"jsonrpc": "2.0", "id": 8, "method": "nope"})
@@ -583,7 +601,7 @@ def main() -> int:
         check("새 설정은 정상 기록", cfg_of(h6).get("user") == "u", str(cfg_of(h6)))
 
         # `null`·`[]` 는 유효한 JSON 이라 파싱 검사를 통과한 뒤 `_CFG.get()` 에서 터진다.
-        # 그 자리가 **모듈 최상단**이라 프록시가 기동 중 죽고 도구 4개가 통째로 사라진다.
+        # 그 자리가 **모듈 최상단**이라 프록시가 기동 중 죽고 도구가 통째로 사라진다.
         for junk in ("null", "[]", '"hello"', "123"):
             hj = tempfile.mkdtemp(prefix="wl-conf-junk-")
             (pathlib.Path(hj) / ".wikilens").mkdir()
