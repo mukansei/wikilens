@@ -929,3 +929,11 @@ Confluence 에서 그룹이 바뀌어도 모르고, 빠져도 운영자가 지�
 - `/api/admin` 하위가 공유 토큰으로 잠깁니다 (**기본이 잠김**, 엔드포인트마다가 아니라 경로로)
 - 권한 변경이 `lastModified` 를 안 건드리는 문제는 `acl` 을 `sync` 와 분리해
   더 자주 돌리는 것으로 다룹니다
+
+---
+
+## 라이선스
+
+[MIT](LICENSE). 의존성도 전부 permissive 입니다 — Apache-2.0 (Spring Boot · Lucene ·
+Kotlin · Jackson) · BSD-3-Clause (re2j) · MIT (BeautifulSoup · markdownify) ·
+Apache-2.0 (requests).

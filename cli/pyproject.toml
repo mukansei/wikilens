@@ -3,6 +3,11 @@ name = "wikilens"
 version = "0.1.0"
 description = "Confluence 위키를 로컬 마크다운으로 미러링하고 별칭 색인을 생성합니다"
 requires-python = ">=3.10"
+license = "MIT"
+# 정본은 저장소 루트의 `LICENSE` 하나다. `..` 는 PEP 639 가 허용하지 않지만 setuptools
+# 는 받아주고, 파일이 없으면(sparse clone) 조용히 건너뛴다 — 둘 다 실측 확인.
+# 나중에 빌드가 이 줄에서 죽으면 이 줄만 지우면 된다(메타데이터의 MIT 선언은 위에 있다).
+license-files = ["../LICENSE"]
 dependencies = [
     "requests>=2.31",
     "beautifulsoup4>=4.12",
