@@ -551,6 +551,27 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "answer",
+        "description": (
+            "찾던 문서를 확정했을 때 그 pageId를 알려줍니다. 사용자에게 답을 전하기 직전에 "
+            "read로 확인한 문서 중 하나를 지정하세요. 여러 문서를 열어봤다면 그중 실제로 "
+            "답이 된 것을 고릅니다.\n"
+            "이것을 부르지 않으면 서버는 '마지막으로 read한 문서'를 답으로 간주하는데, "
+            "그것이 확인용이나 배제용으로 연 문서일 때 틀린 것을 학습합니다(실측: 문서를 "
+            "2개 이상 읽은 경우 3건 중 2건이 어긋났습니다). 다음 사람의 검색 품질이 "
+            "여기에 달려 있습니다.\n"
+            "답을 못 찾았으면 부르지 마세요 — 못 찾았다는 사실도 신호입니다. "
+            "이 호출은 검색 결과를 바꾸지 않고 기록만 남깁니다."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pageId": {"type": "string", "description": "답이 된 문서. read로 연 것이어야 합니다."},
+            },
+            "required": ["pageId"],
+        },
+    },
 ]
 
 
@@ -638,11 +659,25 @@ def _tool_tree(args: dict) -> tuple[str, bool]:
 
 #: 이름 → 핸들러. [TOOLS] 의 `name` 과 **키가 같아야 한다** — 어긋나면 도구 목록에는
 #: 보이는데 부르면 "알 수 없는 도구" 가 된다. `test_mcp_proxy` 가 둘을 대조한다.
+def _tool_answer(args: dict) -> tuple[str, bool]:
+    r = post("/api/answer", {
+        "sessionId": SESSION, "pageId": str(args.get("pageId", "")),
+    })
+    # **거부돼도 오류가 아니다.** 이 호출은 부가 신호이고 안 부르면 서버가
+    # `reads.last()` 로 추정한다 — 실패를 오류로 만들면 모델이 그걸 고치려 든다.
+    # 다만 조용히 넘기지도 않는다: 읽지 않은 페이지를 답이라고 한 것이므로 알려준다.
+    if not r.get("accepted"):
+        return ("기록하지 못했습니다 — read 로 연 문서만 답으로 지정할 수 있습니다. "
+                "답 자체는 그대로 사용자에게 전달하세요.", False)
+    return ("기록했습니다.", False)
+
+
 HANDLERS = {
     "search": _tool_search,
     "read": _tool_read,
     "grep": _tool_grep,
     "tree": _tool_tree,
+    "answer": _tool_answer,
 }
 
 

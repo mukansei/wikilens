@@ -219,7 +219,7 @@ flowchart LR
 
     subgraph S["서버판 — 팀 공용 · 상주"]
         IDX["Lucene/Nori 색인<br/>+ 학습 레이어<br/>질의 시점 ACL"]
-        MCP["MCP 도구 4개<br/>search · read · grep · tree"]
+        MCP["MCP 도구 5개<br/>search · read · grep · tree · answer"]
     end
 
     CLOUD --> NET
@@ -585,7 +585,7 @@ EB 하한은 이미 확률이라 순위로 뭉개면 보정된 정보를 버리�
 | **`cli/`** | Confluence 싱크 · 파싱 · 앵커 전치 — **볼트를 만드는 유일한 곳** | Python |
 | **`server/`** | Lucene/Nori 색인 · 학습 레이어 · HTTP API | Kotlin |
 | **`plugin/local/`** | 스킬 + 커맨드 2개 ([사용 안내](plugin/local/README.md)) | Python |
-| **`plugin/client/`** | MCP 도구 4개 + 스킬 ([사용 안내](plugin/client/README.md)) | Python |
+| **`plugin/client/`** | MCP 도구 5개 + 스킬 ([사용 안내](plugin/client/README.md)) | Python |
 | `contract/` | 교차 언어 계약 검사 + 공유 골든 픽스처 | — |
 | `docs/` | [아키텍처](docs/architecture.md) · 설계 제안(임베딩 · [진술된 답](docs/declared-answer-design.md)) · 코드 리뷰와 [실험 기록](docs/experiment-2026-08-14-learning.md) | — |
 | `.claude-plugin/` | 마켓플레이스 매니페스트 (**반드시 저장소 루트**) | — |

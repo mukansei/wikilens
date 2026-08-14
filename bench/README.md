@@ -15,7 +15,7 @@
 |---|---|---|
 | **A 원시 grep** | 안내 없이 볼트를 훑는다 | `ALIASES.md`·`TREE.md` 가 **없는** 볼트를 준다 |
 | **B 로컬판** | 스킬 + 네이티브 grep | `--plugin-dir plugin/local` |
-| **C 서버판** | MCP 도구 4개 | `--plugin-dir plugin/client` + 전용 서버 `:8790` |
+| **C 서버판** | MCP 도구 5개 | `--plugin-dir plugin/client` + 전용 서버 `:8790` |
 
 > **B 는 MCP 가 아니다.** 로컬판의 정의적 성질이 "검색 경로 런타임 의존성 0" 이라
 > 스킬 + `Grep`/`Read` 도구만 쓴다(`DECISIONS.md` D8). MCP 를 쓰는 것은 C 뿐이다.
