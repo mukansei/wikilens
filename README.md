@@ -934,4 +934,4 @@ Confluence 에서 그룹이 바뀌어도 모르고, 빠져도 운영자가 지�
 
 ## 라이선스
 
-[MIT](LICENSE).
+[MIT](LICENSE). Copyright (c) 2026 Hyunwoo Park
