@@ -21,9 +21,11 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$HERE/.." && pwd)"
 VAULT="$HOME/.wikilens/vault"
 PORT=8790
 NAME=wikilens-bench
+IMAGE=wikilens-wikilens
 
 MODE="${2:-cold}"
 
@@ -88,6 +90,21 @@ up|server)
   # **warm 은 비대칭이다** — C 만 이전 회차를 물려받고 A·B 는 매번 처음부터다.
   # 그것이 학습 층의 설계 그대로이지만(A·B 에는 학습이 아예 없다), 리포트가 그
   # 사실을 밝혀야 한다.
+  # **띄우기 전에 짓는다.** 예전에는 `docker run` 만 있어서 이미지가 언제 지어진
+  # 것인지 아무도 몰랐다 — 소스를 고치고 벤치를 돌리면 **옛 이미지가 조용히 돈다.**
+  # 실제로 겪었다(2026-08-14): 새로 넣은 지표가 `/api/stats` 에 아예 안 나왔고,
+  # 7시간 전 이미지가 돌고 있었다. 결과 파일에는 서버 이미지 ID 가 남으므로 나중에
+  # 형상은 복원되지만, **그때는 이미 돈을 쓴 뒤다.**
+  #
+  # 캐시가 있어 코드가 그대로면 몇 초다. `--quiet` 는 안 쓴다 — 진행이 안 보이면
+  # 처음 짓는 사람이 멈춘 줄 안다.
+  echo "  이미지 빌드 (캐시가 있으면 몇 초)"
+  ( cd "$REPO" && docker compose build ) >/dev/null || {
+    echo "  ✗ 이미지 빌드 실패 — 옛 이미지로 재는 것을 막으려고 여기서 멈춘다" >&2
+    exit 1
+  }
+  echo "  이미지 $(docker images "$IMAGE" --format '{{.ID}} · {{.CreatedSince}}')"
+
   docker rm -f "$NAME" >/dev/null 2>&1 || true
   if [ "$MODE" = "warm" ] && [ -d "$HERE/srv-state" ]; then
     # `wc -l < 없는파일` 은 리다이렉트가 셸에서 실패해 `2>/dev/null` 이 안 먹는다
@@ -106,7 +123,7 @@ up|server)
     -v "$VAULT":/home/wikilens/.wikilens/vault:ro \
     -v "$HERE/srv-state":/home/wikilens/.wikilens/state \
     -v "$HERE/srv-index":/home/wikilens/.wikilens/index \
-    -e WIKILENS_ADMIN_TOKEN=bench wikilens-wikilens >/dev/null
+    -e WIKILENS_ADMIN_TOKEN=bench "$IMAGE" >/dev/null
 
   for _ in $(seq 1 40); do
     [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' "localhost:$PORT/api/health" 2>/dev/null)" = "200" ] && break
