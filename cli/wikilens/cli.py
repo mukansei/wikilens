@@ -97,7 +97,10 @@ def _cmd_build(args) -> int:
         f"링크 {rep.total_links}개 중 {rep.resolved_links}개 해석 "
         f"({rep.resolution_rate*100:.1f}%)"
     )
-    print(f"별칭 보유 {rep.targets_with_anchors} · 고아 후보 {rep.orphans}")
+    # **`targets_with_anchors` 는 "앵커가 하나라도 있다" 이지 "별칭이 있다" 가 아니다.**
+    # 별칭은 제목과 **다른** 표현만 센다(`_alias_terms`). `stats` 가 같은 오해로
+    # 인링크를 "별칭 보유" 로 찍었고 그 수가 문서 넷에 인용됐다 — 여기가 그 둘째 자리다.
+    print(f"인링크 보유 {rep.targets_with_anchors} · 고아 후보 {rep.orphans}")
     root = Path(args.root)
     print(f"\n  {layout.aliases_path(root)}")
     print(f"  {layout.anchors_path(root)}")
@@ -201,6 +204,34 @@ def _cmd_stats(args) -> int:
     gap = sum(1 for e in with_alias if _has_gap(e))
     print(f"\n제목과 어휘가 안 겹치는 별칭을 가진 페이지: {gap} ({100*gap/total:.0f}%)")
     print("  이 비율이 낮으면 어휘 격차가 없다는 뜻이고, 이 도구의 효용도 낮습니다.")
+
+    # **계층 층의 판정 지표.** README 가 "제목 무정보율 × 부모 보유율" 로 판정하라고
+    # 하는데 그것을 내는 도구가 없었다 — 그래서 `45.5%` 라는 손으로 적은 상수가 문서
+    # 둘에 남았고, **어떤 정의로도 재현되지 않는다**(정의가 기록된 적이 없다).
+    # D20 의 `2.44초` 와 같은 자리라 같은 방법으로 다룬다: 상수를 고치는 대신 잰다.
+    #
+    # 정의는 **낱말이 하나 이하인 제목**이다. `stats` 의 어휘 격차와 같은 토크나이저를
+    # 쓰므로 판(로컬·서버)과 무관하게 같은 수가 나온다. 숫자만 있는 토큰은 뺀다 —
+    # `01. WBS` 에서 정보를 지는 것은 `WBS` 뿐이다.
+    #
+    # **부모 보유율은 기저율과 함께 낸다.** 이 코퍼스는 전체의 99.8% 가 부모를 가져서,
+    # 무정보 제목의 부모 보유율 99.9% 는 변별이 아니라 그냥 기저율이다. 한쪽만 적으면
+    # 계층 층이 특별히 그 페이지들을 떠받치는 것처럼 읽힌다.
+    def _words(t: str) -> list[str]:
+        return [w for w in tokenize(t or "") if not w.isdigit()]
+
+    meta_path = layout.sync_state_path(root)
+    if meta_path.exists():
+        pages = json.loads(meta_path.read_text(encoding="utf-8")).get("pages") or {}
+        if pages:
+            thin = [m for m in pages.values() if len(_words(m.get("title", ""))) <= 1]
+            has_parent = sum(1 for m in pages.values() if m.get("ancestors"))
+            thin_parent = sum(1 for m in thin if m.get("ancestors"))
+            print(f"\n제목만으로는 못 찾는 페이지(낱말 1개 이하): {len(thin)}"
+                  f" ({100*len(thin)/len(pages):.0f}%)")
+            print(f"  부모 보유 {100*thin_parent/max(len(thin),1):.1f}%"
+                  f" · 전체 기저율 {100*has_parent/len(pages):.1f}%"
+                  f" — 둘이 같으면 계층 층의 변별이 아니라 그냥 이 위키가 계층적인 것")
 
     print("\n인링크 상위:")
     for e in sorted(entries, key=lambda x: -x["indeg"])[:10]:
