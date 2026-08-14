@@ -534,3 +534,39 @@ def test_single_request_path_also_backs_off_on_429(server):
     r = c._get(url)
 
     assert r.status_code == 200, "429 에서 물러섰다가 다시 시도하지 않았다"
+
+
+def test_failed_page_is_retried_by_the_next_sync(server, tmp_path, monkeypatch):
+    """
+    **한 건이 실패해도 커서는 그냥 넘어갔다.**
+
+    `_ingest` 가 던지면 `report.failed` 만 올리고 지나가는데, 끝에서
+    `state["cursor"] = next_cursor` 를 무조건 쓴다. 다음 싱크는
+    `lastModified > 그 시각` 으로 물으므로 **그 페이지를 다시 안 받는다** —
+    또 수정될 때까지 영영. 새 페이지였다면 미러에 아예 없는 채로 남는다.
+
+    커서를 스캔 **전에** 잡는 것과 같은 계열의 유실인데(그 테스트가 바로 위에 있다),
+    이쪽은 창이 아니라 확정이다.
+
+    한 건만 첫 싱크에서 던지게 하고, 둘째 싱크가 그것을 받는지 본다.
+    """
+    import wikilens.sync as m
+
+    real = m._ingest
+    boom = {"on": True}
+
+    def flaky(item, root, state, fallback_space, full):
+        if boom["on"] and str(item["id"]) == "500000003":
+            raise OSError("디스크 오류")
+        return real(item, root, state, fallback_space, full)
+
+    monkeypatch.setattr(m, "_ingest", flaky)
+
+    c = ConfluenceClient(server, BasicAuth("me@corp", "tok"))
+    rep = sync(tmp_path, c, ["PLATFORM"])
+    assert rep.failed == 1 and rep.fetched == 4
+
+    boom["on"] = False          # 일시적 오류가 사라졌다
+    rep2 = sync(tmp_path, c, ["PLATFORM"])
+    assert rep2.fetched == 1, "실패한 페이지를 다시 안 받았다 — 커서가 그냥 넘어갔다"
+    assert layout.raw_path(tmp_path, "500000003").exists(), "미러에 아예 없다"

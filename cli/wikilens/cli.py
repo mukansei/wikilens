@@ -71,6 +71,13 @@ def _cmd_sync(args) -> int:
     )
     if args.follow_refs:
         print(f"참조 확장: 지정 스페이스 밖에서 낱개로 받음 {rep.referenced}건")
+    if rep.failed:
+        # 커서를 안 옮겼으므로 다음 싱크가 같은 구간을 다시 훑는다 — 그게 유실을 막는
+        # 방법이고, 계속 실패하면 그 재훑기가 계속된다는 뜻이기도 하다.
+        print(f"\n주의: {rep.failed}건을 받지 못해 **커서를 옮기지 않았습니다** — "
+              f"다음 싱크가 같은 구간을 다시 훑어 재시도합니다.\n"
+              f"  계속 실패하면 매번 전체를 훑게 되므로 원인을 확인하세요 "
+              f"(--verbose 가 페이지별 이유를 찍습니다).")
     if not args.no_build:
         return _cmd_build(args)
     print("\n다음: wikilens build")

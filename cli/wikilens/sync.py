@@ -515,7 +515,21 @@ def sync(root: Path, client: ConfluenceClient, spaces: list,
                 del state["pages"][pid]
                 report.removed.append(pid)
 
-    state["cursor"] = next_cursor
+    # **실패가 있으면 커서를 안 옮긴다.**
+    #
+    # 옮기면 다음 싱크가 `lastModified > next_cursor` 로 묻는데, 실패한 페이지의
+    # `lastModified` 는 그보다 앞이라 **다시 안 온다** — 그 페이지가 또 수정될 때까지
+    # 영영. 새 페이지였다면 미러에 아예 없는 채로 남는다(실측: 첫 싱크에서 1건이
+    # 던지자 둘째 싱크가 `fetched=0 · unchanged=0`).
+    #
+    # 위에서 커서를 스캔 **전에** 잡는 것과 같은 계열인데, 이쪽은 창이 아니라 확정이다.
+    # 겹치는 쪽 대가는 거기와 같은 이유로 없다 — 재수신은 `_ingest` 가 버전으로 걸러
+    # `unchanged` 가 된다.
+    #
+    # **대가는 실패가 계속되면 매번 전체를 다시 훑는 것이다.** 그건 보이는 비용이고
+    # (`실패 N` 이 매번 찍힌다) 반대쪽은 조용한 유실이다.
+    if not report.failed:
+        state["cursor"] = next_cursor
     state["partial"] = None
     _save_state(root, state)
     report.elapsed_s = time.time() - started
