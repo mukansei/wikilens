@@ -19,7 +19,7 @@
 [![Java](https://img.shields.io/badge/Java-25-437291?logo=openjdk&logoColor=white)](server/build.gradle.kts)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F?logo=springboot&logoColor=white)](server/)
 
-[![Lucene](https://img.shields.io/badge/Lucene-9.11%20%28Nori%29-D22128)](#적용-범위)
+[![Lucene](https://img.shields.io/badge/Lucene-9.11%20%28Nori%29-D22128?logo=apache&logoColor=white)](#적용-범위)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-plugin%20%C3%97%202-D97757?logo=anthropic&logoColor=white)](#어느-것을-쓰나요)
 
 **Confluence 를 에이전트가 다룰 수 있는 네 가지 연산으로 바꿉니다.**
