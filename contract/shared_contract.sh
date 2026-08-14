@@ -689,6 +689,12 @@ check "컨테이너가 마운트 지점을 소유함 (없으면 compose 기동 �
    && [ $(grep -n "chown -R wikilens:wikilens /home/wikilens" server/Dockerfile | cut -d: -f1) \
         -lt $(grep -n "^USER wikilens" server/Dockerfile | cut -d: -f1) ]'
 
+# README 최상단 배지는 빌드 파일의 버전을 **손으로 복제**한 값이다(저장소가 비공개라
+# shields.io 가 아무것도 못 읽는다). 어긋나면 배지만 옛 버전을 말한다 — 근거와
+# 판정 규칙은 `badge_versions.py` 의 독스트링에.
+check "README 배지 버전이 빌드 파일과 같음 (배지는 손으로 복제한 값이다)" \
+  'python3 contract/badge_versions.py'
+
 echo
 if [ "$fail" -eq 0 ]; then
   echo "계약 ${total}개 모두 유지됨."
