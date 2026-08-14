@@ -130,6 +130,7 @@ def run_once(argv: list[str]) -> dict:
     # **어느 도구를 썼는지**가 격리 검증이다 — C 가 MCP 를 정말 쓰는지, A 가 힌트
     # 파일을 안 보는지는 도구 이름으로만 확인된다.
     tools: list[str] = []
+    args: list[dict] = []
     hints = 0
     d = None
     for line in out.splitlines():
@@ -141,6 +142,14 @@ def run_once(argv: list[str]) -> dict:
             for c in ev.get("message", {}).get("content", []):
                 if c.get("type") == "tool_use":
                     tools.append(c.get("name", "?"))
+                    # **인자를 자르지 않는다.** A 케이스에서는 Bash 명령이 곧 그 방법
+                    # 자체라, 자르면 "어떤 grep 패턴을 시도했나" 를 잃는다. 그리고 이
+                    # 파일은 벤치 전용이고 gitignore 대상이라 크기가 제약이 아니다.
+                    #
+                    # 이것이 없어서 **오늘 두 번 막혔다**: 힌트가 사라진 회차에 모델이
+                    # 질의를 다르게 쳤는지 확인 불가 · `tree` 에 준 depth 를 토큰 총량으로
+                    # 역산. `tools` 와 같은 순서로 쌓이므로 색인이 맞는다.
+                    args.append(c.get("input", {}))
         elif ev.get("type") == "user":
             # **이 세션이 힌트를 실제로 받았나.** warm 이라고 다 받는 것이 아니다 —
             # 학습된 질의에서만 서빙된다. 그 구별 없이 cold↔warm 을 비교하면 학습이
@@ -188,7 +197,7 @@ def run_once(argv: list[str]) -> dict:
         "hints": hints,
         "extra": {"out_tokens": u.get("output_tokens", 0),
                   "cache_read": u.get("cache_read_input_tokens", 0),
-                  "tools": tools},
+                  "tools": tools, "args": args},
     }
 
 
