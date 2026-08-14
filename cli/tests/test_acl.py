@@ -219,3 +219,32 @@ def test_first_run_total_failure_writes_nothing(tmp_path):
 
     assert rep.wrote is False
     assert not (root / "mirror" / "acl" / "acl.json").exists()
+
+
+def test_outside_ancestor_failures_do_not_block_the_write(tmp_path):
+    """
+    **밖의 조상 실패가 "전부 실패" 로 오인되던 자리.**
+
+    `wrote=False` 문턱이 `rep.failed >= len(pages)` 인데 `rep.failed` 는 페이지와
+    **싱크 집합 밖 조상**을 함께 센다. 두 모집단이 다르다 — 밖의 조상은 애초에
+    싱크가 안 가져온 페이지라 **권한이 없어 실패하기 가장 쉬운 쪽**이다.
+
+    여기서는 페이지 2건이 전부 성공하고 밖의 조상 3건이 전부 실패한다. 수집은
+    사실상 성공했는데 문턱이 걸리면 파일을 안 써서, 새로 잠긴 페이지가 **옛 값으로
+    계속 서빙된다** — 이 명령이 막으려는 바로 그것이다.
+    """
+    pages = {
+        "1": {"space": "DOCS", "ancestors": [{"id": "90"}, {"id": "91"}]},
+        "2": {"space": "DOCS", "ancestors": [{"id": "92"}]},
+    }
+    root = vault(tmp_path, pages)
+    # 페이지 둘은 직접 제한이 있어 조상을 볼 것도 없이 확정된다. 밖의 조상 셋만 실패한다.
+    client = FakeClient({"1": [GROUP_PREFIX + "eng"], "2": [GROUP_PREFIX + "ops"],
+                         "90": None, "91": None, "92": None})
+
+    rep = collect(root, client)
+
+    assert rep.page_failed == 0, "페이지는 하나도 안 실패했다"
+    assert rep.failed == 3, "밖의 조상 실패는 사용자에게 계속 보고한다"
+    assert rep.wrote, "페이지는 다 성공했는데 파일을 안 썼다"
+    assert written(root) == {"1": [GROUP_PREFIX + "eng"], "2": [GROUP_PREFIX + "ops"]}
