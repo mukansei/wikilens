@@ -646,6 +646,10 @@ IR 에서 [good abandonment](https://dl.acm.org/doi/10.1145/1571941.1571951) 로
 > **진술이 맞다는 보장도 없습니다.** 모델이 오답을 확신하면 그 오답이 `dest` 가
 > 됩니다. 그건 미스 벌점이 잡을 몫입니다.
 > `/api/stats` 의 `pWrong` 과 `sinceStart` 로 모니터링하세요.
+>
+> **폴백이 얼마나 틀리는지는 이제 서버가 셉니다** — `fallbackAgreeRate`. 진술이 있는
+> 궤적에서 `reads.last()` 가 같은 답을 골랐는지를 대조한 값입니다. 남은 수와
+> 기각한 안은 [`docs/usefulness-signals.md`](docs/usefulness-signals.md).
 
 ### 검색 결과에 어떻게 섞이나
 
@@ -825,7 +829,7 @@ setx WIKILENS_PYTHON python
 | **`plugin/local/`** | 스킬 + 커맨드 2개 ([사용 안내](plugin/local/README.md)) | Python |
 | **`plugin/client/`** | MCP 도구 5개 + 스킬 ([사용 안내](plugin/client/README.md)) | Python |
 | `contract/` | 교차 언어 계약 검사 + 공유 골든 픽스처 | — |
-| `docs/` | [아키텍처](docs/architecture.md) · 설계 제안(임베딩 · [진술된 답](docs/declared-answer-design.md)) · 코드 리뷰와 [실험 기록](docs/experiment-2026-08-14-learning.md) | — |
+| `docs/` | [아키텍처](docs/architecture.md) · 설계 제안(임베딩 · [진술된 답](docs/declared-answer-design.md) · [유용 판정](docs/usefulness-signals.md)) · 코드 리뷰와 [실험 기록](docs/experiment-2026-08-14-learning.md) | — |
 | `.claude-plugin/` | 마켓플레이스 매니페스트 (**반드시 저장소 루트**) | — |
 
 Python 과 Kotlin 은 **파일로만** 연결됩니다. 볼트 포맷이 곧 인터페이스입니다.
