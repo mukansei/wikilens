@@ -529,3 +529,89 @@ def test_tree_survives_cyclic_ancestors(tmp_path):
     assert len(listed) == 3, f"순환에 갇힌 페이지가 유실됐다: {listed}"
     for title in ("A", "B", "정상"):
         assert any(f"- {title} [" in l for l in listed), f"{title} 가 없다"
+
+
+# --------------------------------------------------------------- 문자 집합
+
+def make_multilang_vault(tmp_path: Path) -> Path:
+    """한국어 원본과 그 베트남어 번역본. 실코퍼스에서 이 쌍이 문제를 냈다."""
+    pages = {
+        "900000001": {"title": "GA 접속 가이드", "space": "DOCS",
+                      "xhtml": "<h1>GA 접속</h1><p>GCP 콘솔에서 계정을 신청하세요.</p>"},
+        "900000002": {"title": "Hướng dẫn truy cập GA", "space": "DOCS",
+                      "xhtml": "<h1>Truy cập GA</h1><p>Sử dụng GCP Console để "
+                               "yêu cầu tài khoản của bạn.</p>"},
+    }
+    root = tmp_path / "vault"
+    state = {"cursor": None, "pages": {}}
+    for pid, m in pages.items():
+        layout.ensure_parent(layout.raw_path(root, pid)).write_text(m["xhtml"], encoding="utf-8")
+        state["pages"][pid] = {"title": m["title"], "space": m["space"], "version": 1, "updated": ""}
+    layout.ensure_parent(layout.sync_state_path(root)).write_text(
+        json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    return root
+
+
+def test_declared_scripts_keep_everything_by_default(tmp_path):
+    """**기본이 꺼짐이다.** 켜짐이면 처음 쓰는 사람의 문서가 조용히 사라진다."""
+    root = make_multilang_vault(tmp_path)
+    rep = build(root)
+    assert rep.excluded == []
+    assert "Hướng dẫn" in layout.aliases_path(root).read_text(encoding="utf-8")
+
+
+def test_foreign_script_page_leaves_the_vault(tmp_path):
+    """
+    선언 밖 문서는 **파생물 셋에서 전부** 빠진다.
+
+    하나라도 남으면 그쪽 경로로 다시 올라온다 — 로컬판은 `ALIASES.md`·`TREE.md` 를
+    grep 하고 서버는 `anchors.jsonl` 로 앵커를 얻는다.
+    """
+    root = make_multilang_vault(tmp_path)
+    rep = build(root, ["hangul", "ascii"], 0.15)
+
+    assert rep.excluded == ["900000002"]
+    for path in (layout.aliases_path(root), layout.tree_path(root), layout.anchors_path(root)):
+        assert "900000002" not in path.read_text(encoding="utf-8"), f"{path.name} 에 남았다"
+        assert "Hướng dẫn" not in path.read_text(encoding="utf-8")
+    assert "GA 접속 가이드" in layout.aliases_path(root).read_text(encoding="utf-8")
+
+
+def test_exclusion_is_written_for_the_server(tmp_path):
+    """
+    **서버가 같은 결정을 따르는 유일한 통로다.**
+
+    서버는 페이지 목록을 `.sync-state.json`(= `sync` 가 쓴다)에서 얻으므로, 파생물에서
+    빼는 것만으로는 색인에 그대로 들어간다.
+    """
+    root = make_multilang_vault(tmp_path)
+    build(root, ["hangul", "ascii"], 0.15)
+    d = json.loads((root / "derived" / "excluded.json").read_text(encoding="utf-8"))
+    assert d["excluded"] == ["900000002"]
+
+
+def test_exclusion_file_is_written_even_when_empty(tmp_path):
+    """파일이 없는 것과 "뺄 것이 없다" 가 구별되어야 서버가 옛 볼트를 안다."""
+    root = make_multilang_vault(tmp_path)
+    build(root, ["hangul", "ascii", "vietnamese"], 0.15)
+    d = json.loads((root / "derived" / "excluded.json").read_text(encoding="utf-8"))
+    assert d["excluded"] == []
+
+
+def test_body_stays_so_the_decision_is_reversible(tmp_path):
+    """
+    `mirror/pages/` 는 그대로 둔다 — 설정을 바꿔 다시 빌드하면 돌아온다.
+    재싱크(네트워크)가 필요하면 되돌리기가 비싸져 아무도 안 바꾼다.
+    """
+    root = make_multilang_vault(tmp_path)
+    build(root, ["hangul", "ascii"], 0.15)
+    rep = build(root, ["hangul", "ascii", "vietnamese"], 0.15)
+    assert rep.excluded == []
+    assert "Hướng dẫn" in layout.aliases_path(root).read_text(encoding="utf-8")
+
+
+def test_unknown_script_name_is_refused(tmp_path):
+    """조용히 무시하면 사용자는 필터가 걸린 줄 알고 쓴다(D14 와 같은 규칙)."""
+    root = make_multilang_vault(tmp_path)
+    with pytest.raises(ValueError, match="알 수 없는 문자 집합"):
+        build(root, ["french"], 0.15)

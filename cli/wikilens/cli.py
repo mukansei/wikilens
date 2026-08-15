@@ -85,7 +85,23 @@ def _cmd_sync(args) -> int:
 
 
 def _cmd_build(args) -> int:
-    rep = build(Path(args.root))
+    # 문자 집합 설정: 명시 인자 > `config.json` > 없음(전부 편입).
+    # 볼트 경로와 같은 우선순위다 — 정본이 하나여야 두 판이 같은 답을 낸다.
+    #
+    # **`getattr` 로 읽는다** — `sync` 가 `_cmd_build` 를 직접 부르고(그쪽 파서에는 이
+    # 인자가 없다) 테스트도 네임스페이스를 손으로 만든다. 인자 하나 늘렸다고 그 경로가
+    # 죽으면 안 된다.
+    names, threshold = credentials.index_scripts()
+    if getattr(args, "scripts", None) is not None:
+        names = [x for x in args.scripts.split(",") if x.strip()]
+    if getattr(args, "script_threshold", None) is not None:
+        threshold = args.script_threshold
+    try:
+        rep = build(Path(args.root), names, threshold)
+    except ValueError as e:
+        # 모르는 이름을 조용히 무시하면 사용자는 필터가 걸린 줄 알고 쓴다.
+        print(f"문자 집합 설정이 잘못됐습니다: {e}")
+        return 2
     changed = rep.pages_written + rep.structures_written
     # 안 바뀐 파일은 안 쓴다. 그래서 "변경 없음" 이 정상이고, 그것 자체가 빌드
     # 멱등성이 지켜졌다는 신호다 — 같은 입력으로 두 번 돌리면 두 번째는 0 이어야 한다.
@@ -101,6 +117,13 @@ def _cmd_build(args) -> int:
     # 별칭은 제목과 **다른** 표현만 센다(`_alias_terms`). `stats` 가 같은 오해로
     # 인링크를 "별칭 보유" 로 찍었고 그 수가 문서 넷에 인용됐다 — 여기가 그 둘째 자리다.
     print(f"인링크 보유 {rep.targets_with_anchors} · 고아 후보 {rep.orphans}")
+    if rep.excluded:
+        # **조용하면 안 된다.** 빠진 문서는 검색 결과에 안 나오는 것으로만 드러나고
+        # 그건 "문서가 없다" 와 구별되지 않는다(CLAUDE.md 조용히 실패 10번과 같은 계열).
+        print(f"\n문자 집합 밖이라 뺀 문서: {len(rep.excluded)}건 "
+              f"({'·'.join(names)} · 문턱 {threshold:.0%})")
+        print("  ALIASES.md · TREE.md · anchors.jsonl 에 안 들어가고, 서버도 색인에서 뺍니다.")
+        print("  본문은 mirror/pages/ 에 그대로 있어 설정을 바꿔 다시 빌드하면 돌아옵니다.")
     root = Path(args.root)
     print(f"\n  {layout.aliases_path(root)}")
     print(f"  {layout.anchors_path(root)}")
@@ -291,6 +314,12 @@ def main(argv: list[str] | None = None) -> int:
     dr.set_defaults(func=_cmd_doctor)
 
     b = sub.add_parser("build", help="파싱하고 별칭 색인을 생성합니다")
+    b.add_argument("--scripts", default=None,
+                   help="볼트에 편입할 문자 집합(쉼표). 예: hangul,ascii · "
+                        "이름 대신 U+0100-017F 도 됩니다. 안 주면 config.json 의 "
+                        "indexScripts, 그것도 없으면 전부 편입")
+    b.add_argument("--script-threshold", type=float, default=None,
+                   help="선언 밖 낱말이 이 비율을 넘으면 뺍니다 (기본 0.15)")
     b.set_defaults(func=_cmd_build)
 
     st = sub.add_parser("stats", help="볼트 통계 — 어휘 격차와 고아 문서")

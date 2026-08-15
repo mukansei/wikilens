@@ -61,6 +61,29 @@ def vault_root() -> Path:
         pass
     return Path(from_cfg).expanduser() if from_cfg else DEFAULT_VAULT
 
+def index_scripts() -> tuple[list[str], float]:
+    """
+    볼트에 편입할 문자 집합과 문턱. **정본은 `config.json` 하나다.**
+
+    `--scripts` 를 안 주면 이 값을 쓴다. 볼트 경로와 같은 파일에 두는 이유도 같다 —
+    두 판이 공유하는 자리라 한 번만 정하면 된다(D10·D15).
+
+        {"indexScripts": ["hangul", "ascii"], "scriptThreshold": 0.15}
+
+    비면 전부 편입한다. **켜짐이 기본이면 처음 쓰는 사람의 문서가 조용히 사라진다.**
+    """
+    try:
+        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return [], 0.15
+    if not isinstance(cfg, dict):
+        return [], 0.15
+    v = cfg.get("indexScripts")
+    names = [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
+    t = cfg.get("scriptThreshold")
+    return names, float(t) if isinstance(t, (int, float)) and 0 < t < 1 else 0.15
+
+
 #: `export KEY=VALUE` 또는 `KEY=VALUE`. 값은 shlex 가 따옴표를 푼다.
 _LINE = re.compile(r"^\s*(?:export\s+)?([A-Z][A-Z0-9_]*)=(.*)$")
 

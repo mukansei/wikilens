@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import layout
+from . import scripts as scripts_mod
 from .convert import parse, render_page_file
 from .models import AnchorEntry, StructureSignature, canonical_json
 
@@ -34,6 +35,9 @@ class BuildReport:
     resolved_links: int = 0
     targets_with_anchors: int = 0
     orphans: int = 0
+    #: 문자 집합 밖이라 볼트에서 뺀 페이지. **비어 있지 않으면 사용자에게 말해야 한다** —
+    #: 빠진 문서는 검색 결과에 안 나오는 것으로만 드러나고 "문서가 없다" 와 구별되지 않는다.
+    excluded: list[str] = field(default_factory=list)
 
     @property
     def resolution_rate(self) -> float:
@@ -48,10 +52,26 @@ def _load_raw_index(root: Path) -> dict[str, dict]:
     return json.loads(p.read_text(encoding="utf-8")).get("pages", {})
 
 
-def build(root: Path) -> BuildReport:
+def build(root: Path, index_scripts: list[str] | None = None,
+          script_threshold: float = 0.15) -> BuildReport:
+    """
+    파생물을 만든다. [index_scripts] 를 주면 **그 문자 집합 밖의 문서를 볼트에서 뺀다.**
+
+    다국어 코퍼스용이고 근거는 `scripts.py` 에 있다. 판정을 여기서 하는 이유는
+    **결정이 한 곳이어야 두 판이 같은 답을 내기** 때문이다 — 서버에 두면 로컬판이
+    아무것도 못 받는다.
+
+    빠진 문서는 `ALIASES.md`·`TREE.md`·`anchors.jsonl` 에 안 들어가고, 서버가 같은
+    결정을 따르도록 `derived/excluded.json` 에 남긴다(서버는 페이지 목록을
+    `.sync-state.json` 에서 얻으므로 파생물에서 빼는 것만으로는 안 걸러진다).
+
+    **`mirror/pages/` 는 그대로 둔다** — 설정을 바꿔 다시 빌드하면 되돌아온다.
+    그리고 로컬판의 본문 grep 에는 여전히 걸린다(우선순위에서만 내려간다).
+    """
     root = Path(root)
     meta = _load_raw_index(root)
     report = BuildReport()
+    ranges = scripts_mod.resolve(index_scripts or [])
 
     # ---- 1패스: 제목 -> ID 색인 ----
     # (space, title) 과 (title) 양쪽으로 색인한다. 링크가 스페이스 키를 생략하는 경우가 흔하다.
@@ -85,6 +105,14 @@ def build(root: Path) -> BuildReport:
             xhtml=raw.read_text(encoding="utf-8"),
             resolve=resolve,
         )
+        # **판정은 파싱 직후다.** 마크다운이 만들어진 뒤라 원본 XHTML 의 태그가
+        # 섞이지 않는다 — 태그명은 전부 ASCII 라 선언 안으로 세어져 비율을 희석한다.
+        if ranges and scripts_mod.foreign_word_ratio(
+            sig.title + "\n" + md, ranges
+        ) > script_threshold:
+            report.excluded.append(pid)
+            continue
+
         signatures[pid] = sig
         report.parsed += 1
 
@@ -97,8 +125,25 @@ def build(root: Path) -> BuildReport:
     entries = transpose(signatures, report)
     _write_anchors(root, entries)
     _write_aliases(root, entries, signatures)
+    # 빠진 페이지는 트리에서도 사라져야 한다 — `_write_tree` 는 `signatures` 에 있는
+    # 것만 그리므로(`valid`) 자동으로 걸러진다. 부모가 빠지면 자식이 루트로 승격된다.
     _write_tree(root, meta, signatures)
+    _write_excluded(root, report.excluded)
     return report
+
+
+def _write_excluded(root: Path, excluded: list[str]) -> None:
+    """
+    `build` 가 뺀 페이지 목록. **서버가 같은 결정을 따르게 하는 유일한 통로다.**
+
+    서버는 페이지 목록을 `.sync-state.json`(= `sync` 가 쓴다)에서 얻으므로, 파생물에서
+    빼는 것만으로는 색인에 그대로 들어간다. 그래서 결정을 파일로 남긴다.
+
+    **비어도 쓴다** — 파일이 없는 것과 "뺄 것이 없다" 가 구별되어야, 옛 볼트를 읽는
+    서버가 이 기능 이전인지 아닌지 안다.
+    """
+    p = layout.ensure_parent(root / "derived" / "excluded.json")
+    _write_if_changed(p, canonical_json({"excluded": sorted(excluded)}))
 
 
 def transpose(
