@@ -598,15 +598,40 @@ def test_exclusion_file_is_written_even_when_empty(tmp_path):
     assert d["excluded"] == []
 
 
-def test_body_stays_so_the_decision_is_reversible(tmp_path):
+def test_body_is_removed_so_both_editions_agree(tmp_path):
     """
-    `mirror/pages/` 는 그대로 둔다 — 설정을 바꿔 다시 빌드하면 돌아온다.
+    **본문도 지운다.** 안 지우면 로컬판이 본문 grep(스킬 3단계)으로 여전히 찾는데
+    서버판은 색인에 없어 못 찾는다 — 같은 볼트에 두 판이 다른 답을 낸다.
+    """
+    root = make_multilang_vault(tmp_path)
+    rep = build(root, ["hangul", "ascii"], 0.15)
+    assert rep.pages_removed == 0, "처음 빌드면 애초에 안 썼으므로 지울 것이 없다"
+    assert not layout.page_path(root, "900000002").exists()
+    assert layout.page_path(root, "900000001").exists()
+
+
+def test_previously_written_body_is_cleaned_up(tmp_path):
+    """설정을 바꿔 다시 빌드하면 **전에 쓴 파일도 지운다** — 남으면 로컬 grep 이 찾는다."""
+    root = make_multilang_vault(tmp_path)
+    build(root)                                   # 전부 편입
+    assert layout.page_path(root, "900000002").exists()
+    rep = build(root, ["hangul", "ascii"], 0.15)  # 이제 뺀다
+    assert rep.pages_removed == 2, "pages/ 와 structure/ 둘"
+    assert not layout.page_path(root, "900000002").exists()
+
+
+def test_removal_is_reversible_without_resync(tmp_path):
+    """
+    원본 `raw/` 는 안 지우므로 설정만 바꿔 다시 빌드하면 되살아난다.
     재싱크(네트워크)가 필요하면 되돌리기가 비싸져 아무도 안 바꾼다.
     """
     root = make_multilang_vault(tmp_path)
     build(root, ["hangul", "ascii"], 0.15)
+    assert not layout.page_path(root, "900000002").exists()
+
     rep = build(root, ["hangul", "ascii", "vietnamese"], 0.15)
     assert rep.excluded == []
+    assert layout.page_path(root, "900000002").exists(), "본문이 되살아나야 한다"
     assert "Hướng dẫn" in layout.aliases_path(root).read_text(encoding="utf-8")
 
 

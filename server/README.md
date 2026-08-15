@@ -361,8 +361,9 @@ wikilens build --root ~/.wikilens/vault --scripts hangul,ascii   # 그다음 재
 
 설정과 문자 집합 이름은 [`cli/README.md`](../cli/README.md#다국어-코퍼스--읽지-못하는-언어를-볼트에서-뺀다).
 
-> **빠진 문서는 서버에서 통째로 사라집니다** — `search`·`read`·`grep`·`tree` 넷 다
-> 못 찾습니다(전부 색인 메타를 거칩니다). 그래서 제외 수를 기동 로그 · `/api/stats` 의
+> **빠진 문서는 통째로 사라집니다** — `search`·`read`·`grep`·`tree` 넷 다 못 찾습니다
+> (전부 색인 메타를 거칩니다). `build` 가 본문 파일까지 지우므로 로컬판도 마찬가지라,
+> **두 판의 도달 범위가 같습니다.** 그래서 제외 수를 기동 로그 · `/api/stats` 의
 > `droppedByScript` · `--status` 가 말합니다. 안 그러면 "문서가 없다" 와 구별되지
 > 않습니다.
 >

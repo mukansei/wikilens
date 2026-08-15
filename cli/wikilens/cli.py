@@ -122,8 +122,9 @@ def _cmd_build(args) -> int:
         # 그건 "문서가 없다" 와 구별되지 않는다(CLAUDE.md 조용히 실패 10번과 같은 계열).
         print(f"\n문자 집합 밖이라 뺀 문서: {len(rep.excluded)}건 "
               f"({'·'.join(names)} · 문턱 {threshold:.0%})")
-        print("  ALIASES.md · TREE.md · anchors.jsonl 에 안 들어가고, 서버도 색인에서 뺍니다.")
-        print("  본문은 mirror/pages/ 에 그대로 있어 설정을 바꿔 다시 빌드하면 돌아옵니다.")
+        print(f"  파생물에서 전부 뺐습니다 — ALIASES·TREE·anchors 와 "
+              f"본문 {rep.pages_removed}개 파일. 서버도 색인에서 뺍니다.")
+        print("  원본(mirror/raw/)은 그대로라 설정을 바꿔 다시 빌드하면 돌아옵니다.")
     root = Path(args.root)
     print(f"\n  {layout.aliases_path(root)}")
     print(f"  {layout.anchors_path(root)}")
