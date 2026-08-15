@@ -105,8 +105,11 @@ def _cmd_build(args) -> int:
     changed = rep.pages_written + rep.structures_written
     # 안 바뀐 파일은 안 쓴다. 그래서 "변경 없음" 이 정상이고, 그것 자체가 빌드
     # 멱등성이 지켜졌다는 신호다 — 같은 입력으로 두 번 돌리면 두 번째는 0 이어야 한다.
+    # **`파싱` 이 아니라 `편입` 이다.** 제외된 문서도 파싱은 한다 — 판정하려면 마크다운이
+    # 있어야 한다. 라벨이 `파싱` 이면 그 수가 총계로 읽혀서, 실측 13,933건 코퍼스가
+    # "파싱 13511" 로 찍힌다(422건이 어디 갔는지 그 줄만으로는 모른다).
     print(
-        f"빌드 완료: 파싱 {rep.parsed} · 기록 {changed}"
+        f"빌드 완료: 편입 {rep.parsed} · 기록 {changed}"
         + (" (변경 없음 — 멱등)" if changed == 0 and rep.parsed else "")
     )
     print(
