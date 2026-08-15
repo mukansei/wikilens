@@ -29,7 +29,7 @@ class VaultBootstrapTest {
 
     private fun indexing(vaultRoot: String, index: LuceneIndex, acl: AclRegistry) =
         WikiLensProperties(vaultRoot = vaultRoot).let {
-            IndexingService(VaultReader(ObjectMapper()), index, acl, VaultLocator(it), it)
+            IndexingService(VaultReader(ObjectMapper()), index, acl, VaultLocator(it))
         }
 
     @Test

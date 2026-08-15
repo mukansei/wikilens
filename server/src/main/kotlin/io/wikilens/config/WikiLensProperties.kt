@@ -45,16 +45,6 @@ data class WikiLensProperties(
      * `GrepEngineParityTest` 가 지킨다.
      */
     val grepEngine: String = "auto",
-    /**
-     * 색인할 문서의 문자 집합. **비면 전부 색인한다**(기본).
-     *
-     * 다국어 코퍼스에서 읽지 못하는 언어의 문서를 빼는 장치다. 이름 또는 범위
-     * (`U+0100-017F`)를 적고, 판정은 [io.wikilens.index.ScriptFilter] 가 한다.
-     * 근거와 켜는 조건은 `application.yml` 에.
-     */
-    val indexScripts: List<String> = emptyList(),
-    /** 선언 밖 **낱말**이 이 비율을 넘으면 색인에서 뺀다. `index-scripts` 가 비면 무의미. */
-    val scriptThreshold: Double = 0.15,
     @NestedConfigurationProperty val learn: LearnProps = LearnProps(),
 ) {
     companion object {

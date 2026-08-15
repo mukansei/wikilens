@@ -118,6 +118,30 @@ class VaultReader(private val mapper: ObjectMapper) {
      * 파일이 있는데 파싱에 실패하면 빈 맵을 준다(널이 아니다). 못 읽은 것을 "권한 정보가
      * 없던 볼트" 로 취급하면 **깨진 파일 하나가 전 페이지를 공개로 만든다.**
      */
+    /**
+     * `build` 가 문자 집합으로 뺀 페이지 목록. **서버는 판정하지 않고 이 결정을 따른다.**
+     *
+     * 판정이 `build` 에 있는 이유는 결정이 한 곳이어야 두 판이 같은 답을 내기 때문이다
+     * (로컬판은 서버가 없다). 그런데 서버는 페이지 목록을 `.sync-state.json` 에서 얻고
+     * 그 파일은 `sync` 가 쓰므로, 파생물에서 빼는 것만으로는 안 걸러진다 — 그래서
+     * `build` 가 결정을 이 파일로 남긴다.
+     *
+     * **파일이 없으면 빈 집합이다** — 이 기능 이전에 지어진 볼트가 그렇고, 그때는
+     * 전부 색인하는 것이 맞다. 못 읽으면 경고하고 빈 집합으로 간다: 여기서 fail-closed
+     * 로 가면 파일 하나 깨진 것이 **전 문서 소실**이 된다.
+     */
+    fun readExcluded(root: Path): Set<String> {
+        val p = root.resolve("derived").resolve("excluded.json")
+        if (!Files.exists(p)) return emptySet()
+        return runCatching {
+            @Suppress("UNCHECKED_CAST")
+            val m = mapper.readValue(Files.readString(p), Map::class.java) as Map<String, Any?>
+            (m["excluded"] as? List<*>)?.mapNotNull { it?.toString() }?.toSet() ?: emptySet()
+        }.onFailure {
+            log.warn("제외 목록을 못 읽었습니다: {} ({}) — 전부 색인합니다.", p, it.message)
+        }.getOrDefault(emptySet())
+    }
+
     private fun readAcl(root: Path): Map<String, List<String>>? {
         val dir = root.resolve("mirror").resolve("acl")
         if (!Files.isDirectory(dir)) return null
