@@ -209,6 +209,19 @@ def _probe_index(s: dict) -> bool:
     if not docs:
         print("\n색인이 비어 있습니다. 운영자에게 재색인을 요청하세요.")
         ok = False
+
+    # 문자 집합 필터로 빠진 문서. **빠진 것은 검색 결과에 안 나오는 것으로만 드러나고**
+    # 그건 "문서가 없다" 와 구별되지 않는다 — 그래서 켜져 있으면 항상 찍는다.
+    # 조용히 열린 것과 시끄럽게 열린 것이 다르다는 규칙(ACL_ENFORCED)과 같은 계열이다.
+    dropped = s.get("droppedByScript") or 0
+    scripts = s.get("indexScripts")
+    if scripts and scripts != "꺼짐":
+        print(f"INDEX_SCRIPTS={scripts} · 제외 {dropped}건")
+        if dropped:
+            print(f"\n문자 집합 필터가 {dropped}건을 색인에서 뺐습니다 —"
+                  " 그 문서는 검색·읽기·grep·목차 어디에도 안 나옵니다.")
+            print("  의도한 것이 아니면 운영자가 `wikilens.index-scripts` 를 확인해야 합니다"
+                  " (비우면 전부 색인합니다).")
     return ok
 
 

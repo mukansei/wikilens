@@ -28,7 +28,7 @@ class IndexingServiceTest {
 
     private fun svc(vaultRoot: String, index: LuceneIndex, acl: AclRegistry): IndexingService {
         val props = WikiLensProperties(vaultRoot = vaultRoot)
-        return IndexingService(VaultReader(ObjectMapper()), index, acl, VaultLocator(props))
+        return IndexingService(VaultReader(ObjectMapper()), index, acl, VaultLocator(props), props)
     }
 
     @Test
@@ -114,7 +114,7 @@ class IndexingServiceTest {
             val props = WikiLensProperties(vaultRoot = WikiLensProperties.DEFAULT_VAULT_ROOT)
             val locator = VaultLocator(props)
             LuceneIndex(tmp.resolve("index")).use { index ->
-                val indexing = IndexingService(VaultReader(ObjectMapper()), index, AclRegistry(), locator)
+                val indexing = IndexingService(VaultReader(ObjectMapper()), index, AclRegistry(), locator, props)
                 assertEquals(indexing.vaultRoot, locator.root, "해석처가 둘이면 여기서 갈린다")
                 assertEquals(vault.toAbsolutePath().normalize(), locator.root)
             }

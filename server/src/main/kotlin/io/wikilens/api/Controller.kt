@@ -148,6 +148,10 @@ class Controller(
             "analyzer" to index.activeKind.key,          // 질의에 실제로 쓰이는 것 (= 색인 기록)
             "analyzerConfigured" to index.buildKind.key, // 이 프로세스의 설정
             // 스캔 경로가 둘이라 어느 쪽인지가 답의 근거가 된다.
+            // 문자 집합 필터. **0 이 아니면 볼트에는 있는데 서버에서는 없는 문서가 그만큼**
+            // 이다 — `search`·`read`·`grep`·`tree` 넷 다 못 찾는다(`ScriptFilter`).
+            "indexScripts" to indexing.scriptFilter,
+            "droppedByScript" to indexing.droppedByScript,
             "grepEngine" to content.engineName,
             "grepEngineUsable" to content.engineUsable,
             // **append-only 라 줄지 않는다** — 크기와 재생 시간이 압축 시점을 알려준다.
