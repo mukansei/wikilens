@@ -128,6 +128,7 @@ flowchart LR
 | 권한 없음은 404 (403 아님) | `ContentService.read` 가 null → `Controller` 가 404 |
 | 사용자 정규식이 서버를 못 죽임 | `grep` 이 RE2(`com.google.re2j`) — 백트래킹 없음 |
 | 경로 의존 질의는 캐싱 안 함 | `Gate.classify` — `LOCALIZATION` 만 간선 생성 |
+| 문자 집합 판정은 `build` 한 곳 | `scripts.py` → `derived/excluded.json` → `VaultReader.readExcluded` (서버에 설정 없음) |
 
 ## 데이터 흐름
 
@@ -135,6 +136,16 @@ flowchart LR
 `.sync-state.json` 에 버전·`ancestors` → `build` 가 전부 받은 뒤 한 번에 파싱
 (제목→ID 해석을 완전하게 하려고 단계를 나눴다) → 마크다운 · 앵커 전치
 (`anchors.jsonl`) · `ALIASES.md` · `TREE.md`.
+
+**편입 판정** — `build --scripts` 를 주면 그 문자 집합 밖의 문서를 **볼트에서 뺀다**
+(다국어 코퍼스용). 파생물 전부에서 빠지고 `mirror/pages/`·`mirror/structure/` 파일도
+지운다 — 안 지우면 로컬판이 본문 grep 으로 찾는데 서버판은 못 찾아 **같은 볼트에 두
+판이 다른 답을 낸다.** 결정은 `derived/excluded.json` 에 남고 서버는 그것을 읽는다
+(서버는 페이지 목록을 `sync` 가 쓴 `.sync-state.json` 에서 얻으므로, 파생물에서 빼는
+것만으로는 안 걸러진다). **원본 `raw/` 는 안 지우므로 되돌리기가 재빌드 하나다.**
+
+판정을 서버가 아니라 `build` 에 둔 이유는 **결정이 한 곳이어야 두 판이 같은 문서
+집합을 보기** 때문이다 — 서버에 두면 로컬판이 아무것도 못 받는다.
 
 **질의** — 서버가 Nori 로 토큰화(토크나이저 정본은 하나) → Lucene BM25(앵커·제목·본문
 가중 + ACL 필터 절) → 같은 항으로 `TrajectoryStore.hints` 조회 → RRF 융합. 학습 힌트는
