@@ -75,6 +75,15 @@ def build(root: Path, index_scripts: list[str] | None = None,
     meta = _load_raw_index(root)
     report = BuildReport()
     ranges = scripts_mod.resolve(index_scripts or [])
+    # **여기서 검사한다 — 호출부가 아니라.** `config.json` 쪽만 범위를 보고 있어서
+    # `--script-threshold -1` 이 그대로 통과했고, 그러면 **전 문서가 제외되며 본문
+    # 파일이 전부 지워진다**(실측: 2/2). `15` 를 넣는 실수(퍼센트로 생각)는 반대로
+    # 아무것도 안 걸러 사용자가 걸린 줄 안다. 둘 다 조용해서 더 나쁘다.
+    if ranges and not 0.0 <= script_threshold <= 1.0:
+        raise ValueError(
+            f"문턱은 0~1 사이여야 합니다 (받은 값: {script_threshold}). "
+            f"퍼센트가 아니라 비율입니다 — 15% 는 0.15 입니다."
+        )
 
     # ---- 1패스: 제목 -> ID 색인 ----
     # (space, title) 과 (title) 양쪽으로 색인한다. 링크가 스페이스 키를 생략하는 경우가 흔하다.

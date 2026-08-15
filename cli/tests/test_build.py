@@ -640,3 +640,23 @@ def test_unknown_script_name_is_refused(tmp_path):
     root = make_multilang_vault(tmp_path)
     with pytest.raises(ValueError, match="알 수 없는 문자 집합"):
         build(root, ["french"], 0.15)
+
+
+@pytest.mark.parametrize("bad", [-1.0, -0.15, 1.5, 15.0])
+def test_out_of_range_threshold_is_refused(tmp_path, bad):
+    """
+    **범위 밖 문턱은 조용히 파괴적이다.**
+
+    `-1` 이면 전 문서가 제외되며 **본문 파일이 전부 지워지고**(실측 2/2), `15`(퍼센트로
+    생각한 실수)면 아무것도 안 걸러 사용자는 걸린 줄 안다. `config.json` 쪽만 범위를
+    보고 있어서 `--script-threshold` 로는 그대로 들어갔다.
+    """
+    root = make_multilang_vault(tmp_path)
+    build(root)                                   # 먼저 정상 빌드 — 파일이 생긴다
+    assert layout.page_path(root, "900000002").exists()
+
+    with pytest.raises(ValueError, match="0~1"):
+        build(root, ["hangul", "ascii"], bad)
+    # **거부가 파괴보다 먼저여야 한다.** 판정을 돌린 뒤에 거부하면 그 사이에 이미
+    # 파일이 지워진다 — 되돌리려면 재빌드가 필요한데 그 재빌드도 같은 인자면 또 죽는다.
+    assert layout.page_path(root, "900000002").exists(), "거부했는데 파일이 지워졌다"
