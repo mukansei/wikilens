@@ -38,6 +38,8 @@ class BuildReport:
     #: 문자 집합 밖이라 볼트에서 뺀 페이지. **비어 있지 않으면 사용자에게 말해야 한다** —
     #: 빠진 문서는 검색 결과에 안 나오는 것으로만 드러나고 "문서가 없다" 와 구별되지 않는다.
     excluded: list[str] = field(default_factory=list)
+    #: 제외되면서 지운 파생 파일 수(`pages/`·`structure/`). 원본 `raw/` 는 안 지운다.
+    pages_removed: int = 0
 
     @property
     def resolution_rate(self) -> float:
@@ -65,8 +67,9 @@ def build(root: Path, index_scripts: list[str] | None = None,
     결정을 따르도록 `derived/excluded.json` 에 남긴다(서버는 페이지 목록을
     `.sync-state.json` 에서 얻으므로 파생물에서 빼는 것만으로는 안 걸러진다).
 
-    **`mirror/pages/` 는 그대로 둔다** — 설정을 바꿔 다시 빌드하면 되돌아온다.
-    그리고 로컬판의 본문 grep 에는 여전히 걸린다(우선순위에서만 내려간다).
+    **`mirror/pages/`·`mirror/structure/` 도 지운다** — 안 지우면 로컬판이 본문
+    grep 으로 여전히 찾는데 서버판은 못 찾아, 같은 볼트에 두 판이 다른 답을 낸다.
+    **원본 `raw/` 는 안 건드리므로** 설정을 바꿔 다시 빌드하면 되살아난다(네트워크 없음).
     """
     root = Path(root)
     meta = _load_raw_index(root)
@@ -111,6 +114,19 @@ def build(root: Path, index_scripts: list[str] | None = None,
             sig.title + "\n" + md, ranges
         ) > script_threshold:
             report.excluded.append(pid)
+            # **파생물을 지운다 — 두 판이 같은 문서 집합을 봐야 한다.**
+            #
+            # 안 지우면 로컬판이 본문 grep(스킬 3단계)으로 여전히 찾는데 서버판은
+            # 완전히 못 찾는다. 같은 볼트에 두 판이 다른 답을 내는 것은 이 저장소가
+            # 반복해서 지워온 실패 모양이다.
+            #
+            # **원본(`raw/`)은 안 건드린다** — 설정을 바꿔 다시 빌드하면 되살아난다.
+            # `sync --full` 이 사라진 페이지를 지우는 것과 같은 규칙이고, 되돌리기가
+            # 네트워크 없이 되는 것도 그 덕이다.
+            for f in (layout.page_path(root, pid), layout.structure_path(root, pid)):
+                if f.exists():
+                    f.unlink()
+                    report.pages_removed += 1
             continue
 
         signatures[pid] = sig
