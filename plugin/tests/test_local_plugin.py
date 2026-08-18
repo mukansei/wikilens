@@ -405,6 +405,26 @@ def _fake_cli(d: Path, name: str = "wikilens") -> Path:
     return p
 
 
+def test_setup_vault_without_args_writes_nothing(tmp_path):
+    """
+    상태를 보려고 부르는 사람이 있고, 그때 파일이 생기면 진단이 대상을 바꾼 것이 된다.
+
+    `--show` 는 JSON 을 내므로 사람이 읽을 화면이 아니라 이 무인자 호출이 그 자리를
+    대신한다. 화면은 그대로 나오되 디스크는 안 건드려야 한다.
+    """
+    r = setup_vault(tmp_path)
+    assert r.returncode == 0
+    assert "VAULT=" in r.stdout                      # 화면은 그대로
+    assert not (tmp_path / ".wikilens" / "config.json").exists()
+
+
+def test_setup_vault_with_vault_does_write(tmp_path):
+    """읽기 전용으로 만들면서 기록까지 멈추면 setup 이 아무 일도 안 하게 된다."""
+    setup_vault(tmp_path, "--vault", str(tmp_path / "v"))
+    cfg = json.loads((tmp_path / ".wikilens" / "config.json").read_text(encoding="utf-8"))
+    assert cfg["vault"] == str(tmp_path / "v")
+
+
 def test_config_cli_path_is_used_when_not_on_path(tmp_path):
     """
     venv·pipx 에 설치하면 PATH 에도 없고 기본 python 으로 import 도 안 된다.

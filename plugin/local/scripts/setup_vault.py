@@ -261,10 +261,17 @@ def main(argv: list[str]) -> int:
             return 2
         cli = str(p)
 
-    cfg = write_config(vault, source, cli)
-    print(f"CONFIG={CONFIG_PATH}")
-    print(f"VAULT={cfg.get('vault')}")
-    print(f"CLI_SOURCE={cfg.get('cli_source') or '(미정 — 비공개 git URL 이 필요합니다)'}")
+    # **아무것도 안 주면 아무것도 안 쓴다.** 상태를 보려고 부르는 사람이 있고
+    # (이름이 `setup_` 이라 그럴 리 없다고 볼 수 없다), 그때 파일이 생기면 진단이
+    # 대상을 바꾼 것이 된다. `--show` 는 JSON 을 내므로 사람이 읽을 화면이 아니다.
+    mutating = bool(args.vault or args.cli_source or args.cli_path
+                    or args.register_permissions)
+    cfg = write_config(vault, source, cli) if mutating else _config()
+    print(f"CONFIG={CONFIG_PATH}{'' if CONFIG_PATH.exists() else ' (아직 없음)'}")
+    # 안 쓴 경우 `cfg` 에 키가 없을 수 있다 — 위에서 이미 푼 값을 쓴다(기록 여부와
+    # 무관하게 화면의 VAULT 는 "지금 쓰이는 자리" 여야 한다).
+    print(f"VAULT={cfg.get('vault') or vault}")
+    print(f"CLI_SOURCE={cfg.get('cli_source') or source or '(미정 — 비공개 git URL 이 필요합니다)'}")
 
     resolved = cli_argv(cfg)
     print(f"CLI={' '.join(resolved) if resolved else '(미설치)'}")
