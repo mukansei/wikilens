@@ -266,7 +266,19 @@ def main(argv: list[str]) -> int:
     # 대상을 바꾼 것이 된다. `--show` 는 JSON 을 내므로 사람이 읽을 화면이 아니다.
     mutating = bool(args.vault or args.cli_source or args.cli_path
                     or args.register_permissions)
-    cfg = write_config(vault, source, cli) if mutating else _config()
+    if mutating:
+        cfg = write_config(vault, source, cli)          # 깨졌으면 치우고 알린다
+    else:
+        cfg = _config()
+        # **치우지는 않되 말은 한다.** `_config()` 는 못 읽은 파일을 `{}` 로 돌려주므로
+        # 그냥 두면 화면에 기본 볼트 경로가 뜬다 — 파일에는 다른 것이 적혀 있는데
+        # 사용자는 그 값을 믿는다. 쓰기 경로에는 `write_config` 가 내는 경고가 있고,
+        # 진단으로 부르는 이 경로에만 없으면 **정작 알아야 할 자리에서 조용해진다.**
+        if not cfg and CONFIG_PATH.exists():
+            print(f"경고: {CONFIG_PATH} 를 읽지 못했습니다 — 아래 값은 파일이 아니라 "
+                  f"기본값입니다.")
+            print("  고치거나, 설정을 다시 기록하면(--vault 등) 원본을 .bak 으로 "
+                  "치워둡니다.")
     print(f"CONFIG={CONFIG_PATH}{'' if CONFIG_PATH.exists() else ' (아직 없음)'}")
     # 안 쓴 경우 `cfg` 에 키가 없을 수 있다 — 위에서 이미 푼 값을 쓴다(기록 여부와
     # 무관하게 화면의 VAULT 는 "지금 쓰이는 자리" 여야 한다).

@@ -129,7 +129,17 @@ def build(root: Path, index_scripts: list[str] | None = None,
     announce = progress if progress and total > PROGRESS_EVERY else None
     for done, (pid, m) in enumerate(sorted(meta.items()), 1):
         if announce and done % PROGRESS_EVERY == 0:
-            announce(done, total)
+            try:
+                announce(done, total)
+            except OSError:
+                # **진행 표시는 장식이다 — 그것 때문에 빌드가 죽으면 안 된다.**
+                # `wikilens build | head` 처럼 파이프를 일찍 닫으면 `print` 가
+                # `BrokenPipeError` 를 내고, 그게 여기로 올라와 2패스 한가운데서
+                # 빌드를 끝낸다. 그러면 `mirror/pages/` 는 일부만 갱신됐는데
+                # `ALIASES`·`TREE`·`anchors` 는 옛 집합을 가리키는 상태로 남는다
+                # (파생물은 전부 마지막에 쓴다). 겉으로는 traceback 하나뿐이다.
+                # 침묵으로 되돌아가되 빌드는 끝낸다.
+                announce = None
         raw = layout.raw_path(root, pid)
         if not raw.exists():
             report.skipped += 1
