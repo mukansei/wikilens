@@ -130,16 +130,22 @@ class VaultReader(private val mapper: ObjectMapper) {
      * 전부 색인하는 것이 맞다. 못 읽으면 경고하고 빈 집합으로 간다: 여기서 fail-closed
      * 로 가면 파일 하나 깨진 것이 **전 문서 소실**이 된다.
      */
-    fun readExcluded(root: Path): Set<String> {
+    fun readExcluded(root: Path): Excluded {
         val p = root.resolve("derived").resolve("excluded.json")
-        if (!Files.exists(p)) return emptySet()
+        if (!Files.exists(p)) return Excluded()
         return runCatching {
             @Suppress("UNCHECKED_CAST")
             val m = mapper.readValue(Files.readString(p), Map::class.java) as Map<String, Any?>
-            (m["excluded"] as? List<*>)?.mapNotNull { it?.toString() }?.toSet() ?: emptySet()
+            Excluded(
+                ids = (m["excluded"] as? List<*>)?.mapNotNull { it?.toString() }?.toSet() ?: emptySet(),
+                // **설정도 읽는다** — 개수만 내면 운영자가 "무슨 설정이었나" 를 못 푼다.
+                // 볼트가 스스로 말하게 하는 것이라 서버에 설정을 두는 것과 다르다.
+                scripts = (m["scripts"] as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList(),
+                threshold = (m["threshold"] as? Number)?.toDouble(),
+            )
         }.onFailure {
             log.warn("제외 목록을 못 읽었습니다: {} ({}) — 전부 색인합니다.", p, it.message)
-        }.getOrDefault(emptySet())
+        }.getOrDefault(Excluded())
     }
 
     private fun readAcl(root: Path): Map<String, List<String>>? {

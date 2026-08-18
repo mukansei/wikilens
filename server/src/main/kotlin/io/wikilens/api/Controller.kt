@@ -150,6 +150,7 @@ class Controller(
             // 스캔 경로가 둘이라 어느 쪽인지가 답의 근거가 된다.
             // `build` 가 문자 집합으로 뺀 문서 수. **0 이 아니면 볼트에는 있는데 서버
             // 에서는 없는 문서가 그만큼**이다 — 넷 다 못 찾는다.
+            "indexScripts" to indexing.scriptFilter,
             "droppedByScript" to indexing.droppedByScript,
             "grepEngine" to content.engineName,
             "grepEngineUsable" to content.engineUsable,

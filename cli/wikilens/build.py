@@ -40,6 +40,9 @@ class BuildReport:
     excluded: list[str] = field(default_factory=list)
     #: 제외되면서 지운 파생 파일 수(`pages/`·`structure/`). 원본 `raw/` 는 안 지운다.
     pages_removed: int = 0
+    #: 제외된 페이지의 비율. **왜 빠졌는지 답할 수 있어야 한다** — ID 목록만 남기면
+    #: 운영자가 "이 문서가 왜 없지" 를 물었을 때 볼트를 다시 계산해야 답한다.
+    excluded_ratio: dict[str, float] = field(default_factory=dict)
 
     @property
     def resolution_rate(self) -> float:
@@ -55,7 +58,7 @@ def _load_raw_index(root: Path) -> dict[str, dict]:
 
 
 def build(root: Path, index_scripts: list[str] | None = None,
-          script_threshold: float = 0.15) -> BuildReport:
+          script_threshold: float = 0.10) -> BuildReport:
     """
     파생물을 만든다. [index_scripts] 를 주면 **그 문자 집합 밖의 문서를 볼트에서 뺀다.**
 
@@ -136,8 +139,10 @@ def build(root: Path, index_scripts: list[str] | None = None,
         #
         # **판정은 파싱 직후다** — 마크다운이 만들어진 뒤라 원본 XHTML 의 태그가
         # 섞이지 않는다(태그명은 전부 ASCII 라 선언 안으로 세어져 비율을 희석한다).
-        if ranges and scripts_mod.foreign_word_ratio(md, ranges) > script_threshold:
+        ratio = scripts_mod.foreign_word_ratio(md, ranges) if ranges else 0.0
+        if ranges and ratio > script_threshold:
             report.excluded.append(pid)
+            report.excluded_ratio[pid] = round(ratio, 3)
             # **파생물을 지운다 — 두 판이 같은 문서 집합을 봐야 한다.**
             #
             # 안 지우면 로컬판이 본문 grep(스킬 3단계)으로 여전히 찾는데 서버판은
@@ -168,22 +173,32 @@ def build(root: Path, index_scripts: list[str] | None = None,
     # 빠진 페이지는 트리에서도 사라져야 한다 — `_write_tree` 는 `signatures` 에 있는
     # 것만 그리므로(`valid`) 자동으로 걸러진다. 부모가 빠지면 자식이 루트로 승격된다.
     _write_tree(root, meta, signatures)
-    _write_excluded(root, report.excluded)
+    _write_excluded(root, report, index_scripts or [], script_threshold)
     return report
 
 
-def _write_excluded(root: Path, excluded: list[str]) -> None:
+def _write_excluded(root: Path, report: BuildReport,
+                    scripts: list[str], threshold: float) -> None:
     """
-    `build` 가 뺀 페이지 목록. **서버가 같은 결정을 따르게 하는 유일한 통로다.**
+    `build` 가 뺀 페이지와 **그 근거**. 서버가 같은 결정을 따르게 하는 유일한 통로다.
 
     서버는 페이지 목록을 `.sync-state.json`(= `sync` 가 쓴다)에서 얻으므로, 파생물에서
     빼는 것만으로는 색인에 그대로 들어간다. 그래서 결정을 파일로 남긴다.
+
+    **설정과 비율을 함께 남긴다** — ID 목록만 있으면 운영자가 "이 문서가 왜 없지" 를
+    물었을 때 답할 방법이 없고, 서버도 `/api/stats` 에 개수만 낼 뿐 무슨 설정이었는지
+    모른다. 볼트가 스스로 말하게 하는 것이 이 저장소의 규칙이다.
 
     **비어도 쓴다** — 파일이 없는 것과 "뺄 것이 없다" 가 구별되어야, 옛 볼트를 읽는
     서버가 이 기능 이전인지 아닌지 안다.
     """
     p = layout.ensure_parent(root / "derived" / "excluded.json")
-    _write_if_changed(p, canonical_json({"excluded": sorted(excluded)}))
+    _write_if_changed(p, canonical_json({
+        "scripts": list(scripts),
+        "threshold": threshold if scripts else None,
+        "excluded": sorted(report.excluded),
+        "ratio": report.excluded_ratio,
+    }))
 
 
 def transpose(

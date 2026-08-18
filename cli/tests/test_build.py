@@ -720,3 +720,26 @@ def test_empty_scripts_argument_turns_the_filter_off(tmp_path):
     """`--scripts ""` 로 `config.json` 의 설정을 한 번만 끌 수 있어야 한다."""
     root = make_multilang_vault(tmp_path)
     assert build(root, [], 0.15).excluded == []
+
+
+def test_excluded_file_records_why(tmp_path):
+    """
+    **왜 빠졌는지 답할 수 있어야 한다.** ID 목록만 남기면 운영자가 "이 문서가 왜 없지"
+    를 물었을 때 볼트를 다시 계산해야 하고, 서버도 개수만 낼 뿐 무슨 설정이었는지
+    모른다 — 서버에는 이 설정이 없으므로 **볼트가 스스로 말해야 한다.**
+    """
+    root = make_multilang_vault(tmp_path)
+    build(root, ["hangul", "ascii"], 0.10)
+    d = json.loads((root / "derived" / "excluded.json").read_text(encoding="utf-8"))
+    assert d["excluded"] == ["900000002"]
+    assert d["scripts"] == ["hangul", "ascii"]
+    assert d["threshold"] == 0.10
+    assert d["ratio"]["900000002"] > 0.10, "문턱을 넘은 실제 값이 남아야 한다"
+
+
+def test_excluded_file_says_the_filter_was_off(tmp_path):
+    """꺼짐과 "뺄 것이 없음" 이 구별되어야 한다 — 서버가 그 둘을 다르게 말한다."""
+    root = make_multilang_vault(tmp_path)
+    build(root)
+    d = json.loads((root / "derived" / "excluded.json").read_text(encoding="utf-8"))
+    assert d["scripts"] == [] and d["threshold"] is None
