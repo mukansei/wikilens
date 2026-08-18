@@ -102,6 +102,12 @@ check "문자 집합 판정이 본문만 봄 (미리보기와 build 가 같은 �
   'grep -qF "foreign_word_ratio(md, ranges)" cli/wikilens/build.py \
    && grep -qF "foreign_word_ratio(md, ranges)" cli/wikilens/cli.py'
 
+# 모델이 `answer` 를 안 부르면 `dest` 가 조용히 추정으로 돌아간다 — 검색은 정상이라
+# 겉으로 안 보인다. 서버 로그에도 안 남으므로 stats·--status 가 유일한 창구다.
+check "진술된 답이 stats 와 --status 에 드러남 (안 부르면 조용히 추정으로 돌아감)" \
+  'grep -qF "declaredDest" server/src/main/kotlin/io/wikilens/learn/TrajectoryStore.kt \
+   && grep -qF "declaredDest" plugin/client/mcp/wikilens_mcp.py'
+
 check "Gate LOCALIZATION 폴백 임계값 Python/Kotlin 일치 (8토큰)" \
   'grep -qF ".size <= 8" server/src/main/kotlin/io/wikilens/learn/Gate.kt && grep -qF "len(query.strip().split()) <= 8" cli/wikilens/scoring_reference.py'
 check "RATIONALE 마커 '배경' Python/Kotlin 양쪽 존재" \
