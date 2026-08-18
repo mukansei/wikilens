@@ -610,6 +610,49 @@ def test_body_is_removed_so_both_editions_agree(tmp_path):
     assert layout.page_path(root, "900000001").exists()
 
 
+def test_bilingual_title_with_korean_body_survives(tmp_path):
+    """
+    **제목을 판정에 넣으면 계층이 깨진다.**
+
+    이 코퍼스는 목차 페이지 제목을 이중언어로 단다(`01-07. Không có xử lý
+    (기타)`). 그런 페이지는 본문이 거의 없어서, 제목을 넣으면 비율을 지배해 빠진다 —
+    실측 44건이 그렇게 빠졌고 **자식 255건이 부모를 잃어 트리에서 루트로 승격**됐다.
+
+    반대로 제목을 빼야만 걸리는 문서 4건은 **전부 진짜 베트남어**였다(제목만 한국어).
+    """
+    root = tmp_path / "vault"
+    pages = {
+        "900000010": ("01-07. Không có xử lý (기타 목차)", "<p>목록입니다</p>", None),
+        "900000011": ("결재 정책", "<p>결재 정책 본문입니다 한국어로 길게 씁니다</p>", "900000010"),
+    }
+    state = {"cursor": None, "pages": {}}
+    for pid, (t, x, par) in pages.items():
+        layout.ensure_parent(layout.raw_path(root, pid)).write_text(x, encoding="utf-8")
+        state["pages"][pid] = {"title": t, "space": "D", "version": 1, "updated": "",
+                               **({"ancestors": [{"id": par, "title": pages[par][0]}]} if par else {})}
+    layout.ensure_parent(layout.sync_state_path(root)).write_text(
+        json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    rep = build(root, ["hangul", "ascii"], 0.15)
+    assert rep.excluded == [], "본문이 한국어인 목차 페이지가 빠졌다"
+
+    tree = layout.tree_path(root).read_text(encoding="utf-8")
+    assert "  - 결재 정책" in tree, "부모가 빠지면 자식이 루트로 승격돼 계층이 평평해진다"
+
+
+def test_foreign_body_with_korean_title_is_excluded(tmp_path):
+    """제목만 한국어인 번역본. **제목을 보면 놓친다** — 실코퍼스에 4건 있었다."""
+    root = tmp_path / "vault"
+    x = "<p>Giải thích Page. Quản lý Tình hình chuyển giao công việc tự xử lý.</p>"
+    layout.ensure_parent(layout.raw_path(root, "900000020")).write_text(x, encoding="utf-8")
+    layout.ensure_parent(layout.sync_state_path(root)).write_text(json.dumps(
+        {"cursor": None, "pages": {"900000020": {
+            "title": "이관현황 (당김/ 본인처리)", "space": "D", "version": 1, "updated": ""}}},
+        ensure_ascii=False), encoding="utf-8")
+
+    assert build(root, ["hangul", "ascii"], 0.15).excluded == ["900000020"]
+
+
 def test_previously_written_body_is_cleaned_up(tmp_path):
     """설정을 바꿔 다시 빌드하면 **전에 쓴 파일도 지운다** — 남으면 로컬 grep 이 찾는다."""
     root = make_multilang_vault(tmp_path)
