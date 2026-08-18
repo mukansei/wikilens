@@ -104,6 +104,7 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
 | 학습 힌트는 **자르기 전에** 권한으로 거름 | `TrajectoryStore.hints` ↔ `SearchService` | 좁은 권한은 힌트가 0건 |
 | 궤적에 남기는 것은 **범위**이지 신원 아님 | `Trajectory.scope` ↔ `AclRegistry.scopeOf` | 검색 이력이 영구 기록됨 |
 | 상태 디렉터리는 **한 프로세스만** | `learn/StateDirLock.kt` | 학습이 조용히 갈림 |
+| 문자 집합 판정은 **`build` 한 곳** | `scripts.py` → `derived/excluded.json` → `VaultReader.readExcluded` | 서버가 조용히 전부 색인 |
 
 ---
 
