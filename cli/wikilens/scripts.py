@@ -54,6 +54,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 #: 이름 → 코드포인트 범위. **`ascii` 를 빼면 코드·URL·영문이 전부 밖이 된다** —
 #: 실측으로 이 코퍼스는 `[hangul]` 만 선언하면 84%가 걸린다(본문의 46%가 ASCII).
@@ -141,6 +142,14 @@ def foreign_word_ratio(text: str, ranges: list[tuple[int, int]]) -> float:
     """
     if not ranges:
         return 0.0
+    # **NFC 로 정규화한다.** 같은 문장이 표기 방식에 따라 다르게 판정되면 안 된다 —
+    # 실측: `Sử dụng GCP Console để truy cập` 이 NFC 0.571 · NFD 0.111 로 **5배** 갈렸다.
+    #
+    # 원인은 결합 기호(U+0300~036F)가 `isalpha()` 에서 False 라는 것이다. 그러면 낱말
+    # 경계로 취급돼 `Sử` 가 `S`·`ư` 둘로 쪼개지고, 성조 정보가 사라져 비율이 무너진다.
+    # macOS 가 NFD 를 쓰고 Confluence 는 사용자 입력을 그대로 저장하므로 가정이 아니다
+    # (이 코퍼스에는 없었지만 그건 이 코퍼스에 대한 사실이지 보장이 아니다).
+    text = unicodedata.normalize("NFC", text)
     total = foreign = 0
     has_letter = is_foreign = False
     for ch in text:

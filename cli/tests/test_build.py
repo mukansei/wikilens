@@ -743,3 +743,22 @@ def test_excluded_file_says_the_filter_was_off(tmp_path):
     build(root)
     d = json.loads((root / "derived" / "excluded.json").read_text(encoding="utf-8"))
     assert d["scripts"] == [] and d["threshold"] is None
+
+
+def test_ratio_is_normalization_independent():
+    """
+    **같은 문장이 표기 방식에 따라 다르게 판정되면 안 된다.**
+
+    결합 기호(U+0300~036F)는 `isalpha()` 가 False 라 낱말 경계로 취급된다. 그러면
+    NFD 로 쓴 `Sử` 가 `S`·`ư` 둘로 쪼개지고 성조 정보가 사라진다 — 실측으로 같은
+    문장이 NFC 0.571 · NFD 0.111 로 **5배** 갈렸다(문턱 0.10 을 겨우 넘는 값이다).
+
+    macOS 가 NFD 를 쓰고 Confluence 는 사용자 입력을 그대로 저장한다.
+    """
+    import unicodedata
+    from wikilens.scripts import resolve, foreign_word_ratio
+    r = resolve(["hangul", "ascii"])
+    s = "Sử dụng GCP Console để truy cập"
+    vals = {foreign_word_ratio(unicodedata.normalize(f, s), r) for f in ("NFC", "NFD", "NFKC", "NFKD")}
+    assert len(vals) == 1, f"정규화 형태마다 다른 값이 나왔다: {vals}"
+    assert vals.pop() > 0.5
