@@ -32,6 +32,24 @@
 낱말에 선언 밖 글자가 **하나라도** 있으면 그 낱말을 밖으로 세면, 글자마다 다른
 한자·태국어와 부호만 다른 베트남어가 **같은 척도**로 잡힌다 — 문턱 하나가 모든
 문자 집합에 통한다.
+
+### 기본 문턱 0.10 은 분포의 골에서 왔다
+
+한때 0.15 였는데 그것은 **n=1 튜닝**이었다(문제의 문서가 그 아래였다). 분포를 실제로
+재보니 골이 있다(13,947건):
+
+    0%      12,626   90.5%   ← 한국어·영어 문서
+    0~4%       798
+    5~9%        49           ← 골
+    10~14%      88
+    15% 이상   386           ← 연속 꼬리
+
+**5~9% 가 비어 있는 것이 그 자리다** — "한국어 문서에 외래 글자가 몇 개 섞인 것" 과
+"진짜 다른 언어" 가 갈린다. 0.15 는 골보다 한참 위라 10~14% 대 91건을 놓쳤는데,
+그중 **89%가 진짜 베트남어**였다(성조부호 15자 이상).
+
+**코퍼스마다 다르다.** `wikilens stats --scripts hangul,ascii` 가 같은 표를 낸다 —
+그것을 보고 고를 것이지 이 값을 옮겨 적지 말 것.
 """
 from __future__ import annotations
 
@@ -140,3 +158,23 @@ def foreign_word_ratio(text: str, ranges: list[tuple[int, int]]) -> float:
         total += 1
         foreign += is_foreign
     return foreign / total if total else 0.0
+
+
+def ratio_histogram(ratios: list[float]) -> list[tuple[str, int]]:
+    """
+    비율 분포를 5% 구간으로. **0% 를 따로 낸다** — 대부분이 거기 몰려서
+    같은 구간에 넣으면 나머지가 안 보인다(실측: 13,947건 중 12,626건이 0%).
+
+    문턱을 고르는 근거가 이 표다. 코퍼스마다 다르므로 **상수로 적어두면 안 되고**,
+    쓰는 사람이 자기 코퍼스에서 봐야 한다 — `wikilens stats --scripts` 가 낸다.
+    """
+    buckets: dict[str, int] = {"0%": 0}
+    for r in ratios:
+        if r <= 0:
+            buckets["0%"] += 1
+        else:
+            lo = int(r * 20) * 5
+            buckets[f"{lo}~{lo + 4}%"] = buckets.get(f"{lo}~{lo + 4}%", 0) + 1
+    def key(k: str) -> int:
+        return -1 if k == "0%" else int(k.split("~")[0])
+    return sorted(buckets.items(), key=lambda kv: key(kv[0]))

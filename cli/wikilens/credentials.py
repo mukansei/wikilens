@@ -75,13 +75,13 @@ def index_scripts() -> tuple[list[str], float]:
     try:
         cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return [], 0.15
+        return [], 0.10
     if not isinstance(cfg, dict):
-        return [], 0.15
+        return [], 0.10
     v = cfg.get("indexScripts")
     names = [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
     t = cfg.get("scriptThreshold")
-    return names, float(t) if isinstance(t, (int, float)) and 0 < t < 1 else 0.15
+    return names, float(t) if isinstance(t, (int, float)) and 0 < t < 1 else 0.10
 
 
 #: `export KEY=VALUE` 또는 `KEY=VALUE`. 값은 shlex 가 따옴표를 푼다.

@@ -176,6 +176,53 @@ def _cmd_acl(args) -> int:
     return 1 if (rep.failed or rep.unresolved) else 0
 
 
+def _print_script_histogram(root: Path, spec: str) -> None:
+    """
+    `--scripts` 로 문턱을 고르게 돕는다. **아무것도 안 지운다.**
+
+    분포에 골이 있으면 거기가 문턱이다 — "한국어 문서에 외래 글자가 몇 개 섞인 것"
+    과 "진짜 다른 언어" 가 갈리는 자리. 실측(이 코퍼스): 0% 에 90%가 몰리고 5~9%
+    구간이 49건으로 비어 있어, 그 위가 자연스러운 문턱이다.
+    """
+    from . import scripts as scripts_mod
+    from .convert import parse
+
+    try:
+        ranges = scripts_mod.resolve([x for x in spec.split(",") if x.strip()])
+    except ValueError as e:
+        print(f"\n문자 집합 설정이 잘못됐습니다: {e}")
+        return
+    if not ranges:
+        return
+
+    state = layout.sync_state_path(root)
+    if not state.exists():
+        return
+    meta = json.loads(state.read_text(encoding="utf-8")).get("pages") or {}
+
+    ratios = []
+    for pid, m in meta.items():
+        f = layout.raw_path(root, pid)
+        if not f.exists():
+            continue
+        # **본문만 본다** — `build` 의 판정과 같아야 이 표로 문턱을 고를 수 있다.
+        _, md = parse(page_id=pid, title=m.get("title", ""), space=m.get("space", ""),
+                      version=int(m.get("version", 0)),
+                      xhtml=f.read_text(encoding="utf-8"), resolve=lambda t, s: None)
+        ratios.append(scripts_mod.foreign_word_ratio(md, ranges))
+    if not ratios:
+        return
+
+    print(f"\n선언 밖 낱말 비율 ({spec}) — {len(ratios)}건")
+    for label, n in scripts_mod.ratio_histogram(ratios):
+        bar = "█" * max(1, round(40 * n / len(ratios))) if n else ""
+        print(f"  {label:>8}  {n:6,}  {bar}")
+    print("\n  문턱별 제외 수 — **골이 있으면 거기가 문턱이다**")
+    for t in (0.05, 0.10, 0.15, 0.20, 0.30):
+        print(f"    {t:.2f} → {sum(1 for r in ratios if r > t):6,}건")
+    print("  `wikilens build --scripts … --script-threshold …` 로 적용합니다.")
+
+
 def _cmd_stats(args) -> int:
     from .tokenizer import tokenize
 
@@ -260,6 +307,14 @@ def _cmd_stats(args) -> int:
                   f" · 전체 기저율 {100*has_parent/len(pages):.1f}%"
                   f" — 둘이 같으면 계층 층의 변별이 아니라 그냥 이 위키가 계층적인 것")
 
+    # 문자 집합 분포. **`--scripts` 를 줬을 때만 낸다** — 안 쓰는 사람에게는
+    # 줄만 늘어나고, 계산이 코퍼스 전량 파싱이라 공짜가 아니다(실측 13,933건에 8초).
+    #
+    # **이것이 있어야 문턱을 고를 수 있다.** 그전에는 `build`(파일을 지운다)를 실제로
+    # 돌려야 몇 건인지 알았다 — 되돌릴 수는 있지만 순서가 뒤바뀐 것이다.
+    if getattr(args, "scripts", None):
+        _print_script_histogram(root, args.scripts)
+
     print("\n인링크 상위:")
     for e in sorted(entries, key=lambda x: -x["indeg"])[:10]:
         # 위 gap 판정(토큰 비교)과 다르게 여기는 문자열 완전 비교다. 사람이
@@ -323,10 +378,13 @@ def main(argv: list[str] | None = None) -> int:
                         "이름 대신 U+0100-017F 도 됩니다. 안 주면 config.json 의 "
                         "indexScripts, 그것도 없으면 전부 편입")
     b.add_argument("--script-threshold", type=float, default=None,
-                   help="선언 밖 낱말이 이 비율을 넘으면 뺍니다 (기본 0.15)")
+                   help="선언 밖 낱말이 이 비율을 넘으면 뺍니다 (기본 0.10). `stats --scripts` 로 분포를 보고 고르세요")
     b.set_defaults(func=_cmd_build)
 
     st = sub.add_parser("stats", help="볼트 통계 — 어휘 격차와 고아 문서")
+    st.add_argument("--scripts", default=None,
+                    help="문자 집합 분포를 함께 냅니다(아무것도 안 지웁니다). "
+                         "예: hangul,ascii — 문턱을 고르는 근거가 됩니다")
     st.set_defaults(func=_cmd_stats)
 
     ac = sub.add_parser("acl", help="페이지별 읽기 권한을 수집합니다 (sync 와 별도 주기)")

@@ -32,6 +32,10 @@ class IndexingService(
     @Volatile private var dropped_ = 0
     val droppedByScript: Int get() = dropped_
 
+    /** `build` 가 쓴 설정. 서버에는 이 설정이 없으므로 볼트가 말해주는 값이다. */
+    @Volatile private var scripts_ = "꺼짐"
+    val scriptFilter: String get() = scripts_
+
     /** 볼트 위치는 [VaultLocator] 하나가 정한다 — 여기서 다시 풀면 read 와 갈린다. */
     val vaultRoot: Path get() = locator.root
 
@@ -69,13 +73,14 @@ class IndexingService(
         // 색인에 없어서 도달할 경로가 없으므로 무해하고, 함께 줄이면 나중에 "왜 이
         // 페이지만 권한이 없나" 를 못 푼다.
         val excluded = vault.readExcluded(root)
-        val kept = if (excluded.isEmpty()) pages else pages.filterNot { it.id in excluded }
+        val kept = if (excluded.ids.isEmpty()) pages else pages.filterNot { it.id in excluded.ids }
         val dropped = pages.size - kept.size
+        scripts_ = excluded.describe
         if (dropped > 0) {
             // **조용하면 안 된다.** 빠진 문서는 검색 결과에 안 나오는 것으로만 드러나고,
             // 그건 "문서가 없다" 와 구별되지 않는다(조용히 실패 10번과 같은 계열).
-            log.info("build 가 뺀 문서 {}건을 색인에서 제외합니다 (문자 집합) — " +
-                "되돌리려면 `wikilens build` 를 다른 설정으로 다시 돌리세요.", dropped)
+            log.info("build 가 뺀 문서 {}건을 색인에서 제외합니다 ({}) — " +
+                "되돌리려면 `wikilens build` 를 다른 설정으로 다시 돌리세요.", dropped, excluded.describe)
             if (dropped == pages.size) {
                 log.error("**전 문서가 빠졌습니다.** `build` 의 문자 집합 설정이 이 코퍼스와 " +
                     "안 맞습니다 — 색인이 0건이 됩니다.")
