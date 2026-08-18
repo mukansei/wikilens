@@ -703,3 +703,20 @@ def test_out_of_range_threshold_is_refused(tmp_path, bad):
     # **거부가 파괴보다 먼저여야 한다.** 판정을 돌린 뒤에 거부하면 그 사이에 이미
     # 파일이 지워진다 — 되돌리려면 재빌드가 필요한데 그 재빌드도 같은 인자면 또 죽는다.
     assert layout.page_path(root, "900000002").exists(), "거부했는데 파일이 지워졌다"
+
+
+def test_range_spec_is_case_insensitive():
+    """
+    이름은 `.lower()` 로 정규화하는데 범위만 대문자를 요구하면 비일관적이다 —
+    `u+0100-017f` 를 쓴 사람이 "알 수 없는 문자 집합" 과 **이름 목록**을 받는다
+    (범위를 썼는데 이름을 고치라는 안내다).
+    """
+    from wikilens.scripts import resolve
+    assert resolve(["u+0100-017f"]) == resolve(["U+0100-017F"])
+    assert resolve(["HANGUL"]) == resolve(["hangul"])
+
+
+def test_empty_scripts_argument_turns_the_filter_off(tmp_path):
+    """`--scripts ""` 로 `config.json` 의 설정을 한 번만 끌 수 있어야 한다."""
+    root = make_multilang_vault(tmp_path)
+    assert build(root, [], 0.15).excluded == []
