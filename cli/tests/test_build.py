@@ -11,12 +11,15 @@ build 파이프라인의 계약 불변식 테스트.
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 from pathlib import Path
 
 import pytest
 
 from wikilens import layout
+from wikilens import build as build_mod
 from wikilens.build import build, transpose
 from wikilens.convert import extract_cross_space_refs, parse, render_page_file
 from wikilens.models import Link, StructureSignature, canonical_json
@@ -762,3 +765,43 @@ def test_ratio_is_normalization_independent():
     vals = {foreign_word_ratio(unicodedata.normalize(f, s), r) for f in ("NFC", "NFD", "NFKC", "NFKD")}
     assert len(vals) == 1, f"정규화 형태마다 다른 값이 나왔다: {vals}"
     assert vals.pop() > 0.5
+
+
+# --------------------------------------------------------------- 진행 표시
+
+def test_build_reports_progress_on_large_vaults(tmp_path):
+    """
+    13,947건 코퍼스에서 `build` 는 **2분 28초 동안 한 줄도 안 찍었다**(실측 2026-08-18).
+    그 침묵이 `sync` 바로 뒤에 오는데 `sync` 는 페이지마다 찍으므로, 사용자에게는
+    싱크가 멈춘 것으로 보인다. 첫 설정에서 이 침묵이 마지막 인상이다.
+
+    간격을 세는 것이 아니라 **말을 하는지**를 잠근다 — 간격은 튜닝 값이다.
+    """
+    root = tmp_path / "vault"
+    state = {"cursor": None, "pages": {}}
+    n = build_mod.PROGRESS_EVERY * 2 + 1          # 하한을 넘겨야 켜진다
+    for i in range(n):
+        pid = str(300000000 + i)
+        layout.ensure_parent(layout.raw_path(root, pid)).write_text(
+            "<p>본문</p>", encoding="utf-8")
+        state["pages"][pid] = {"title": f"문서 {i}", "space": "S",
+                               "version": 1, "updated": ""}
+    layout.ensure_parent(layout.sync_state_path(root)).write_text(
+        json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    seen: list[tuple[int, int]] = []
+    build(root, progress=lambda done, total: seen.append((done, total)))
+    assert seen, "큰 볼트인데 진행 표시가 한 번도 안 나왔다"
+    assert all(t == n for _, t in seen), "총계가 흔들리면 진행률로 못 읽는다"
+    assert seen == sorted(seen), "단조 증가여야 한다"
+
+
+def test_build_is_silent_without_a_callback(tmp_path):
+    """
+    `build()` 는 라이브러리다 — 찍는 것은 CLI 의 몫이다. 기본이 시끄러우면
+    테스트 출력과 프로그램 호출이 함께 오염된다.
+    """
+    root = make_vault(tmp_path)
+    with contextlib.redirect_stdout(io.StringIO()) as out:
+        build(root)
+    assert out.getvalue() == ""

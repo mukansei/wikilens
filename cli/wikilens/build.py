@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -57,8 +58,20 @@ def _load_raw_index(root: Path) -> dict[str, dict]:
     return json.loads(p.read_text(encoding="utf-8")).get("pages", {})
 
 
+#: 진행 표시 간격(페이지)과 그것을 켜는 하한.
+#:
+#: 13,947건 코퍼스에서 `build` 는 **2분 28초 동안 한 줄도 안 찍었다**(실측 2026-08-18).
+#: 그 침묵이 `sync` 바로 뒤에 오므로 — `sync` 는 페이지마다 찍는다 — 사용자에게는
+#: 싱크가 멈춘 것으로 보인다. 첫 설정에서 이 침묵이 마지막 인상이다.
+#:
+#: 시간의 96%가 `parse()` 다(프로파일: 402초/417초). 그래서 2패스 루프에만 단다.
+#: 500건이면 이 코퍼스에서 약 5초 간격이다. 하한을 두는 것은 작은 볼트가 조용하도록.
+PROGRESS_EVERY = 500
+
+
 def build(root: Path, index_scripts: list[str] | None = None,
-          script_threshold: float = 0.10) -> BuildReport:
+          script_threshold: float = 0.10,
+          progress: Callable[[int, int], None] | None = None) -> BuildReport:
     """
     파생물을 만든다. [index_scripts] 를 주면 **그 문자 집합 밖의 문서를 볼트에서 뺀다.**
 
@@ -110,7 +123,13 @@ def build(root: Path, index_scripts: list[str] | None = None,
 
     # ---- 2패스: 파싱 + 기록 ----
     signatures: dict[str, StructureSignature] = {}
-    for pid, m in sorted(meta.items()):
+    # 여기가 전체 시간의 96% 다. `progress` 가 없으면 아무 일도 안 하므로 테스트와
+    # 라이브러리 호출은 그대로 조용하다 — 찍는 것은 CLI 의 몫이다.
+    total = len(meta)
+    announce = progress if progress and total > PROGRESS_EVERY else None
+    for done, (pid, m) in enumerate(sorted(meta.items()), 1):
+        if announce and done % PROGRESS_EVERY == 0:
+            announce(done, total)
         raw = layout.raw_path(root, pid)
         if not raw.exists():
             report.skipped += 1

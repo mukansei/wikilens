@@ -96,8 +96,14 @@ def _cmd_build(args) -> int:
         names = [x for x in args.scripts.split(",") if x.strip()]
     if getattr(args, "script_threshold", None) is not None:
         threshold = args.script_threshold
+    # **진행을 찍는 것은 CLI 의 몫이다** — `build()` 는 콜백이 없으면 조용하다.
+    # `sync` 가 페이지마다 찍다가 여기서 몇 분을 침묵하면 사용자는 멈춘 줄 안다.
+    # `flush` 가 필요하다: 파이프로 받으면 버퍼에 갇혀 끝나야 한 번에 나온다.
+    def _progress(done: int, total: int) -> None:
+        print(f"  ... 파싱 {done}/{total}", flush=True)
+
     try:
-        rep = build(Path(args.root), names, threshold)
+        rep = build(Path(args.root), names, threshold, progress=_progress)
     except ValueError as e:
         # 모르는 이름을 조용히 무시하면 사용자는 필터가 걸린 줄 알고 쓴다.
         print(f"문자 집합 설정이 잘못됐습니다: {e}")
