@@ -418,6 +418,31 @@ def test_setup_vault_without_args_writes_nothing(tmp_path):
     assert not (tmp_path / ".wikilens" / "config.json").exists()
 
 
+def test_setup_vault_warns_about_unreadable_config_without_touching_it(tmp_path):
+    """
+    쓰기 경로에는 `write_config` 의 경고가 있는데 **진단 경로에만 없으면 정작
+    알아야 할 자리에서 조용해진다.** `_config()` 가 못 읽은 파일을 `{}` 로 돌려주므로
+    화면에는 기본 볼트 경로가 뜨고, 파일에는 다른 것이 적혀 있는데 사용자는 그 값을 믿는다.
+
+    `[]` 도 함께 본다 — 유효한 JSON 이라 파싱만 확인하면 통과한다.
+    """
+    cfg_dir = tmp_path / ".wikilens"
+    cfg_dir.mkdir()
+    for content in ('{"vault": "/real/vault",,}', "[]"):
+        (cfg_dir / "config.json").write_text(content, encoding="utf-8")
+        r = setup_vault(tmp_path)
+        assert "읽지 못했습니다" in r.stdout, content
+        # 진단은 대상을 바꾸지 않는다 — 치우는 것은 쓰기 경로의 몫이다.
+        assert (cfg_dir / "config.json").read_text(encoding="utf-8") == content
+        assert not list(cfg_dir.glob("*.bak-*"))
+
+
+def test_setup_vault_is_quiet_when_config_is_fine(tmp_path):
+    """경고가 늘 나오면 아무도 안 읽는다."""
+    setup_vault(tmp_path, "--vault", str(tmp_path / "v"))
+    assert "읽지 못했습니다" not in setup_vault(tmp_path).stdout
+
+
 def test_setup_vault_with_vault_does_write(tmp_path):
     """읽기 전용으로 만들면서 기록까지 멈추면 setup 이 아무 일도 안 하게 된다."""
     setup_vault(tmp_path, "--vault", str(tmp_path / "v"))

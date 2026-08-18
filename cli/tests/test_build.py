@@ -769,17 +769,11 @@ def test_ratio_is_normalization_independent():
 
 # --------------------------------------------------------------- 진행 표시
 
-def test_build_reports_progress_on_large_vaults(tmp_path):
-    """
-    13,947건 코퍼스에서 `build` 는 **2분 28초 동안 한 줄도 안 찍었다**(실측 2026-08-18).
-    그 침묵이 `sync` 바로 뒤에 오는데 `sync` 는 페이지마다 찍으므로, 사용자에게는
-    싱크가 멈춘 것으로 보인다. 첫 설정에서 이 침묵이 마지막 인상이다.
-
-    간격을 세는 것이 아니라 **말을 하는지**를 잠근다 — 간격은 튜닝 값이다.
-    """
+def _big_vault(tmp_path: Path) -> tuple[Path, int]:
+    """진행 표시 하한을 넘기는 볼트. 본문은 최소로 — 여기서 재는 것은 개수뿐이다."""
     root = tmp_path / "vault"
     state = {"cursor": None, "pages": {}}
-    n = build_mod.PROGRESS_EVERY * 2 + 1          # 하한을 넘겨야 켜진다
+    n = build_mod.PROGRESS_EVERY * 2 + 1
     for i in range(n):
         pid = str(300000000 + i)
         layout.ensure_parent(layout.raw_path(root, pid)).write_text(
@@ -788,12 +782,47 @@ def test_build_reports_progress_on_large_vaults(tmp_path):
                                "version": 1, "updated": ""}
     layout.ensure_parent(layout.sync_state_path(root)).write_text(
         json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    return root, n
+
+
+def test_build_reports_progress_on_large_vaults(tmp_path):
+    """
+    13,947건 코퍼스에서 `build` 는 **2분 28초 동안 한 줄도 안 찍었다**(실측 2026-08-18).
+    그 침묵이 `sync` 바로 뒤에 오는데 `sync` 는 페이지마다 찍으므로, 사용자에게는
+    싱크가 멈춘 것으로 보인다. 첫 설정에서 이 침묵이 마지막 인상이다.
+
+    간격을 세는 것이 아니라 **말을 하는지**를 잠근다 — 간격은 튜닝 값이다.
+    """
+    root, n = _big_vault(tmp_path)
 
     seen: list[tuple[int, int]] = []
     build(root, progress=lambda done, total: seen.append((done, total)))
     assert seen, "큰 볼트인데 진행 표시가 한 번도 안 나왔다"
     assert all(t == n for _, t in seen), "총계가 흔들리면 진행률로 못 읽는다"
     assert seen == sorted(seen), "단조 증가여야 한다"
+
+
+def test_progress_failure_does_not_abort_the_build(tmp_path):
+    """
+    `wikilens build | head` 처럼 파이프를 일찍 닫으면 `print` 가 `BrokenPipeError` 를
+    내고, 그것이 2패스 한가운데서 빌드를 끝낸다(실측: traceback 과 함께 죽었다).
+
+    그러면 `mirror/pages/` 는 일부만 갱신됐는데 `ALIASES`·`TREE`·`anchors` 는 옛 집합을
+    가리키는 상태로 남는다 — 파생물은 전부 마지막에 쓰기 때문이다. **진행 표시는
+    장식이라 그것 때문에 산출물이 찢어지면 안 된다.**
+    """
+    root, n = _big_vault(tmp_path)
+
+    calls = []
+
+    def boom(done: int, total: int) -> None:
+        calls.append(done)
+        raise BrokenPipeError(32, "Broken pipe")
+
+    rep = build(root, progress=boom)
+    assert calls == [build_mod.PROGRESS_EVERY], "한 번 실패했으면 다시 부르지 않는다"
+    assert rep.pages_written == n, "빌드가 끝까지 가야 한다"
+    assert (root / "ALIASES.md").exists(), "파생물이 쓰여야 한다"
 
 
 def test_build_is_silent_without_a_callback(tmp_path):
