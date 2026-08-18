@@ -59,6 +59,9 @@ def build(root: Path, index_scripts: list[str] | None = None,
     """
     파생물을 만든다. [index_scripts] 를 주면 **그 문자 집합 밖의 문서를 볼트에서 뺀다.**
 
+    **판정은 본문만 본다** — 제목은 이 코퍼스처럼 이중언어로 다는 관행이 있어
+    짧은 목차 페이지를 잘못 뺀다(실측 44건, 자식 255건의 계층이 깨졌다).
+
     다국어 코퍼스용이고 근거는 `scripts.py` 에 있다. 판정을 여기서 하는 이유는
     **결정이 한 곳이어야 두 판이 같은 답을 내기** 때문이다 — 서버에 두면 로컬판이
     아무것도 못 받는다.
@@ -117,11 +120,23 @@ def build(root: Path, index_scripts: list[str] | None = None,
             xhtml=raw.read_text(encoding="utf-8"),
             resolve=resolve,
         )
-        # **판정은 파싱 직후다.** 마크다운이 만들어진 뒤라 원본 XHTML 의 태그가
-        # 섞이지 않는다 — 태그명은 전부 ASCII 라 선언 안으로 세어져 비율을 희석한다.
-        if ranges and scripts_mod.foreign_word_ratio(
-            sig.title + "\n" + md, ranges
-        ) > script_threshold:
+        # **본문만 본다 — 제목은 안 본다.**
+        #
+        # 처음엔 제목도 넣었다("본문이 짧고 제목만 다른 언어인 문서" 를 잡으려고).
+        # **정확히 반대로 작동했다** — 이 코퍼스는 목차 페이지 제목을 이중언어로 달고
+        # (`01-07. Không có xử lý (기타 목차)`) 그런 페이지는 본문이 거의 없어서,
+        # 제목의 베트남어가 비율을 지배했다. 실측: 그렇게 잘못 빠진 44건이 **자식
+        # 255건을 거느린 계층 노드**였고, 부모가 빠지면 자식이 루트로 승격돼 계층이
+        # 평평해진다.
+        #
+        # 반대로 제목을 빼야만 걸리는 문서가 4건 있었는데 **전부 진짜 베트남어**였다
+        # (제목만 한국어이고 본문이 `Giải thích Page`). 제목이 판정을 흐리고 있었다.
+        #
+        # 읽는 사람이 읽는 것은 본문이다. 제목은 라벨이다.
+        #
+        # **판정은 파싱 직후다** — 마크다운이 만들어진 뒤라 원본 XHTML 의 태그가
+        # 섞이지 않는다(태그명은 전부 ASCII 라 선언 안으로 세어져 비율을 희석한다).
+        if ranges and scripts_mod.foreign_word_ratio(md, ranges) > script_threshold:
             report.excluded.append(pid)
             # **파생물을 지운다 — 두 판이 같은 문서 집합을 봐야 한다.**
             #
