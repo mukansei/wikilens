@@ -317,6 +317,25 @@ def _probe_learning(s: dict) -> bool:
         print("\n궤적 로그가 커져 기동이 느려지고 있습니다. 동작에는 문제가 없지만"
               " 운영자가 체크포인트를 검토할 시점입니다.")
 
+    # **진술 설계가 실제로 도는지.** 모델이 `answer` 를 부르면 `dest` 가 추정이 아니라
+    # 진술이 된다 — 안 부르면 `reads.last()` 폴백이라 조용히 예전 동작으로 돌아간다.
+    # 그 사실이 밖에서 보이는 창구가 여기뿐이다(서버 로그에도 안 남는다).
+    #
+    # 궤적이 있는데 진술이 0 이면 셋 중 하나다: 스킬·도구 설명이 안 먹히거나,
+    # 플러그인이 낡아 `answer` 가 없거나, 서버가 낡아 404 를 준다.
+    trj, dec = s.get("trajectories") or 0, s.get("declaredDest") or 0
+    if trj:
+        print(f"DECLARED_DEST={dec}/{trj}")
+        if not dec:
+            print("\n모델이 `answer` 를 한 번도 부르지 않았습니다 — 학습의 `dest` 가"
+                  " 전부 **추정**(마지막 읽기)입니다.")
+            print("  검색·읽기는 정상입니다. 플러그인과 서버가 최신인지 확인하세요"
+                  " (옛 서버는 /api/answer 가 404 입니다).")
+    # 추정이 얼마나 틀리는지. 진술이 있는 궤적에서만 대조할 수 있어 표본이 느리게 쌓인다.
+    checked, agreed = s.get("fallbackChecked") or 0, s.get("fallbackAgreed") or 0
+    if checked:
+        print(f"FALLBACK_AGREE={agreed}/{checked} ({100 * agreed // checked}%)")
+
     # 권한 폭이 다른 사람들의 관측이 한 포스팅에 섞이면 rank 가중과 목적지 분포가
     # 사람마다 다른 의미를 갖는다. 지금은 전 페이지가 @public 이라 0 또는 1 이다.
     scopes = s.get("permissionScopes")
