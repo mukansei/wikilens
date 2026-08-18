@@ -78,6 +78,30 @@ check "canonical_json 결정적 직렬화" \
   'grep -q "sort_keys=True, ensure_ascii=False" cli/wikilens/models.py'
 check "ancestors 스키마 Python↔Kotlin 일치 (sync.py 가 쓰고 VaultReader 가 같은 키로 읽음)" \
   'grep -qF "\"ancestors\": ancestors" cli/wikilens/sync.py && grep -qF "meta[\"ancestors\"]" server/src/main/kotlin/io/wikilens/vault/VaultReader.kt'
+# `build` 가 문자 집합으로 뺀 문서를 서버가 색인에서 빼는 통로. **파일로만 이어져 있다** —
+# 키 이름이 갈리면 서버가 조용히 전부 색인하고, 필터가 걸린 줄 아는 채로 배포된다.
+# 서버는 페이지 목록을 `.sync-state.json`(sync 가 쓴다)에서 얻으므로 파생물에서 빼는
+# 것만으로는 안 걸러진다 — 이 파일이 유일한 통로다.
+check "excluded.json 스키마 Python↔Kotlin 일치 (build 의 결정을 서버가 읽음)" \
+  'grep -qF "\"excluded\": sorted(report.excluded)" cli/wikilens/build.py \
+   && grep -qF "m[\"excluded\"]" server/src/main/kotlin/io/wikilens/vault/VaultReader.kt \
+   && grep -qF "\"scripts\": list(scripts)" cli/wikilens/build.py \
+   && grep -qF "m[\"scripts\"]" server/src/main/kotlin/io/wikilens/vault/VaultReader.kt'
+
+# 빠진 문서는 검색 결과에 안 나오는 것으로만 드러나고 그건 "문서가 없다" 와 구별되지
+# 않는다. 셋이 함께 말해야 한다 — ACL 시행이 꺼진 것을 셋이 말하는 것과 같은 규칙이다.
+check "문자 집합 제외가 조용하지 않음 (CLI · stats · --status)" \
+  'grep -qF "문자 집합 밖이라 뺀 문서" cli/wikilens/cli.py \
+   && grep -qF "droppedByScript" server/src/main/kotlin/io/wikilens/api/Controller.kt \
+   && grep -qF "droppedByScript" plugin/client/mcp/wikilens_mcp.py'
+
+# 문턱을 고르려면 분포를 봐야 하는데, 미리보기가 `build` 와 다른 입력을 쓰면 그 표로
+# 고른 값이 안 맞는다. 둘 다 **본문만** 봐야 한다 — 제목을 넣으면 이중언어 제목의
+# 계층 노드가 잘못 빠진다(실측 44건, 자식 255건의 계층이 깨졌다).
+check "문자 집합 판정이 본문만 봄 (미리보기와 build 가 같은 입력)" \
+  'grep -qF "foreign_word_ratio(md, ranges)" cli/wikilens/build.py \
+   && grep -qF "foreign_word_ratio(md, ranges)" cli/wikilens/cli.py'
+
 check "Gate LOCALIZATION 폴백 임계값 Python/Kotlin 일치 (8토큰)" \
   'grep -qF ".size <= 8" server/src/main/kotlin/io/wikilens/learn/Gate.kt && grep -qF "len(query.strip().split()) <= 8" cli/wikilens/scoring_reference.py'
 check "RATIONALE 마커 '배경' Python/Kotlin 양쪽 존재" \
