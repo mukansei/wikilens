@@ -222,12 +222,14 @@ def _write_excluded(root: Path, report: BuildReport,
     서버가 이 기능 이전인지 아닌지 안다.
     """
     p = layout.ensure_parent(root / "derived" / "excluded.json")
+    # 서버가 읽는 파일이라 원자로 쓴다. 잘리면 `readExcluded` 가 파싱에 실패하고
+    # fail-open 으로 **전부 색인**한다 — 뺐다고 생각한 문서가 조용히 돌아온다.
     _write_if_changed(p, canonical_json({
         "scripts": list(scripts),
         "threshold": threshold if scripts else None,
         "excluded": sorted(report.excluded),
         "ratio": report.excluded_ratio,
-    }))
+    }), atomic=True)
 
 
 def transpose(
@@ -299,11 +301,37 @@ def _alias_terms(entry: AnchorEntry) -> list[str]:
     return [t for t, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
+def _write_atomic(path: Path, content: str) -> None:
+    """
+    같은 디렉터리의 임시 파일에 쓰고 원자 교체한다.
+
+    **잘린 파생물은 진단을 통과한다.** `ALIASES.md` 를 3분의 1로 잘라놓고 재보니
+    `vault_status` 는 `STATUS=ok · PAGES=13947` 이었고, 검색만 조용히 줄었다 —
+    흔한 낱말 둘이 95→74건 · 309→92건(실측 2026-08-18). 로컬판의 검색
+    경로가 통째로 이 파일들이라 그만큼이 **없는 문서가 된다.**
+
+    파생물은 build 의 마지막에 한 번에 쓰므로(6MB) Ctrl-C · 디스크 참 · OOM 이 그
+    창을 연다. 같은 저장소가 `sync`·`acl`·`setup_vault`·`rank`·`UserStore` 에서
+    이미 tmp+replace 를 쓰는데 **정작 이 넷만 빠져 있었다.**
+
+    같은 디렉터리에 만드는 것이 중요하다 — `replace` 의 원자성은 같은 파일시스템
+    안에서만 보장된다.
+
+    **`mirror/pages/` 의 개별 페이지에는 안 쓴다.** 거기 남는 `.{id}.md.tmp` 는
+    `sync` 의 삭제 청소가 **영원히 못 지우고**(아는 페이지 ID 만 훑는다) 진단에
+    `STRAY` 로 잡힌다(실측). 페이지 하나가 잘리는 것은 재빌드로 고쳐지는 반면
+    영구 쓰레기는 안 고쳐진다 — 얻는 것보다 잃는 것이 크다.
+    """
+    layout.ensure_parent(path)
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(content, encoding="utf-8", newline="\n")
+    tmp.replace(path)
+
+
 def _write_anchors(root: Path, entries: list[AnchorEntry]) -> None:
-    p = layout.ensure_parent(layout.anchors_path(root))
     # JSONL 한 줄도 같은 결정적 직렬화를 쓴다 — 규칙이 갈리면 멱등성이 깨진다.
-    p.write_text("".join(canonical_json(e.to_dict()) for e in entries),
-                 encoding="utf-8", newline="\n")
+    _write_atomic(layout.anchors_path(root),
+                  "".join(canonical_json(e.to_dict()) for e in entries))
 
 
 def _write_aliases(
@@ -369,7 +397,7 @@ def _write_aliases(
             lines.append(f"{e.space} | {e.title} | (별칭 없음) | 0 | {e.path}")
 
     lines.append("")
-    layout.aliases_path(root).write_text("\n".join(lines), encoding="utf-8", newline="\n")
+    _write_atomic(layout.aliases_path(root), "\n".join(lines))
 
 
 def _write_tree(
@@ -430,10 +458,10 @@ def _write_tree(
         render(pid, 0)
 
     lines.append("")
-    layout.tree_path(root).write_text("\n".join(lines), encoding="utf-8", newline="\n")
+    _write_atomic(layout.tree_path(root), "\n".join(lines))
 
 
-def _write_if_changed(path: Path, content: str) -> bool:
+def _write_if_changed(path: Path, content: str, atomic: bool = False) -> bool:
     """
     내용이 같으면 쓰지 않는다.
 
@@ -443,5 +471,8 @@ def _write_if_changed(path: Path, content: str) -> bool:
     layout.ensure_parent(path)
     if path.exists() and path.read_text(encoding="utf-8") == content:
         return False
-    path.write_text(content, encoding="utf-8", newline="\n")
+    if atomic:
+        _write_atomic(path, content)
+    else:
+        path.write_text(content, encoding="utf-8", newline="\n")
     return True

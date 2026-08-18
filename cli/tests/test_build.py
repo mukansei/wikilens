@@ -834,3 +834,72 @@ def test_build_is_silent_without_a_callback(tmp_path):
     with contextlib.redirect_stdout(io.StringIO()) as out:
         build(root)
     assert out.getvalue() == ""
+
+
+# --------------------------------------------------------------- 원자 쓰기
+
+def test_derivatives_are_written_atomically(tmp_path):
+    """
+    **잘린 파생물은 진단을 통과한다.** `ALIASES.md` 를 3분의 1로 잘라놓고 재보니
+    `vault_status` 는 `STATUS=ok · PAGES=13947` 인데 검색만 조용히 줄었다 —
+    흔한 낱말 둘이 95→74건 · 309→92건(실측 2026-08-18).
+    로컬판의 검색 경로가 통째로 이 파일들이라 그만큼이 없는 문서가 된다.
+
+    쓰기가 도중에 죽어도 **옛 파일이 온전히 남아야 한다.**
+    """
+    root = make_vault(tmp_path)
+    build(root)
+    targets = [root / "ALIASES.md", root / "TREE.md", root / "derived" / "anchors.jsonl"]
+    before = {p: p.read_text(encoding="utf-8") for p in targets}
+
+    calls = {"n": 0}
+    orig = Path.write_text
+
+    def die_on_third(self, *a, **kw):
+        # 임시 파일 쓰기 도중 죽는 상황. 세 번째 파생물에서 터뜨린다.
+        if self.name.startswith(".") and self.name.endswith(".tmp"):
+            calls["n"] += 1
+            if calls["n"] == 3:
+                raise OSError(28, "No space left on device")
+        return orig(self, *a, **kw)
+
+    Path.write_text = die_on_third
+    try:
+        with pytest.raises(OSError):
+            build(root)
+    finally:
+        Path.write_text = orig
+
+    for p, content in before.items():
+        assert p.read_text(encoding="utf-8") == content, f"{p.name} 이 잘린 채 남았다"
+
+
+def test_atomic_write_leaves_no_temp_file(tmp_path):
+    """성공 경로에 찌꺼기가 남으면 진단이 STRAY 로 잡거나 사용자가 헷갈린다."""
+    root = make_vault(tmp_path)
+    build(root)
+    leftovers = [p.name for p in root.rglob(".*.tmp")]
+    assert leftovers == [], leftovers
+
+
+def test_page_files_are_not_written_through_temp_files(tmp_path):
+    """
+    `mirror/pages/` 에 남는 `.{id}.md.tmp` 는 `sync` 의 삭제 청소가 **영원히 못
+    지우고**(아는 페이지 ID 만 훑는다) 진단에 STRAY 로 잡힌다. 페이지 하나가 잘리는
+    것은 재빌드로 고쳐지지만 영구 쓰레기는 안 고쳐진다 — 일부러 안 쓴다.
+    """
+    root = make_vault(tmp_path)
+    seen: list[str] = []
+    orig = Path.write_text
+
+    def record(self, *a, **kw):
+        seen.append(str(self))
+        return orig(self, *a, **kw)
+
+    Path.write_text = record
+    try:
+        build(root)
+    finally:
+        Path.write_text = orig
+
+    assert not [s for s in seen if "mirror/pages" in s and s.endswith(".tmp")]
