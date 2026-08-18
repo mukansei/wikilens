@@ -99,8 +99,14 @@ def _cmd_build(args) -> int:
     # **진행을 찍는 것은 CLI 의 몫이다** — `build()` 는 콜백이 없으면 조용하다.
     # `sync` 가 페이지마다 찍다가 여기서 몇 분을 침묵하면 사용자는 멈춘 줄 안다.
     # `flush` 가 필요하다: 파이프로 받으면 버퍼에 갇혀 끝나야 한 번에 나온다.
+    #
+    # **`파싱` 이라고 쓰지 말 것** — 아래 요약이 그 말을 일부러 버린 자리다(그 이유는
+    # 거기 적혀 있다). 게다가 `parse()` 는 `convert.py` 에 있고 변환과 링크 추출을
+    # 함께 하므로 동사 하나로는 어차피 안 맞는다. 진행 표시에는 동사가 필요 없다 —
+    # 무엇을 세는지만 말하면 되고, 그 말은 `stats` 와 같은 `페이지` 다.
+    # `  ... ` 접두는 `sync` 의 체크포인트 줄과 같다(둘이 연달아 나온다).
     def _progress(done: int, total: int) -> None:
-        print(f"  ... 파싱 {done}/{total}", flush=True)
+        print(f"  ... 페이지 {done}/{total}", flush=True)
 
     try:
         rep = build(Path(args.root), names, threshold, progress=_progress)
