@@ -18,6 +18,18 @@ total=0
 # 꼬리 몇 줄만 보여주는데, 그 자리가 OK 로 가득 차 정작 깨진 줄이 위로 밀려났다(실측).
 broken=""
 
+# 주석을 걷어낸 뒤 grep 한다.
+#
+# **주석에 걸리는 계약은 코드가 사라져도 통과한다.** 실측: `UserStore` 의
+# `ATOMIC_MOVE` 를 지웠는데 KDoc 이 그 낱말을 갖고 있어 계약 88개가 전부 초록이었다 —
+# 등록 파일이 원자 교체를 잃었는데 아무도 안 말한다.
+#
+# 산문을 검사하는 계약(스킬 문체·README)은 이것을 쓰면 안 된다. 그쪽은 주석이 아니라
+# 문서 자체가 대상이다.
+code_has() {   # code_has <파일> <패턴>
+  sed -E 's|//.*$||; s|^[[:space:]]*[*].*$||; s|^[[:space:]]*#.*$||' "$1" | grep -q "$2"
+}
+
 check() {
   total=$((total+1))
   if eval "$2" >/dev/null 2>&1; then
@@ -110,13 +122,13 @@ check "볼트 stale 문턱이 두 판에서 같음 (7일)" \
 # 색인 문서 수는 볼트가 낡아도 안 변한다 — cron 이 멈추면 지표가 전부 초록인데 답만
 # 몇 주 낡는다. 자동 재색인을 안 만든 대가로 이 관측이 있으므로, 사라지면 안 된다.
 check "볼트 나이가 stats 와 --status 에 드러남 (cron 이 죽어도 조용하지 않게)" \
-  'grep -qF "vaultAgeDays" server/src/main/kotlin/io/wikilens/api/Controller.kt \
+  'code_has server/src/main/kotlin/io/wikilens/api/Controller.kt "vaultAgeDays" \
    && grep -qF "vaultAgeDays" plugin/client/mcp/wikilens_mcp.py'
 
 # 모델이 `answer` 를 안 부르면 `dest` 가 조용히 추정으로 돌아간다 — 검색은 정상이라
 # 겉으로 안 보인다. 서버 로그에도 안 남으므로 stats·--status 가 유일한 창구다.
 check "진술된 답이 stats 와 --status 에 드러남 (안 부르면 조용히 추정으로 돌아감)" \
-  'grep -qF "declaredDest" server/src/main/kotlin/io/wikilens/learn/TrajectoryStore.kt \
+  'code_has server/src/main/kotlin/io/wikilens/learn/TrajectoryStore.kt "declaredDest" \
    && grep -qF "declaredDest" plugin/client/mcp/wikilens_mcp.py'
 
 check "Gate LOCALIZATION 폴백 임계값 Python/Kotlin 일치 (8토큰)" \
@@ -398,7 +410,7 @@ check "볼트 설정 키가 세 곳에서 같음 (config.json 의 \"vault\")" \
 check "볼트 경로 해석처가 한 곳 (VaultLocator — 갈리면 검색은 되고 읽기만 404)" \
   '[ "$(grep -rl "props\.vaultRoot" server/src/main/kotlin | wc -l | tr -d " ")" = "1" ] \
    && grep -q "props.vaultRoot" server/src/main/kotlin/io/wikilens/vault/VaultLocator.kt \
-   && grep -q "locator.root" server/src/main/kotlin/io/wikilens/service/ContentService.kt \
+   && code_has server/src/main/kotlin/io/wikilens/service/ContentService.kt "locator.root" \
    && grep -q "locator.root" server/src/main/kotlin/io/wikilens/service/IndexingService.kt'
 
 check "서버 볼트 기본값이 상수와 application.yml 에서 같음 (폴백 판정 근거)" \
@@ -504,7 +516,7 @@ check "ACL 상속이 못 읽은 조상에서 멈춤 (계속 올라가면 자식�
 # 구별되지 않는다(조용히 실패 10·12번).
 check "사용자 등록이 재기동을 넘음 (상태 디렉터리에 원자적으로 저장)" \
   '[ -f server/src/main/kotlin/io/wikilens/acl/UserStore.kt ] \
-   && grep -q "ATOMIC_MOVE" server/src/main/kotlin/io/wikilens/acl/UserStore.kt \
+   && code_has server/src/main/kotlin/io/wikilens/acl/UserStore.kt "ATOMIC_MOVE" \
    && grep -q "store?.save(byUser)" server/src/main/kotlin/io/wikilens/acl/AclRegistry.kt'
 
 # `~/.wikilens/` 는 **두 판이 공유**하고 안에 토큰(`env.sh`)이 든다. 만드는 경로가 셋인데
