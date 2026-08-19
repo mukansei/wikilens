@@ -26,6 +26,8 @@ CLI 는 원래 환경변수만 읽었다. 그래서 `export` 가 없는 환경�
 from __future__ import annotations
 
 import json
+
+from . import scripts
 import os
 import re
 import shlex
@@ -68,20 +70,24 @@ def index_scripts() -> tuple[list[str], float]:
     `--scripts` 를 안 주면 이 값을 쓴다. 볼트 경로와 같은 파일에 두는 이유도 같다 —
     두 판이 공유하는 자리라 한 번만 정하면 된다(D10·D15).
 
-        {"indexScripts": ["hangul", "ascii"], "scriptThreshold": 0.15}
+        {"indexScripts": ["hangul", "ascii"], "scriptThreshold": 0.12}
+
+    위 `0.12` 는 **예시일 뿐 기본값이 아니다** — 안 적으면
+    `scripts.DEFAULT_THRESHOLD` 를 쓴다. 여기 기본값을 적어두면 그것이 바뀔 때
+    같이 안 고쳐진다(실제로 `0.15` 인 채로 남아 있었다).
 
     비면 전부 편입한다. **켜짐이 기본이면 처음 쓰는 사람의 문서가 조용히 사라진다.**
     """
     try:
         cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return [], 0.10
+        return [], scripts.DEFAULT_THRESHOLD
     if not isinstance(cfg, dict):
-        return [], 0.10
+        return [], scripts.DEFAULT_THRESHOLD
     v = cfg.get("indexScripts")
     names = [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
     t = cfg.get("scriptThreshold")
-    return names, float(t) if isinstance(t, (int, float)) and 0 < t < 1 else 0.10
+    return names, float(t) if isinstance(t, (int, float)) and 0 < t < 1 else scripts.DEFAULT_THRESHOLD
 
 
 #: `export KEY=VALUE` 또는 `KEY=VALUE`. 값은 shlex 가 따옴표를 푼다.

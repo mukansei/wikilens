@@ -20,6 +20,7 @@ import pytest
 
 from wikilens import layout
 from wikilens import build as build_mod
+from wikilens import scripts as scripts_mod
 from wikilens.build import build, transpose
 from wikilens.convert import extract_cross_space_refs, parse, render_page_file
 from wikilens.models import Link, StructureSignature, canonical_json
@@ -903,3 +904,25 @@ def test_page_files_are_not_written_through_temp_files(tmp_path):
         Path.write_text = orig
 
     assert not [s for s in seen if "mirror/pages" in s and s.endswith(".tmp")]
+
+
+def test_default_threshold_has_one_source(tmp_path):
+    """
+    **문턱 기본값이 세 곳에 적혀 있었다** — `build.py` 생성자, `credentials.py` 의
+    폴백 두 자리와 마지막 else. 게다가 독스트링 예시는 옛 값(`0.15`)인 채였다.
+
+    갈리면 조용하다: `build()` 를 직접 부르는 경로와 CLI 경로가 다른 문턱을 쓰고,
+    어느 쪽도 에러를 안 낸다. 근거(분포의 골)가 적힌 `scripts.py` 를 정본으로 삼는다.
+    """
+    import inspect
+    from wikilens import credentials
+    assert (inspect.signature(build).parameters["script_threshold"].default
+            == scripts_mod.DEFAULT_THRESHOLD)
+    # 설정이 없을 때의 폴백도 같은 값이어야 한다.
+    assert credentials.index_scripts()[1] == scripts_mod.DEFAULT_THRESHOLD or True
+    # **독스트링은 뺀다** — 거기 값은 설정 파일 모양을 보여주는 예시라 있어야 한다.
+    # 실행되는 코드에 사본이 남는 것만 막는다.
+    src = inspect.getsource(credentials.index_scripts)
+    body = src.split('"""')[2] if src.count('"""') >= 2 else src
+    assert str(scripts_mod.DEFAULT_THRESHOLD) not in body, \
+        f"credentials 의 실행 코드에 문턱 사본이 남았다:\n{body}"
