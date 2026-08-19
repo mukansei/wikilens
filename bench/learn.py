@@ -54,7 +54,7 @@ sys.path.insert(0, str(HERE))
 # **주소·사용자는 `harness` 가 정본이다.** 여기서 따로 들면 `rank.py` 와 다른 서버를
 # 재게 되고, 이 스크립트는 궤적을 *만드는* 물건이라 그 실수가 되돌려지지 않는다.
 from harness import (BENCH_USER, SERVER, Writer, api_get, api_post,  # noqa: E402
-                     record, require_server, select_groups)
+                     record, require_queries, require_server, select_groups)
 from queries import GROUPS, MINIMAL  # noqa: E402
 
 
@@ -167,6 +167,7 @@ def main() -> int:
         return 2
 
     # 플러그인 격리는 안 쓴다 — 순수 HTTP 라 `setup.sh server` 면 된다.
+    require_queries()
     bad = require_server(need_plugins=False)
     if bad:
         print(f"  ✗ {bad}", file=sys.stderr)

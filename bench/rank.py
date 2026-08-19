@@ -34,7 +34,7 @@ VAULT = pathlib.Path.home() / ".wikilens" / "vault"
 sys.path.insert(0, str(HERE))
 # 주소·사용자는 `harness` 가 정본이다 — 각자 들면 두 하네스가 다른 서버를 잰다.
 from harness import (BENCH_USER, SERVER, Writer, api_post, record,  # noqa: E402
-                     require_server, select_groups)
+                     require_queries, require_server, select_groups)
 from queries import GROUPS  # noqa: E402
 
 #: 모델이 질의에서 버리는 말. **없으면 로컬판에 불공정하다** — 구어체는 앞 두 낱말이
@@ -137,6 +137,7 @@ def main() -> int:
 
     # **도달 못 하면 여기서 멈춘다.** 그냥 두면 첫 질의에서 raw URLError 로 죽어
     # "서버를 안 띄웠다" 를 알기 어렵다. 플러그인 격리는 안 쓰므로 `server` 면 된다.
+    require_queries()
     bad = require_server(need_plugins=False)
     if bad:
         print(f"  ✗ {bad}", file=sys.stderr)
