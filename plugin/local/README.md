@@ -15,12 +15,14 @@ WikiLens는 **다른 문서들이 각 페이지를 링크할 때 쓴 표현**(�
 ## 설치
 
 ```
-/plugin marketplace add https://github.com/cw-smart-catalogue/wikilens.git
+/plugin marketplace add <이 저장소의 URL>
 /plugin install wikilens-local@wikilens
 ```
 
-> **비공개 저장소입니다.** 첫 줄이 되려면 `cw-smart-catalogue` 조직 접근 권한과 git
-> 자격증명(`gh auth login`)이 먼저 있어야 합니다.
+<!-- **URL 을 여기 박지 않는다.** 이 파일은 설치되면 사용자 손에 복사되는데, 배포처가
+     여럿이면(공개 저장소 · 조직 미러) 어느 하나를 적는 순간 나머지 쪽 사용자에게
+     틀린 안내가 된다. 마켓플레이스 URL 은 그것을 등록하는 문서(저장소 루트 README)가
+     알 일이고, 이 파일을 읽는 사람은 이미 설치를 마쳤다. -->
 
 그다음은 **그냥 물어보면 됩니다.** 설정이 안 돼 있으면 Claude가 알아서 알아채고
 지금 할지 물어봅니다 — 커맨드를 외울 필요 없습니다.
