@@ -37,8 +37,17 @@ class Bm25LengthNormTest {
 
     private data class C(val group: String, val gold: String, val query: String)
 
-    private val cases = listOf(
-                                                                                                                                                                                                                                                    )
+    /**
+     * **배포판에는 사례가 비어 있다 — 그래서 이 테스트는 항상 건너뛴다.**
+     *
+     * 원래 여기에는 실제 코퍼스에서 고른 질의 30개가 있었다. 그것은 실제 문서 제목과
+     * 페이지 ID 라 공개판에서 뺐고, 애초에 **그 코퍼스가 없으면 돌지도 않는다**
+     * (아래가 색인이 비면 건너뛴다).
+     *
+     * 되살리려면 `bench/queries.py` 를 자기 위키로 채운 뒤 같은 모양으로 옮겨 적으면
+     * 된다. 그 파일이 정본이고 여기는 사본이다 — 원래 그것이 이 자리의 약점이었다.
+     */
+    private val cases = emptyList<C>()
 
     // **프로덕션과 같은 것을 쓴다.** 예전에는 분석기와 질의를 여기서 손으로 다시
     // 만들고 "같은 구성이어야 한다" 는 주석으로 이어 뒀는데, 그 주석은 아무것도 안
