@@ -224,7 +224,7 @@ def api_get(path: str, timeout: float = 10) -> dict:
 
 
 def select_groups(groups: list, wanted: list[str] | None) -> list:
-    """접두어로 고른다 — `G01` 이 `G01 <그룹명>` 를 잡는다."""
+    """접두어로 고른다 — `G01` 이 `G01 <그룹명>` 을 잡는다."""
     if wanted is None:
         return list(groups)
     return [g for g in groups if any(g[0].startswith(p) for p in wanted)]
