@@ -42,10 +42,14 @@ object VaultAge {
     fun parse(raw: String?): Instant? {
         if (raw.isNullOrBlank()) return null
         for (f in FORMATS) {
-            runCatching {
-                return if (f == FORMATS[0]) LocalDateTime.parse(raw, f).toInstant(ZoneOffset.UTC)
-                else Instant.from(f.parse(raw))
-            }
+            val parsed = runCatching { f.parse(raw) }.getOrNull() ?: continue
+            // **목록 위치로 분기하지 않는다.** 전에는 `f == FORMATS[0]` 로 "존 없는
+            // 형식" 을 골랐는데, 그러면 순서를 바꾸는 순간 오프셋이 조용히 버려진다 —
+            // 실측: 형식 하나를 빼자 `+09:00` 이 `Z` 로 읽혀 9시간이 사라졌다.
+            // 파싱 결과에 존이 있는지로 판단하면 목록과 무관해진다.
+            val instant = runCatching { Instant.from(parsed) }.getOrNull()
+                ?: runCatching { LocalDateTime.from(parsed).toInstant(ZoneOffset.UTC) }.getOrNull()
+            if (instant != null) return instant
         }
         return null
     }
