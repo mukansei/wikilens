@@ -1,8 +1,7 @@
 # WikiLens
 
 <!--
-  배지는 **정적**이다 — 이 저장소는 비공개라 shields.io 가 빌드·라이선스 상태를 못 읽는다.
-  그래서 여기 적힌 버전은 손으로 복제한 값이고, 정본은 `server/build.gradle.kts` 와
+  배지의 버전은 **손으로 복제한 값**이다. 정본은 `server/build.gradle.kts` 와
   `cli/pyproject.toml` 이다. **어긋나면 `shared_contract.sh` 가 빨개진다** — 이 저장소가
   "두 곳이 같아야 하는데 연결이 없다" 로 반복해서 물린 자리라 검사를 붙였다.
 
@@ -128,18 +127,14 @@ Claude Code 안에서 **세 줄**입니다.
 저장소를 clone 할 필요가 없습니다. 마켓플레이스가 알아서 받아옵니다.
 
 ```
-/plugin marketplace add https://github.com/example-org/wikilens.git
+/plugin marketplace add https://github.com/mukansei/wikilens.git
 /plugin install wikilens-local@wikilens
 /wikilens-local:setup          # 자격증명·볼트·CLI·첫 싱크까지 한 번에
 ```
 
-준비물은 셋입니다.
+준비물은 둘입니다 — Confluence 주소와 개인 액세스 토큰(PAT).
 
-| | |
-|---|---|
-| Confluence 주소 | |
-| 개인 액세스 토큰(PAT) | 없으면 `setup` 이 발급처를 안내합니다 |
-| **저장소 접근 권한** | 비공개 저장소라 **첫 줄이 여기서 막힙니다.** `gh auth login` 또는 git credential helper 가 먼저 있어야 합니다 |
+토큰이 없으면 `setup` 이 발급처를 안내합니다.
 
 나머지는 `setup` 이 합니다.
 
@@ -191,7 +186,7 @@ crontab -e
 <summary><b>플러그인 없이 CLI 만</b> — cron·서버 운영자용</summary>
 
 ```bash
-git clone https://github.com/example-org/wikilens.git && cd wikilens
+git clone https://github.com/mukansei/wikilens.git && cd wikilens
 python3 -m venv ~/.wikilens/venv && ~/.wikilens/venv/bin/pip install ./cli
 
 mkdir -p ~/.wikilens && chmod 700 ~/.wikilens
@@ -272,7 +267,7 @@ export CONFLUENCE_PREFIX=""        # Server/DC 강제
 > 아래 세 단계가 전부이고, 아니면 [시행을 켜세요](#권한-시행을-켜려면).
 
 ```bash
-git clone https://github.com/example-org/wikilens.git && cd wikilens
+git clone https://github.com/mukansei/wikilens.git && cd wikilens
 
 python3 -m venv ~/.wikilens/venv && ~/.wikilens/venv/bin/pip install ./cli
 WL=~/.wikilens/venv/bin/wikilens        # 이 자리는 PATH 에 없습니다 (D15)
