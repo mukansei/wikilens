@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+import wikilens.acl as acl_mod
 from wikilens.acl import GROUP_PREFIX, SPACE_PREFIX, collect
 
 
@@ -248,3 +249,22 @@ def test_outside_ancestor_failures_do_not_block_the_write(tmp_path):
     assert rep.failed == 3, "밖의 조상 실패는 사용자에게 계속 보고한다"
     assert rep.wrote, "페이지는 다 성공했는데 파일을 안 썼다"
     assert written(root) == {"1": [GROUP_PREFIX + "eng"], "2": [GROUP_PREFIX + "ops"]}
+
+
+def test_collect_reports_progress_without_verbose(tmp_path, capsys):
+    """
+    이 코퍼스에서 대상이 13,949건이고 응답이 50~200ms 면 **12~46분**이다. 그동안
+    한 줄도 안 찍히면 사용자는 멈춘 줄 안다 — `build` 가 2분 28초로 같은 문제를
+    냈던 자리와 같고 여기는 10~20배 길다.
+
+    게다가 이 명령은 **`sync` 보다 자주** 돌려야 한다(권한 변경은 `lastModified` 를
+    안 건드려 증분 sync 가 영영 못 잡는다). 자주 돌 것이 조용하면 안 된다.
+
+    간격이 아니라 **말을 하는지**를 잠근다 — 간격은 튜닝 값이다.
+    """
+    n = acl_mod.PROGRESS_EVERY + 1
+    pages = {str(700000000 + i): {"space": "S", "ancestors": []} for i in range(n)}
+    root = vault(tmp_path, pages)
+    collect(root, FakeClient({}), verbose=False)
+    out = capsys.readouterr().out
+    assert "권한" in out and "/" in out, f"진행 표시가 없다: {out[:200]!r}"
