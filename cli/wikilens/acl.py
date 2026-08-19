@@ -43,6 +43,9 @@ from . import layout
 #: 제한이 없는 페이지가 받는 토큰. 스페이스 키가 붙는다.
 SPACE_PREFIX = "@space:"
 
+#: 진행 표시 간격(페이지). 200건이면 응답 100ms 기준 약 20초 간격이다.
+PROGRESS_EVERY = 200
+
 #: 사용자·그룹 제한 토큰. 서버는 문자열 일치만 보므로 접두사로 종류를 구분해 둔다.
 USER_PREFIX = "user:"
 GROUP_PREFIX = "group:"
@@ -132,8 +135,12 @@ def _fetch_direct(client, pages: dict, rep: AclReport,
                 rep.page_failed += 1
         if sleep_s:
             time.sleep(sleep_s)
-        if verbose and i % 200 == 0:
-            print(f"  {i}/{len(targets)} …", flush=True)
+        # **`--verbose` 뒤에 두면 안 된다.** 이 코퍼스에서 대상이 13,949건이고 응답이
+        # 50~200ms 면 **12~46분**이다(실측 규모). 그동안 한 줄도 안 찍히면 사용자는
+        # 멈춘 줄 안다 — `build` 가 2분 28초로 같은 문제를 냈던 자리와 같고, 여기는
+        # 그보다 10~20배 길다. 게다가 이 명령은 **sync 보다 자주** 돌려야 한다.
+        if i % PROGRESS_EVERY == 0 or i == len(targets):
+            print(f"  ... 권한 {i}/{len(targets)}", flush=True)
     return direct
 
 
