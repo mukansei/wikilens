@@ -7,6 +7,7 @@ import io.wikilens.learn.TrajectoryStore
 import io.wikilens.service.ContentService
 import io.wikilens.service.IndexingService
 import io.wikilens.service.SearchService
+import io.wikilens.vault.VaultAge
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.*
@@ -151,6 +152,12 @@ class Controller(
             // `build` 가 문자 집합으로 뺀 문서 수. **0 이 아니면 볼트에는 있는데 서버
             // 에서는 없는 문서가 그만큼**이다 — 넷 다 못 찾는다.
             "indexScripts" to indexing.scriptFilter,
+            // **색인 문서 수는 낡아도 안 변한다.** cron 이 멈추면 지표가 전부 초록인데
+            // 답만 몇 주 낡는다 — 로컬판은 `AGE_DAYS`·`stale` 로 이미 말하고 있었고
+            // 서버만 빠져 있었다. null 은 "안 낡았다" 가 아니라 "모른다" 다.
+            "vaultSyncedAt" to indexing.syncedAt?.toString(),
+            "vaultAgeDays" to indexing.vaultAgeDays,
+            "vaultStale" to VaultAge.isStale(indexing.vaultAgeDays),
             "droppedByScript" to indexing.droppedByScript,
             "grepEngine" to content.engineName,
             "grepEngineUsable" to content.engineUsable,

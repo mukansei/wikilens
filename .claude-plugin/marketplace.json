@@ -13,7 +13,7 @@
       "name": "wikilens-client",
       "source": "./plugin/client",
       "description": "팀 공용 서버가 색인한 Confluence 위키를 검색합니다. 다른 문서가 이 페이지를 부르는 이름(앵커 텍스트)까지 색인해 제목에 없는 표현으로도 찾고, 한국어 형태소 분석과 팀의 탐색 이력 학습이 더해집니다. 내 디스크에는 아무것도 받지 않습니다 — 서버가 요청마다 권한을 확인합니다. wikilens-local 과 함께 켜져 있으면 이쪽이 우선합니다.",
-      "version": "0.14.12",
+      "version": "0.14.13",
       "category": "documentation"
     },
     {

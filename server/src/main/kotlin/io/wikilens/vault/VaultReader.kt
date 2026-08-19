@@ -130,6 +130,22 @@ class VaultReader(private val mapper: ObjectMapper) {
      * 전부 색인하는 것이 맞다. 못 읽으면 경고하고 빈 집합으로 간다: 여기서 fail-closed
      * 로 가면 파일 하나 깨진 것이 **전 문서 소실**이 된다.
      */
+    /**
+     * 볼트가 마지막으로 싱크된 시점(`.sync-state.json` 의 `cursor`). 못 읽으면 null.
+     *
+     * **null 은 "안 낡았다" 가 아니라 "모른다" 다** — 커서가 없는 볼트는 첫 싱크
+     * 전이거나 상태 파일이 깨진 것이고, 둘 다 0일로 보고하면 안 된다.
+     */
+    fun readSyncCursor(root: Path): java.time.Instant? {
+        val p = root.resolve("mirror").resolve(".sync-state.json")
+        if (!Files.exists(p)) return null
+        return runCatching {
+            @Suppress("UNCHECKED_CAST")
+            val m = mapper.readValue(Files.readString(p), Map::class.java) as Map<String, Any?>
+            VaultAge.parse(m["cursor"] as? String)
+        }.getOrNull()
+    }
+
     fun readExcluded(root: Path): Excluded {
         val p = root.resolve("derived").resolve("excluded.json")
         if (!Files.exists(p)) return Excluded()

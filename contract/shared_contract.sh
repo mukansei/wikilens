@@ -102,6 +102,17 @@ check "문자 집합 판정이 본문만 봄 (미리보기와 build 가 같은 �
   'grep -qF "foreign_word_ratio(md, ranges)" cli/wikilens/build.py \
    && grep -qF "foreign_word_ratio(md, ranges)" cli/wikilens/cli.py'
 
+# 두 판이 같은 볼트에 다른 날짜로 "낡았다" 고 말하면 판을 옮긴 사용자가 다른 진단을
+# 받는다. 문턱은 한 값이어야 한다 — Python 7 · Kotlin 7.
+check "볼트 stale 문턱이 두 판에서 같음 (7일)" \
+  'grep -q "STALE_DAYS = 7$" plugin/local/scripts/vault_status.py \
+   && grep -q "STALE_DAYS = 7L" server/src/main/kotlin/io/wikilens/vault/VaultAge.kt'
+# 색인 문서 수는 볼트가 낡아도 안 변한다 — cron 이 멈추면 지표가 전부 초록인데 답만
+# 몇 주 낡는다. 자동 재색인을 안 만든 대가로 이 관측이 있으므로, 사라지면 안 된다.
+check "볼트 나이가 stats 와 --status 에 드러남 (cron 이 죽어도 조용하지 않게)" \
+  'grep -qF "vaultAgeDays" server/src/main/kotlin/io/wikilens/api/Controller.kt \
+   && grep -qF "vaultAgeDays" plugin/client/mcp/wikilens_mcp.py'
+
 # 모델이 `answer` 를 안 부르면 `dest` 가 조용히 추정으로 돌아간다 — 검색은 정상이라
 # 겉으로 안 보인다. 서버 로그에도 안 남으므로 stats·--status 가 유일한 창구다.
 check "진술된 답이 stats 와 --status 에 드러남 (안 부르면 조용히 추정으로 돌아감)" \
