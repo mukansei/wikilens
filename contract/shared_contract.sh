@@ -214,7 +214,7 @@ if not inst.exists(): sys.exit(0)
 have=json.loads(inst.read_text())[\"plugins\"]
 for e in mp[\"plugins\"]:
     for rec in have.get(e[\"name\"]+\"@\"+mp[\"name\"], []):
-        if rec[\"version\"] != e[\"version\"]: continue   # 버전이 다르면 재설치하면 될 일
+        if rec[\"version\"] != e[\"version\"]: continue   # 버전 차이는 아래 계약이 본다
         cache=pathlib.Path(rec[\"installPath\"])
         src=pathlib.Path(e[\"source\"].lstrip(\"./\"))
         d=filecmp.dircmp(str(cache), str(src), ignore=[\"__pycache__\"])
@@ -225,6 +225,43 @@ for e in mp[\"plugins\"]:
         bad=diffs(d)
         assert not bad, (e[\"name\"], e[\"version\"], bad[:3])
 "'
+# **버전이 뒤처진 것은 위 계약이 건너뛴다**(내용 비교가 무의미하므로 그건 맞다). 그런데
+# 아무도 재설치하라고 말해주지 않아, 소스만 올리고 설치본은 몇 버전 뒤에 남는다 —
+# 실측(2026-08-19): 하루에 다섯 번 올렸더니 `client` 가 설치 0.14.10 · 소스 0.14.13 으로
+# 벌어졌는데 `./check.sh` 는 내내 초록이었다. **그 사이 만든 진단(`DECLARED_DEST`·
+# `VAULT_AGE`)이 사용자에게는 존재하지 않는 상태였다** — 저장소 소스로 테스트하면 보이고
+# 설치본으로는 안 보인다.
+#
+# 실패로 잡는 이유: 이 저장소의 판정 기준이 **저장소가 아니라 설치본**이다(조용히 실패
+# 11번). 설치본이 뒤처졌다는 것은 지금 검증하는 것이 배포될 것과 다르다는 뜻이다.
+#
+# **재설치만으로는 안 고쳐진다 — 층이 셋이다**(2026-08-19 실측). `/plugin install` 은
+# 작업본이 아니라 **마켓플레이스 클론**(`~/.claude/plugins/marketplaces/<name>`)에서
+# 복사하고, 그 클론은 원격에서 받는다. 그날 클론이 33커밋 뒤였고, 재설치했더니
+# `✓ Installed` 가 뜨면서 **같은 옛 버전이 다시 깔렸다.**
+#
+#     작업본 → (push) → 원격 → (marketplace update) → 클론 → (install) → 설치본
+#
+# 그래서 아래 메시지가 세 단계를 다 말한다. 하나만 하면 조용히 제자리다.
+check "설치된 플러그인이 소스 버전 이상 (뒤처지면 만든 것이 사용자에게 없다)" \
+  'python3 -c "
+import json,pathlib,sys
+def ver(v): return tuple(int(x) for x in str(v).split(\".\"))
+mp=json.loads(pathlib.Path(\".claude-plugin/marketplace.json\").read_text())
+inst=pathlib.Path.home()/\".claude/plugins/installed_plugins.json\"
+if not inst.exists(): sys.exit(0)          # 설치한 적 없는 머신에서는 판정하지 않는다
+have=json.loads(inst.read_text())[\"plugins\"]
+stale=[]
+for e in mp[\"plugins\"]:
+    recs=have.get(e[\"name\"]+\"@\"+mp[\"name\"], [])
+    if not recs: continue                  # 안 깔았으면 이 계약의 대상이 아니다
+    for rec in recs:
+        if ver(rec[\"version\"]) < ver(e[\"version\"]):
+            stale.append(e[\"name\"]+\" 설치 \"+rec[\"version\"]+\" < 소스 \"+e[\"version\"])
+assert not stale, (\"설치본이 뒤처짐: \"+\" · \".join(stale)
+    +\" — 재설치만으로는 안 된다. push → /plugin marketplace update <name> → /plugin install\")
+"'
+
 # 플러그인 `name` 은 **불변 슬러그**다. 사용자가 그 이름으로 설치해 두므로 바꾸면
 # 기존 설치가 `plugin-not-found` 로 깨진다 (공식 마켓플레이스 README 가 명시).
 # 탈출구가 `renames` 맵이고, 로더가 이걸 읽어 옛 슬러그를 새 슬러그로 다시 쓴다.
