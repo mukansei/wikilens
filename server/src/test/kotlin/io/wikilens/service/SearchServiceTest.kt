@@ -111,6 +111,32 @@ class SearchServiceTest {
     }
 
     @Test
+    fun `학습이 순위를 실제로 바꾼다 — 가중치가 죽으면 빨개진다`() {
+        // **이 테스트가 없으면 학습 레이어를 통째로 꺼도 전부 초록이었다**(실측:
+        // `LEARNED_WEIGHT = 0.0` 으로 두고 계약 88개 + JUnit 전부 통과).
+        //
+        // 다른 테스트들은 존재·라벨(`learned`/`both`)·권한만 본다. 가중치가 0 이어도
+        // 후보는 여전히 `acc` 에 들어가고 라벨도 그대로 붙으므로 하나도 안 깨진다.
+        // 그런데 **순위를 바꾸는 것이 이 층의 존재 이유다** — 안 바뀌면 RRF 융합은
+        // 비싼 no-op 이고, 그 사실이 어디에도 안 드러난다.
+        // 두 문서가 다 걸리는 질의여야 "순위가 바뀌었다" 를 볼 수 있다.
+        val q = "로그인 커피"
+
+        // 학습 전 순위.
+        val before = svc.search(SearchRequest(query = q, userKey = user, limit = 8)).hits.map { it.pageId }
+        assertTrue(before.size >= 2, "픽스처가 어휘로 2건 이상을 내야 이 테스트가 성립한다 (got=$before)")
+
+        // 어휘 1위가 아닌 문서를 목적지로 학습시킨다.
+        val target = before[1]
+        repeat(8) { train("rank$it", q, target) }
+
+        val after = svc.search(SearchRequest(query = q, userKey = user, limit = 8)).hits.map { it.pageId }
+        assertEquals(target, after.first(),
+            "학습한 목적지가 1위로 안 올라왔다 — LEARNED_WEIGHT 나 boost 식이 죽었다 " +
+            "(before=$before · after=$after)")
+    }
+
+    @Test
     fun `limit 은 버려진 후보가 아니라 실제 결과 수를 센다`() {
         // 예전엔 take 가 필터보다 먼저라, 버려질 후보가 limit 슬롯을 먹어
         // 요청한 것보다 적게 나갔다.
