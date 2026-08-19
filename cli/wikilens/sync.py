@@ -57,6 +57,9 @@ class SyncReport:
     unchanged: int = 0
     failed: int = 0
     removed: list = field(default_factory=list)
+    #: 빈 목록이 와서 삭제 판정을 건너뛴 스페이스. **조용하면 안 된다** — 사용자는
+    #: `--full` 이 삭제를 봤다고 믿는데 실제로는 아무것도 안 본 상태다.
+    delete_skipped: list = field(default_factory=list)
     spaces: list = field(default_factory=list)
     elapsed_s: float = 0.0
     resumed_from: str | None = None
@@ -500,9 +503,29 @@ def sync(root: Path, client: ConfluenceClient, spaces: list,
         report.referenced = _expand_referenced(root, client, state, spaces, follow_refs_cap, verbose)
 
     if full:
-        live = set()
-        for space in spaces:
-            live |= client.list_page_ids(space)
+        # **스페이스별로 나눠 받는다.** 합쳐 놓으면 한 스페이스가 빈 목록을 줘도
+        # 다른 스페이스의 결과에 묻혀 아래 가드가 못 본다.
+        live_by_space = {space: client.list_page_ids(space) for space in spaces}
+
+        # **빈 목록으로는 지우지 않는다.** `search` 는 오류를 던지지만 "HTTP 200 ·
+        # results=[]" 는 오류가 아니다 — 스페이스 키가 바뀌었거나 Confluence 가
+        # 일시적으로 빈 응답을 주면 그렇게 온다. 그대로 두면 **그 스페이스의 원본까지
+        # 통째로 지워진다**(실측: 5건 → 0건). `mirror/raw/` 가 사라지면 "원본은 안
+        # 지우므로 재빌드로 돌아온다" 는 안전망도 함께 없어져, 복구가 수 시간짜리
+        # 재싱크가 된다.
+        #
+        # 서버가 빈 볼트로 색인을 덮지 않는 것과 같은 판단이다(조용히 실패 14번).
+        # 그쪽은 재색인 15초면 복구되는데 이쪽은 그렇지 않아 더 엄해야 한다.
+        #
+        # **부분 응답(5,000건 중 3건)은 이 가드가 못 잡는다.** 비율 문턱은 손으로
+        # 정하는 값이라 안 넣었다 — 필요해지면 재고 넣을 자리다.
+        for space, live_ids in live_by_space.items():
+            if not live_ids and any(m.get("space") == space for m in state["pages"].values()):
+                report.delete_skipped.append(space)
+        if report.delete_skipped:
+            spaces = [sp for sp in spaces if sp not in report.delete_skipped]
+
+        live = set().union(*live_by_space.values()) if live_by_space else set()
         for pid in list(state["pages"]):
             # --follow-refs 로 받은 위성 페이지는 지정 스페이스 소속이 아니므로
             # 이 삭제 판정 대상이 아니다 — 아니면 매번 삭제됐다 다시 받아진다.

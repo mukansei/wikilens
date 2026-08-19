@@ -570,3 +570,54 @@ def test_failed_page_is_retried_by_the_next_sync(server, tmp_path, monkeypatch):
     rep2 = sync(tmp_path, c, ["PLATFORM"])
     assert rep2.fetched == 1, "실패한 페이지를 다시 안 받았다 — 커서가 그냥 넘어갔다"
     assert layout.raw_path(tmp_path, "500000003").exists(), "미러에 아예 없다"
+
+
+def test_full_resync_refuses_to_delete_on_empty_listing(server, tmp_path):
+    """
+    **`--full` 이 빈 목록을 받으면 볼트를 통째로 지웠다**(실측: 5건 → 0건).
+
+    `search` 는 오류를 던지지만 "HTTP 200 · results=[]" 는 오류가 아니다 — 스페이스
+    키가 바뀌었거나 Confluence 가 일시적으로 빈 응답을 주면 그렇게 온다. 지워지는
+    것에 `mirror/raw/` 가 포함되므로 **"원본은 안 지우니 재빌드로 돌아온다" 는
+    안전망까지 함께 사라지고**, 복구가 수 시간짜리 재싱크가 된다.
+
+    서버가 빈 볼트로 색인을 덮지 않는 것과 같은 판단이다 — 그쪽은 재색인 15초면
+    복구되는데 이쪽은 그렇지 않아 더 엄해야 한다.
+    """
+    FakeConfluence.pages = [
+        {"id": f"61000000{i}", "title": f"문서 {i}", "space": {"key": "PLATFORM"},
+         "version": {"number": 1, "when": "2026-07-30T00:00:00.000Z"},
+         "body": {"storage": {"value": "<p>본문</p>"}}}
+        for i in range(1, 4)
+    ]
+    c = ConfluenceClient(server, BasicAuth("me@corp", "tok"))
+    sync(tmp_path, c, ["PLATFORM"])
+    before = sorted(p.name for p in (tmp_path / "mirror" / "raw").rglob("*.xhtml"))
+    assert before, "픽스처가 아무것도 안 받았다"
+
+    FakeConfluence.pages = []                      # 200 · results=[]
+    rep = sync(tmp_path, c, ["PLATFORM"], full=True)
+
+    after = sorted(p.name for p in (tmp_path / "mirror" / "raw").rglob("*.xhtml"))
+    assert after == before, "빈 목록에 원본이 지워졌다 — 재싱크 말고는 복구가 없다"
+    assert rep.removed == []
+    # **조용하면 안 된다** — 사용자는 `--full` 이 삭제를 봤다고 믿는다.
+    assert rep.delete_skipped == ["PLATFORM"]
+
+
+def test_full_resync_still_deletes_when_listing_is_healthy(server, tmp_path):
+    """가드가 삭제 자체를 막으면 `--full` 이 하는 일이 없어진다."""
+    FakeConfluence.pages = [
+        {"id": f"62000000{i}", "title": f"문서 {i}", "space": {"key": "PLATFORM"},
+         "version": {"number": 1, "when": "2026-07-30T00:00:00.000Z"},
+         "body": {"storage": {"value": "<p>본문</p>"}}}
+        for i in range(1, 4)
+    ]
+    c = ConfluenceClient(server, BasicAuth("me@corp", "tok"))
+    sync(tmp_path, c, ["PLATFORM"])
+
+    FakeConfluence.pages = FakeConfluence.pages[:2]      # 하나가 실제로 사라졌다
+    rep = sync(tmp_path, c, ["PLATFORM"], full=True)
+    assert rep.removed == ["620000003"], rep.removed
+    assert rep.delete_skipped == []
+    assert not layout.raw_path(tmp_path, "620000003").exists()
