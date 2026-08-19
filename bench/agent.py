@@ -39,7 +39,7 @@ VAULT = pathlib.Path.home() / ".wikilens" / "vault"
 sys.path.insert(0, str(HERE))
 # 주소·사용자는 `harness` 가 정본이다 — 각자 들면 세 하네스가 다른 서버를 잰다.
 from harness import (BENCH_USER, COMMIT, DIRTY, SERVER, Writer,  # noqa: E402
-                     done_keys, record, require_server, select_groups,
+                     done_keys, record, require_queries, require_server, select_groups,
                      trajectory_count)
 from queries import GROUPS, MINIMAL  # noqa: E402
 
@@ -344,6 +344,7 @@ def main() -> int:
     # **서버가 없으면 시작하지 않는다.** 그냥 두면 C 세션이 전부 실패하면서
     # 세션당 $0.53 을 태운다 — 30세션이면 $16 을 버리고 나서야 안다.
     # 이쪽만 플러그인 격리가 필요하므로 `up` 을 안내한다.
+    require_queries()
     bad = require_server(need_plugins=True)
     if bad:
         print(f"  ✗ {bad}", file=sys.stderr)

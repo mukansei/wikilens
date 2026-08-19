@@ -230,6 +230,31 @@ def select_groups(groups: list, wanted: list[str] | None) -> list:
     return [g for g in groups if any(g[0].startswith(p) for p in wanted)]
 
 
+#: 배포판의 `queries.py` 가 들고 있는 자리표시자 pageId.
+#:
+#: **판정을 `queries.py` 가 아니라 여기 둔다.** 그 파일은 코퍼스마다 갈리는 데이터라
+#: 판정 코드를 같이 두면 브랜치마다 다른 가드를 갖게 되고, 한쪽이 `return False` 로
+#: 굳으면 자명하게 참인 단언이 된다(이 저장소가 한 번 겪은 자리).
+PLACEHOLDER_IDS = frozenset({"000000001", "000000002", "000000003"})
+
+
+def require_queries() -> None:
+    """
+    `queries.py` 가 아직 템플릿이면 **여기서 끊는다.**
+
+    자리표시자 pageId 로 돌리면 전 그룹이 0건인데, 그것은 "이 도구의 검색이 나쁘다"
+    와 구별되지 않는다 — 이 저장소가 반복해서 지워온 실패 모양(조용히 틀린 답)이고,
+    비싼 벤치라면 돈까지 쓴다. 세 하네스가 공유하는 자리는 여기 하나다.
+    """
+    from queries import GROUPS
+    if any(pid in PLACEHOLDER_IDS for _, pid, _, _ in GROUPS):
+        raise SystemExit(
+            "bench/queries.py 가 아직 템플릿입니다 — 자리표시자 pageId 로는 전부 0건이 나옵니다.\n"
+            "  당신의 위키에서 답이 분명한 문서를 골라 GROUPS 를 채우세요.\n"
+            "  만드는 규칙은 그 파일 맨 위에 있습니다."
+        )
+
+
 def require_server(need_plugins: bool) -> str:
     """
     벤치 서버에 닿나. 못 닿으면 **무엇을 돌려야 하는지**를 문장으로 돌려준다.
