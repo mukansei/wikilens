@@ -2,6 +2,7 @@ package io.wikilens.service
 
 import io.wikilens.acl.AclRegistry
 import io.wikilens.index.LuceneIndex
+import io.wikilens.vault.VaultAge
 import io.wikilens.vault.VaultLocator
 import io.wikilens.vault.VaultReader
 import org.slf4j.LoggerFactory
@@ -35,6 +36,17 @@ class IndexingService(
     /** `build` 가 쓴 설정. 서버에는 이 설정이 없으므로 볼트가 말해주는 값이다. */
     @Volatile private var scripts_ = "꺼짐"
     val scriptFilter: String get() = scripts_
+
+    /**
+     * 마지막 싱크 시점. **적재할 때 읽어 붙잡는다** — 요청마다 파일을 다시 열면
+     * `grep` 이 볼트 경로를 요청마다 풀다가 스캔에 10% 를 얹었던 것과 같은 자리가 된다.
+     *
+     * 그래서 이 값은 **마지막 적재 기준**이다. 그 뒤에 싱크가 돌았어도 재색인 전에는
+     * 안 바뀌는데, 그것이 오히려 맞다 — 서빙 중인 색인이 언제 것인지를 말해야 한다.
+     */
+    @Volatile private var cursor_: java.time.Instant? = null
+    val syncedAt: java.time.Instant? get() = cursor_
+    val vaultAgeDays: Long? get() = VaultAge.ageDays(cursor_)
 
     /** 볼트 위치는 [VaultLocator] 하나가 정한다 — 여기서 다시 풀면 read 와 갈린다. */
     val vaultRoot: Path get() = locator.root
@@ -87,6 +99,21 @@ class IndexingService(
             }
         }
         dropped_ = dropped
+        cursor_ = vault.readSyncCursor(root)
+        // **cron 이 죽으면 아무도 모른다.** 색인 문서 수는 그대로라 지표가 전부 초록인데
+        // 답만 몇 주 낡는다. 자동 재색인을 안 만든 대가로 이 경고가 있다(타이머는 싱크
+        // 도중에 터져 반쪽 볼트를 색인할 수 있어 `&&` 사슬을 깬다).
+        VaultAge.ageDays(cursor_).let { age ->
+            when {
+                cursor_ == null -> log.warn(
+                    "볼트에 싱크 커서가 없습니다 — 첫 싱크 전이거나 .sync-state.json 이 깨졌습니다. " +
+                    "이 서버는 볼트가 언제 것인지 모릅니다.")
+                VaultAge.isStale(age) -> log.warn(
+                    "볼트가 {}일 됐습니다({} 이후 싱크 없음) — 자동 싱크가 멈췄는지 확인하세요. " +
+                    "검색은 정상으로 보이지만 답이 그만큼 낡았습니다.", age, cursor_)
+                else -> log.info("볼트 싱크 시점 {} ({}일 전)", cursor_, age)
+            }
+        }
         index.rebuild(kept)
         return LoadResult(kept.size, acl.pageCount(), droppedByScript = dropped)
     }

@@ -222,6 +222,21 @@ def _probe_index(s: dict) -> bool:
                   " 그 문서는 검색·읽기·grep·목차 어디에도 안 나옵니다.")
             print("  의도한 것이 아니면 운영자가 `wikilens.index-scripts` 를 확인해야 합니다"
                   " (비우면 전부 색인합니다).")
+
+    # **색인 문서 수는 볼트가 낡아도 안 변한다.** 자동 싱크가 멈추면 지표가 전부
+    # 초록인데 답만 몇 주 낡는다 — 에러가 아니라 침묵이라 아무도 안 본다.
+    # 로컬판은 `AGE_DAYS`·`STATUS=stale` 로 이미 말하고 있었고 서버만 빠져 있었다.
+    age = s.get("vaultAgeDays")
+    if age is None:
+        # **"안 낡았다" 가 아니라 "모른다" 다.** 첫 싱크 전이거나 상태 파일이 깨졌다.
+        # 옛 서버라 필드 자체가 없는 경우도 여기로 오는데, 어느 쪽이든 나이를 모른다.
+        print("VAULT_AGE=(모름 — 싱크 커서가 없거나 서버가 옛 판입니다)")
+    else:
+        print(f"VAULT_AGE={age}일 (싱크 {s.get('vaultSyncedAt')})")
+        if s.get("vaultStale"):
+            print(f"\n볼트가 {age}일 됐습니다 — **자동 싱크가 멈췄는지 확인하세요.**")
+            print("  검색은 정상으로 보이지만 그만큼 낡은 답을 주고 있습니다.")
+            print("  갱신은 호스트에서: wikilens sync … && curl -XPOST …/api/admin/reindex")
     return ok
 
 
