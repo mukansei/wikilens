@@ -114,6 +114,16 @@ check "문자 집합 판정이 본문만 봄 (미리보기와 build 가 같은 �
   'grep -qF "foreign_word_ratio(md, ranges)" cli/wikilens/build.py \
    && grep -qF "foreign_word_ratio(md, ranges)" cli/wikilens/cli.py'
 
+# **테스트 디렉터리가 `testpaths` 에서 빠지면 조용히 안 돌아간다.** `check.sh` 는
+# pytest 의 종료 코드로 판정하는데, 수집이 줄어든 것은 성공이므로 `PASS pytest —
+# 138 passed` 로 정상처럼 보인다(실측: `bench/tests plugin/tests` 를 빼자 105개가
+# 사라졌는데 넷 다 초록). 테스트를 지우는 것과 안 돌리는 것은 같은 결과인데
+# 후자는 diff 한 줄이다.
+check "테스트 디렉터리가 전부 pytest 수집 대상 (빠지면 조용히 안 돈다)" \
+  'for d in cli/tests plugin/tests bench/tests; do
+     grep -q "^testpaths = .*$d" pytest.ini || exit 1
+   done'
+
 # 두 판이 같은 볼트에 다른 날짜로 "낡았다" 고 말하면 판을 옮긴 사용자가 다른 진단을
 # 받는다. 문턱은 한 값이어야 한다 — Python 7 · Kotlin 7.
 check "볼트 stale 문턱이 두 판에서 같음 (7일)" \
