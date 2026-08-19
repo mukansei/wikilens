@@ -56,4 +56,25 @@ class ReliabilityThresholdTest {
         assertTrue(Reliability.meetsThreshold(20, 0, 0.30, serveThreshold))
         assertFalse(Reliability.meetsThreshold(0, 0, 0.30, serveThreshold))
     }
+
+    @Test
+    fun `서빙 문턱 기본값이 실제로 게이트 노릇을 한다`() {
+        // **돌연변이 감사로 나왔다**: `serveThreshold` 기본값을 `0.45 → 0.0` 으로 내려도
+        // 계약 88개와 JUnit 전부가 초록이었다. 그러면 **한 번 관측된 목적지가 전부
+        // 힌트로 서빙된다** — 학습 레이어가 잡음을 그대로 검색 결과에 붓는다.
+        //
+        // 안 잡힌 이유가 구조적이다: 다른 테스트 대부분이 `serveThreshold = 0.0` 으로
+        // 게이트를 **일부러 우회**하고(그쪽 관심사가 아니다), 0.45 를 쓰는 이 파일은
+        // 위에 **자기 사본**을 들고 있었다. 프로덕션 기본값에 걸린 단언이 없었다.
+        assertEquals(serveThreshold, TrajectoryStore.DEFAULT_SERVE_THRESHOLD,
+            "이 파일의 사본이 프로덕션 기본값과 갈렸다")
+
+        // 게이트가 실제로 막고 실제로 연다. 사전확률 0.3(어휘에 없는 페이지의 기본값) ·
+        // 커버리지 1.0 에서 측정한 경계는 6승(0.4419) 과 7승(0.4816) 사이다.
+        assertFalse(Reliability.meetsThreshold(1, 0, 0.30, serveThreshold),
+            "1관측이 서빙되면 잡음이 그대로 결과에 실린다")
+        assertFalse(Reliability.meetsThreshold(6, 0, 0.30, serveThreshold))
+        assertTrue(Reliability.meetsThreshold(7, 0, 0.30, serveThreshold),
+            "충분히 확인된 목적지가 영원히 안 서빙되면 학습 레이어가 죽은 것과 같다")
+    }
 }
