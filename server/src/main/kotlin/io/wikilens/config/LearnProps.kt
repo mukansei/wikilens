@@ -1,5 +1,7 @@
 package io.wikilens.config
 
+import io.wikilens.learn.TrajectoryStore
+
 /**
  * `wikilens.learn.*`.
  *
@@ -9,7 +11,7 @@ package io.wikilens.config
  */
 data class LearnProps(
     /** EB 하한이 이 값 미만이면 힌트를 서빙하지 않는다. */
-    val serveThreshold: Double = 0.45,
+    val serveThreshold: Double = TrajectoryStore.DEFAULT_SERVE_THRESHOLD,
     /** 앞 질의와 키워드가 이만큼 겹치면 앞 시도를 실패로 본다. */
     val reformulationOverlap: Double = 0.5,
     /** 이만큼 조용하면 세션이 끝난 것으로 본다. */

@@ -6,13 +6,25 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class TrajectoryStore(
     private val sink: TrajectorySink,
-    private val serveThreshold: Double = 0.45,
+    private val serveThreshold: Double = DEFAULT_SERVE_THRESHOLD,
     /** 앞 질의와 키워드가 이만큼 겹치면 앞 시도가 실패한 것으로 본다. */
     private val reformulationOverlap: Double = 0.5,
 ) {
     private val sessions = ConcurrentHashMap<String, Session>()
 
     companion object {
+        /**
+         * EB 하한이 이 값 미만이면 힌트를 서빙하지 않는다.
+         *
+         * **여기가 정본이다.** 전에는 이 파일과 `LearnProps` 두 곳에 `0.45` 가 적혀
+         * 있었다. 프로덕션은 `LearnProps` 쪽을 쓰고(`WikiLensApplication` 이 넘긴다)
+         * 이 생성자 기본값은 테스트만 쓰므로, 갈리면 **테스트가 프로덕션과 다른
+         * 문턱을 검증**하게 된다 — 그러고도 전부 초록이다.
+         *
+         * 측정한 경계(사전확률 0.3 · 커버리지 1.0): 6승 0.4419 · 7승 0.4816.
+         * 즉 한 목적지가 7번쯤 확인돼야 서빙된다.
+         */
+        const val DEFAULT_SERVE_THRESHOLD = 0.45
         /** `sessionId` 길이 상한. MCP 프록시가 만드는 것은 30자 안쪽이다. */
         const val MAX_SESSION_ID = 128
 
