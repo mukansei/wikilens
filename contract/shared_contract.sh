@@ -368,8 +368,12 @@ sys.exit(1 if missing else 0)
 # 파이썬은 `USERPROFILE` 을 보고 Git Bash 의 `HOME` 은 홈 드라이브로 잡혀 있을 수 있다.
 # 갈리면 래퍼가 소싱한 파일과 CLI 가 읽는 파일이 달라 **자격증명이 있는데 없다고 죽는다**
 # (macOS JDK 의 `user.home` vs `HOME` 과 같은 실패 — 조용히 실패 20번).
+# **교대(`A|B`)로 쓰면 안 된다.** 예전에는 `^(ENV_PATH = CONFIG_DIR|CONFIG_DIR = …)`
+# 였는데, 앞쪽이 파일명을 안 봐서 `env.sh` → `env2.sh` 로 바꿔도 통과했다(실측).
+# 한쪽만 강하게 검사하면 그 계약은 **약한 쪽만큼만** 강하다.
 check "자격증명 경로 해석처가 파이썬 둘뿐 (래퍼는 조립하지 않고 물어본다)" \
-  'grep -qE "^(ENV_PATH = CONFIG_DIR|CONFIG_DIR = Path.home\(\) / \".wikilens\")" cli/wikilens/credentials.py \
+  'grep -q "^CONFIG_DIR = Path.home() / \".wikilens\"" cli/wikilens/credentials.py \
+   && grep -q "^ENV_PATH = CONFIG_DIR / \"env.sh\"" cli/wikilens/credentials.py \
    && grep -q "^ENV_PATH = CONFIG_DIR / \"env.sh\"" plugin/local/scripts/vault_status.py \
    && grep -q "\-\-env-path" plugin/local/scripts/vault_status.py \
    && grep -q "vault_status.py\" --env-path" plugin/local/scripts/wikilens_cli.sh \
