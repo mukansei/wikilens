@@ -34,3 +34,9 @@ mirror-root
 bench/vault-nohint/
 bench/srv-state/
 bench/srv-index/
+
+# compose 가 읽는 비밀. `WIKILENS_ADMIN_TOKEN` 이 여기 들어간다 — 커밋되면
+# 관리 API 가 통째로 열린 채 배포된다(`/api/admin` 은 재색인·ACL 등록을 연다).
+.env
+.env.*
+!.env.example
