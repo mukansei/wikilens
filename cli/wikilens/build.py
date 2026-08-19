@@ -70,7 +70,7 @@ PROGRESS_EVERY = 500
 
 
 def build(root: Path, index_scripts: list[str] | None = None,
-          script_threshold: float = 0.10,
+          script_threshold: float = scripts_mod.DEFAULT_THRESHOLD,
           progress: Callable[[int, int], None] | None = None) -> BuildReport:
     """
     파생물을 만든다. [index_scripts] 를 주면 **그 문자 집합 밖의 문서를 볼트에서 뺀다.**
