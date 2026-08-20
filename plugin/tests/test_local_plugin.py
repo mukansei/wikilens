@@ -796,7 +796,7 @@ def test_phrase_grep_fails_where_token_and_succeeds(tmp_path):
     # 사용자가 흔히 쓰는 어순 — 구절 그대로는 안 걸린다
     assert not [l for l in rows if "승인 출장" in l]
     # 낱말 AND 는 걸린다
-    hit = [l for l in rows if all(t in l for t in ("<직군명>", "동의"))]
+    hit = [l for l in rows if all(t in l for t in ("출장", "승인"))]
     assert len(hit) == 1 and "POLICY" in hit[0]
 
 
