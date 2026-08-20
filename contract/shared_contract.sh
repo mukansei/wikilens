@@ -406,6 +406,16 @@ check "공개판이면 oss 전용 파일이 조직판으로 안 덮임 (동기�
      && grep -q "같은 제목" docs/experiment-2026-08-14-answer.md \
      && grep -q "emptyList<C>" server/src/test/kotlin/io/wikilens/index/Bm25LengthNormTest.kt'
 
+# **커밋 저자도 조직 정보다.** git 은 브랜치별 `user.email` 설정이 없어서(전역/로컬
+# 하나뿐), 공개판에서 커밋하면 조직 계정이 그대로 박힌다 — 실측(2026-08-20): 304커밋
+# 전부가 조직 이름·이메일이었고 `filter-repo --mailmap` 으로 고쳐야 했다.
+#
+# 되돌리기 어려운 쪽이라 **커밋 전에** 잡는 것이 요점이다. 공개판에서 작업할 때는
+# `git config user.email` 을 개인 값으로 바꾸고, 조직판으로 돌아갈 때 되돌린다.
+check "공개판 이력에 조직 계정이 없음 (git 은 브랜치별 user 설정이 없다)" \
+  'grep -q "github.com/mukansei/wikilens" README.md || exit 0
+   [ -z "$(git log --format="%an <%ae>%n%cn <%ce>" -50 | grep -iE "coway|메가존")" ]'
+
 # **그리고 실제로 조직 정보가 샜는지 직접 본다.** 위 검사는 "그 판의 파일인가" 만 보고,
 # 파일 안에 새 문장이 들어오는 것은 못 잡는다 — 실측으로 겪은 것이 정확히 그 모양이다
 # (`DECISIONS.md` 는 oss 전용 파일이 아닌데 익명화가 풀렸다).
