@@ -389,6 +389,32 @@ check "모델용 지시 문서가 명령형 존댓말로 통일됨 (평서형은
    && ! grep -qnE "(말 것\.|한다\.$|않는다\.)" plugin/local/commands/setup.md plugin/local/commands/sync.md plugin/local/references/setup.md'
 
 
+# **공개판(`oss`)이면 그 판의 파일이 조직판으로 덮이지 않았는지 본다.**
+#
+# 두 판은 merge 로 잇지 못한다(공개 쪽 이력을 세탁해 공통 조상이 없다). 그래서
+# 동기화가 `git checkout master -- .` 뒤 **oss 전용 파일만 손으로 되돌리는** 방식인데,
+# 목록에서 하나만 빠지면 조직 정보가 그대로 덮여 들어온다 — 실측(2026-08-20): 실험
+# 기록의 익명화와 계약 주석이 각각 한 번씩 되살아났고, **둘 다 커밋까지 갔다.**
+#
+# D25 에 절차를 적었지만 **적는 것으로는 안 막힌다.** 그래서 계약이 본다.
+#
+# 판별을 브랜치 이름으로 하지 않는다 — detached HEAD·CI 에서 깨진다. `README.md` 의
+# 마켓플레이스 URL 이 그 판의 정체이므로 그것으로 가른다.
+check "공개판이면 oss 전용 파일이 조직판으로 안 덮임 (동기화가 되돌릴 목록을 빠뜨림)" \
+  'grep -q "github.com/mukansei/wikilens" README.md || exit 0            # 조직판이면 해당 없음
+   grep -q "000000001" bench/queries.py \
+     && grep -q "같은 제목" docs/experiment-2026-08-14-answer.md \
+     && grep -q "emptyList<C>" server/src/test/kotlin/io/wikilens/index/Bm25LengthNormTest.kt'
+
+# **그리고 실제로 조직 정보가 샜는지 직접 본다.** 위 검사는 "그 판의 파일인가" 만 보고,
+# 파일 안에 새 문장이 들어오는 것은 못 잡는다 — 실측으로 겪은 것이 정확히 그 모양이다
+# (`DECISIONS.md` 는 oss 전용 파일이 아닌데 익명화가 풀렸다).
+check "공개판에 조직 문서 제목·식별자가 없음 (전 파일)" \
+  'if grep -q "github.com/mukansei/wikilens" README.md; then
+     [ -z "$(git grep -lE "AcmeSDK|Admin BE-|국내DT영업|코디 신청|ACUPI Task|CDMC" \
+             -- . ":!contract/shared_contract.sh")" ]
+   fi'
+
 # 이 도구는 Cloud·Server/DC 어느 조직 인스턴스에도 붙는다. 그런데 개발 코퍼스가 한
 # 회사 것이라 그 이름이 **배포물로 새기 쉽다** — 실제로 `setup` 이 만들어 주는
 # `~/.wikilens/env.sh` 템플릿에 "Acme(wiki.example.com)라면" 이 들어가 있었다. 남의
