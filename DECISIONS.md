@@ -1254,9 +1254,25 @@ git 은 **브랜치별 `user.email` 설정이 없다**(전역/로컬 하나뿐).
 --mailmap` 으로 고쳐야 했다. 공개 저장소의 저자는 `LICENSE` 의 저작권자 표기와
 맞춘다(`Hyunwoo Park <mukansei@gmail.com>`).
 
-**공개판에서 작업할 때는 `git config user.email` 을 개인 값으로 바꾸고 돌아올 때
-되돌린다.** 잊으면 계약이 최근 50커밋을 보고 잡는다 — 되돌리기 어려운 쪽이라
-커밋 전에 막는 것이 요점이다.
+**워크트리로 가른다 — 브랜치별은 안 되지만 워크트리별은 된다.**
+
+```bash
+git worktree add ../wikilens-oss oss
+git config extensions.worktreeConfig true      # 이것부터. 없으면 .git/config 를 공유한다
+git config --worktree user.email work@…    # 본체(조직판)
+cd ../wikilens-oss
+git config --worktree user.email mukansei@…    # 워크트리(공개판)
+```
+
+**`extensions.worktreeConfig` 가 핵심이다.** 그것 없이 `git config` 를 하면 워크트리와
+본체가 **같은 `.git/config` 를 공유**해서 양쪽이 함께 바뀐다 — 실측으로 그렇게 됐고,
+설정 값만 보고 넘어갔으면 못 봤을 것이다(**실제로 커밋해 저자를 확인해야 한다**).
+
+덤으로 D25 의 동기화가 쉬워진다. 두 트리가 동시에 존재하므로 브랜치를 오갈 필요가
+없고, 전환 중 oss 전용 파일이 덮이는 사고(이 세션에서 두 번 겪었다)가 구조적으로 준다.
+
+**새 머신에서는 워크트리가 없다** — clone 후 위 네 줄을 다시 해야 한다. 잊으면 계약이
+최근 50커밋을 보고 잡지만, 그때는 이미 커밋된 뒤다.
 
 ### 배포물에 URL 을 박지 않는다
 
