@@ -404,7 +404,8 @@ check "공개판이면 oss 전용 파일이 조직판으로 안 덮임 (동기�
   'grep -q "github.com/mukansei/wikilens" README.md || exit 0            # 조직판이면 해당 없음
    grep -q "000000001" bench/queries.py \
      && grep -q "같은 제목" docs/experiment-2026-08-14-answer.md \
-     && grep -q "emptyList<C>" server/src/test/kotlin/io/wikilens/index/Bm25LengthNormTest.kt'
+     && grep -q "emptyList<C>" server/src/test/kotlin/io/wikilens/index/Bm25LengthNormTest.kt \
+     && ! grep -q "CowaySDK" docs/report-2026-08-21-learning-effect.md'
 
 # **커밋 저자도 조직 정보다.** git 은 브랜치별 `user.email` 설정이 없어서(전역/로컬
 # 하나뿐), 공개판에서 커밋하면 조직 계정이 그대로 박힌다 — 실측(2026-08-20): 304커밋
