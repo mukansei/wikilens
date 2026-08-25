@@ -34,11 +34,11 @@ import time
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parent
 NOHINT = HERE / "vault-nohint"
-VAULT = pathlib.Path.home() / ".wikilens" / "vault"
+# 볼트 정본은 `harness` 다 — 각자 조립하면 서버와 다른 코퍼스를 잰다.
 
 sys.path.insert(0, str(HERE))
 # 주소·사용자는 `harness` 가 정본이다 — 각자 들면 세 하네스가 다른 서버를 잰다.
-from harness import (BENCH_USER, COMMIT, DIRTY, SERVER, Writer,  # noqa: E402
+from harness import (BENCH_USER, COMMIT, CORPUS, DIRTY, SERVER, VAULT, Writer,  # noqa: E402
                      done_keys, record, require_queries, require_server, select_groups,
                      trajectory_count)
 from queries import GROUPS, MINIMAL  # noqa: E402
@@ -69,7 +69,10 @@ ASK = ("찾은 문서의 페이지 ID(숫자)만 마지막 줄에 `ANSWER=<id>` 
 def case_a(q: str) -> list[str]:
     """플러그인 없음 + **힌트 파일이 없는 볼트**(setup.sh 가 만든다)."""
     return ["claude", "-p",
-            f"위키 볼트가 {NOHINT} 에 있습니다. 마크다운 문서 13,933개가 "
+            # **개수를 세어 넣는다.** 하드코딩하면 코퍼스를 바꿔도 옛 숫자를
+            # 말하고, 그건 모델에게 주는 잘못된 사실이다(실측: ONAP 15,493건을
+            # 재면서 프롬프트는 13,933 을 말하고 있었다).
+            f"위키 볼트가 {NOHINT} 에 있습니다. 마크다운 문서 {CORPUS:,}개가 "
             f"mirror/pages/ 아래 샤딩돼 있습니다.\n\n질문: {q}\n\n{ASK}",
             "--output-format", "stream-json", "--verbose",
             "--disallowed-tools", DENY,

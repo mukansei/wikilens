@@ -12,9 +12,11 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from datetime import datetime
 import statistics
@@ -59,8 +61,20 @@ COMMIT, DIRTY = provenance()
 
 #: 볼트 문서 수. 코퍼스가 달라지면 grep 비용도 랭킹도 달라지므로 결과에 남긴다.
 #: 세는 데 1초쯤 걸리므로 여기서 한 번만 한다.
-CORPUS = len(list((pathlib.Path.home() / ".wikilens" / "vault" / "mirror" / "pages")
-                  .rglob("*.md"))) if (pathlib.Path.home() / ".wikilens" / "vault").exists() else 0
+#: **벤치가 재는 볼트. 정본은 여기 하나다.**
+#:
+#: 예전에는 `rank.py`·`agent.py`·이 파일이 각자 `~/.wikilens/vault` 를 조립했다.
+#: 그러면 **서버만 다른 코퍼스로 바꿔도 파일 기반 케이스(A·B)는 옛 볼트를 계속
+#: 본다** — 결과가 나오는데 서로 다른 코퍼스를 잰 것이고, 그건 겉으로 정상이다
+#: (실측 2026-08-23: ONAP 서버를 재면서 A·B 가 전부 `밖` 이었는데 원인이 검색
+#: 품질이 아니라 볼트 불일치였다). 기록되는 `corpus` 크기도 함께 틀어진다.
+#:
+#: `WIKILENS_VAULT` 로 재정의한다 — 서버가 쓰는 것과 같은 이름이다.
+VAULT = pathlib.Path(os.environ.get("WIKILENS_VAULT")
+                     or pathlib.Path.home() / ".wikilens" / "vault")
+
+CORPUS = (len(list((VAULT / "mirror" / "pages").rglob("*.md")))
+          if VAULT.exists() else 0)
 
 
 @dataclass
@@ -240,19 +254,51 @@ PLACEHOLDER_IDS = frozenset({"000000001", "000000002", "000000003"})
 
 def require_queries() -> None:
     """
-    `queries.py` 가 아직 템플릿이면 **여기서 끊는다.**
+    질의가 **지금 붙은 서버의 코퍼스와 맞는지** 확인하고, 안 맞으면 끊는다.
 
-    자리표시자 pageId 로 돌리면 전 그룹이 0건인데, 그것은 "이 도구의 검색이 나쁘다"
-    와 구별되지 않는다 — 이 저장소가 반복해서 지워온 실패 모양(조용히 틀린 답)이고,
-    비싼 벤치라면 돈까지 쓴다. 세 하네스가 공유하는 자리는 여기 하나다.
+    처음에는 자리표시자 pageId 만 봤다. 그런데 **채우는 순간 그 검사는 죽는다** —
+    실측(2026-08-23): 두 판 모두 실물로 채워져 이 함수가 아무것도 안 막고 있었다.
+
+    막으려던 실패는 사라진 게 아니라 모양만 바뀌었다. 남의 코퍼스에서 만든 질의로
+    자기 서버를 재면 전 그룹이 `못 찾음` 인데, 그것은 **"이 도구의 검색이 나쁘다"
+    와 구별되지 않는다.** 공개판이 ONAP 질의를 들고 있으므로 이제 그 경우가
+    자리표시자보다 흔하다 — clone 한 사람이 자기 위키를 붙이면 바로 여기다.
+
+    그래서 **정답 pageId 가 이 볼트에 실제로 있는지** 서버에 물어본다. 자리표시자든
+    남의 실물 ID 든 같은 자리에서 걸린다.
     """
     from queries import GROUPS
+
     if any(pid in PLACEHOLDER_IDS for _, pid, _, _ in GROUPS):
         raise SystemExit(
             "bench/queries.py 가 아직 템플릿입니다 — 자리표시자 pageId 로는 전부 0건이 나옵니다.\n"
             "  당신의 위키에서 답이 분명한 문서를 골라 GROUPS 를 채우세요.\n"
             "  만드는 규칙은 그 파일 맨 위에 있습니다."
         )
+
+    # **표본 하나만 본다.** 코퍼스가 통째로 어긋난 경우는 하나만 봐도 드러나고,
+    # 몇 건만 지워진 경우를 잡는 것은 이 가드의 몫이 아니다 — `rank.py` 가
+    # `못 찾음` 으로 보여준다.
+    name, pid, title, _ = GROUPS[0]
+    try:
+        api_post("/api/read", {"pageId": pid, "userKey": BENCH_USER}, timeout=10)
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            return          # 401·403 등은 코퍼스 문제가 아니다 — `require_server` 몫
+        raise SystemExit(
+            f"queries.py 의 정답 문서가 이 서버에 없습니다 — {name} 의 {pid}.\n"
+            f"  기대한 문서: {title}\n"
+            "  질의와 볼트가 다른 코퍼스입니다. 그대로 돌리면 전 그룹이 '못 찾음' 인데\n"
+            "  그것은 검색 품질이 나쁜 것과 구별되지 않습니다.\n"
+            "  · 당신의 위키를 재려면 bench/queries.py 의 GROUPS 를 갈아 끼우세요.\n"
+            "  · 배포된 질의(ONAP 공개 위키)를 재려면 그 볼트를 싱크하세요 —\n"
+            "    만드는 법은 queries.py 맨 위에 있습니다."
+        )
+    except (urllib.error.URLError, OSError):
+        # **서버가 없으면 조용히 통과한다.** 이 가드는 코퍼스 불일치를 보는 자리이고,
+        # 도달 여부는 바로 뒤 `require_server` 가 훨씬 나은 메시지로 말한다. 여기서
+        # 함께 죽으면 "서버가 없다" 가 "질의가 틀렸다" 로 잘못 보고된다.
+        return
 
 
 def require_server(need_plugins: bool) -> str:

@@ -400,9 +400,16 @@ check "모델용 지시 문서가 명령형 존댓말로 통일됨 (평서형은
 #
 # 판별을 브랜치 이름으로 하지 않는다 — detached HEAD·CI 에서 깨진다. `README.md` 의
 # 마켓플레이스 URL 이 그 판의 정체이므로 그것으로 가른다.
+#
+# **`queries.py` 의 판별 기준이 바뀌었다**(2026-08-23). 예전에는 자리표시자
+# `000000001` 이 남아 있는지로 봤는데, 공개판이 **재현 가능한 공개 코퍼스**(ONAP)로
+# 채워지면서 그 표식이 사라졌다. 검사하려던 것은 "자리표시자가 있나" 가 아니라
+# **"조직판 질의로 덮이지 않았나"** 이므로, 공개 코퍼스의 표식이 있고 조직 고유
+# 낱말이 없는지를 본다. 표식 하나만 보면 양쪽이 다 없는 빈 파일도 통과한다.
 check "공개판이면 oss 전용 파일이 조직판으로 안 덮임 (동기화가 되돌릴 목록을 빠뜨림)" \
   'grep -q "github.com/mukansei/wikilens" README.md || exit 0            # 조직판이면 해당 없음
-   grep -q "000000001" bench/queries.py \
+   grep -q "lf-onap.atlassian.net" bench/queries.py \
+     && ! grep -q "mOrder\|ACUPI\|디지털세일즈" bench/queries.py \
      && grep -q "같은 제목" docs/experiment-2026-08-14-answer.md \
      && grep -q "emptyList<C>" server/src/test/kotlin/io/wikilens/index/Bm25LengthNormTest.kt \
      && ! grep -q "AcmeSDK" docs/report-2026-08-21-learning-effect.md'

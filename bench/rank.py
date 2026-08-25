@@ -29,11 +29,11 @@ import subprocess
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
-VAULT = pathlib.Path.home() / ".wikilens" / "vault"
+# 볼트 정본은 `harness` 다 — 각자 조립하면 서버와 다른 코퍼스를 잰다.
 
 sys.path.insert(0, str(HERE))
 # 주소·사용자는 `harness` 가 정본이다 — 각자 들면 두 하네스가 다른 서버를 잰다.
-from harness import (BENCH_USER, SERVER, Writer, api_post, record,  # noqa: E402
+from harness import (BENCH_USER, SERVER, VAULT, Writer, api_post, record,  # noqa: E402
                      require_queries, require_server, select_groups)
 from queries import GROUPS  # noqa: E402
 
