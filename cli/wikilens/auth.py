@@ -40,6 +40,31 @@ class AuthProvider:
         return self.__class__.__name__
 
 
+class AnonymousAuth(AuthProvider):
+    """
+    **자격증명을 아예 안 보낸다.** 공개 위키(익명 읽기가 열린 인스턴스)용이다.
+
+    이 도구는 지금껏 한 회사의 사설 위키 하나만 봤고, 그래서 "인증은 반드시
+    있다" 가 전제였다. 공개 인스턴스를 붙여 보니 그 전제가 곧 벽이었다 —
+    익명으로 열려 있는데 CLI 가 **인증 방식을 판별할 수 없습니다** 로 죽는다.
+    우회하려면 `CONFLUENCE_HEADERS='Accept: application/json'` 같은 무의미한
+    헤더를 넣어 `header` 모드를 속여야 했다(실측 2026-08-23, ONAP·Apache).
+
+    **자동 폴백으로 두지 않는다 — 반드시 명시해야 한다.** 자격증명이 안 잡혔을 때
+    조용히 익명으로 내려가면, 토큰 하나 빠진 것이 "권한 있는 문서가 통째로 빠진
+    미러" 로 나타난다. 그건 에러 없이 잘못된 결과이고 이 저장소가 반복해서
+    지워온 실패 모양이다. 안 되면 **시끄럽게** 안 되는 편이 낫다.
+    """
+
+    def apply(self, session):
+        # 아무것도 안 붙인다. `session.auth` 를 건드리지도 않는다 —
+        # 재사용된 세션에 남아 있을 값을 지우는 것은 이 클래스의 일이 아니다.
+        pass
+
+    def describe(self):
+        return "익명 (자격증명 없음 — 공개 위키)"
+
+
 @dataclass
 class BasicAuth(AuthProvider):
     """Cloud: 이메일 + API 토큰."""
@@ -159,6 +184,7 @@ def auth_from_env() -> AuthProvider:
       pat     CONFLUENCE_TOKEN
       oauth   IAM_TOKEN_URL + IAM_CLIENT_ID + IAM_CLIENT_SECRET [+ IAM_SCOPE, IAM_AUDIENCE]
       header  CONFLUENCE_HEADERS='Key: Value; Key2: Value2'
+      none    CONFLUENCE_AUTH=none — 공개 위키. **명시할 때만** 쓴다
     """
     # 환경변수가 없으면 `~/.wikilens/env.sh` 에서 읽는다 — cron 과 Claude Code 처럼
     # `export` 가 없는 환경을 덮는다. 우선순위·근거는 `credentials` 모듈에.
@@ -177,6 +203,12 @@ def auth_from_env() -> AuthProvider:
             mode = "basic"
         elif token:
             mode = "pat"
+
+    # **익명은 명시할 때만이다.** 위 자동 판별에는 절대 넣지 않는다 — 자격증명이
+    # 빠진 것과 공개 위키인 것은 겉으로 같고, 조용히 익명으로 내려가면 토큰 하나
+    # 빠진 것이 "문서가 통째로 없는 미러" 로 나타난다.
+    if mode in ("none", "anonymous", "anon"):
+        return AnonymousAuth()
 
     if mode == "oauth":
         cid = credentials.get("IAM_CLIENT_ID")
@@ -222,5 +254,9 @@ def auth_from_env() -> AuthProvider:
         "    IAM_TOKEN_URL=https://iam.corp/oauth2/token\n"
         "    IAM_CLIENT_ID=...  IAM_CLIENT_SECRET=...  [IAM_SCOPE=...]\n\n"
         "  리버스 프록시 헤더 주입:\n"
-        "    CONFLUENCE_HEADERS='X-Forwarded-User: me@corp'\n"
+        "    CONFLUENCE_HEADERS='X-Forwarded-User: me@corp'\n\n"
+        "  공개 위키 (익명 읽기가 열린 인스턴스):\n"
+        "    CONFLUENCE_AUTH=none\n"
+        "    — 자동으로 내려가지 않습니다. 자격증명이 빠진 것과 구별되지 않아\n"
+        "      조용히 반쪽짜리 미러가 만들어지기 때문입니다.\n"
     )

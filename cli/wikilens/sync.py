@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -27,7 +28,7 @@ from . import credentials
 CHECKPOINT_EVERY = 100      # 이 건수마다 상태 저장 → 중단되어도 이어받는다
 MAX_RETRY_WAIT = 120        # 429 백오프 상한. 무한 대기 방지
 FIRST_RETRY_WAIT = 5        # 서버가 Retry-After 를 안 주면 여기서 시작해 배로 늘린다
-MAX_RETRIES = 5             # 이만큼 해도 429 면 호출부가 실패로 다룬다
+MAX_RETRIES = 5             # 429·타임아웃·5xx 를 이만큼 해보고 호출부에 넘긴다
 
 
 class ConfluenceError(RuntimeError):
@@ -111,17 +112,40 @@ class ConfluenceClient:
 
         재시도를 여기 두면 부르는 쪽이 기억할 일이 없다. 같은 일을 두 곳에서 하지
         않도록 `_paged` 의 429 분기는 지웠다.
+
+        **일시적 네트워크 실패도 같은 루프에서 다룬다.** 읽기 타임아웃 하나가
+        수천 건짜리 싱크를 통째로 죽이던 자리다 — 실측(2026-08-23, ONAP 공개
+        인스턴스): 15,000건을 받는 동안 `Read timed out` 이 세 번 났고 그때마다
+        전체가 중단됐다. 이어받기가 있어 유실은 없지만 **사람이 다시 실행해야
+        한다.** 자동 싱크(cron)에는 그 사람이 없다.
+
+        **GET 만 재시도한다** — 이 클라이언트는 읽기 전용이라 전부 멱등이다.
+        영구 실패는 그대로 던진다: 마지막 시도까지 실패하면 원래 예외가 올라간다.
         """
         wait = FIRST_RETRY_WAIT
         refreshed = False
-        for _ in range(MAX_RETRIES):
-            r = self.s.get(url, timeout=self.timeout, **kw)
+        for attempt in range(MAX_RETRIES):
+            try:
+                r = self.s.get(url, timeout=self.timeout, **kw)
+            except (requests.Timeout, requests.ConnectionError) as e:
+                # **연결 자체가 안 선 것과 응답이 늦은 것을 같이 본다.** 둘 다
+                # 다시 물으면 되는 경우이고, 아닌 경우는 아래에서 소진된다.
+                if attempt == MAX_RETRIES - 1:
+                    raise
+                time.sleep(min(wait, MAX_RETRY_WAIT))
+                wait = min(wait * 2, MAX_RETRY_WAIT)
+                continue
             # 갱신은 **한 번뿐이다.** 429 재시도 루프를 두르면서 이 조건을 안 걸었더니
             # 무효 토큰 하나에 IAM 을 다섯 번 두드렸다(테스트가 잡았다) — 토큰이 정말
             # 만료된 것이면 한 번으로 되고, 안 되면 더 해도 안 된다.
             if r.status_code == 401 and not refreshed and self.auth.refresh():
                 refreshed = True
                 self.auth.apply(self.s)
+                continue
+            # 5xx 는 서버 쪽 일시 장애다. 4xx 는 다시 물어도 같으므로 즉시 돌려준다.
+            if r.status_code >= 500 and attempt < MAX_RETRIES - 1:
+                time.sleep(min(wait, MAX_RETRY_WAIT))
+                wait = min(wait * 2, MAX_RETRY_WAIT)
                 continue
             if r.status_code != 429:
                 return r
@@ -148,7 +172,7 @@ class ConfluenceClient:
         if self.prefix is not None:
             return self.prefix
         last = None
-        for p in ("/wiki", ""):
+        for p in self._prefix_candidates():
             try:
                 r = self._get(self.base + p + "/rest/api/space", params={"limit": 1})
             except requests.RequestException as e:
@@ -172,8 +196,69 @@ class ConfluenceClient:
             "Confluence REST API 를 찾을 수 없습니다 (" + self.base + "). "
             "마지막 응답: " + str(last) + "\n"
             "  · URL 이 맞습니까? Cloud 는 https://<사이트>.atlassian.net 형식입니다\n"
-            "  · 자체 호스팅이면 컨텍스트 경로가 다를 수 있습니다"
+            "  · 자체 호스팅이면 컨텍스트 경로가 다를 수 있습니다. 알아낸 경로를"
+            " 그대로 주면 자동 판별을 건너뜁니다:\n"
+            "      CONFLUENCE_PREFIX=/confluence   (예: Apache 계열)\n"
+            "      CONFLUENCE_PREFIX=              (빈 값도 유효한 설정입니다)"
         )
+
+    #: 표준 마운트 두 곳. **여기에 계속 더하는 것이 답이 아니다** — 자체 호스팅은
+    #: 리버스 프록시가 아무 데나 걸 수 있어 목록으로는 원리적으로 못 따라간다.
+    #: 그래서 [_context_path_from_html] 로 **서버에게 먼저 묻는다.**
+    _FALLBACK_PREFIXES = ("/wiki", "")
+
+    def _prefix_candidates(self) -> list:
+        """
+        시도할 접두사를 **자기서술 우선**으로 만든다.
+
+        오늘(2026-08-22) 같은 모양의 결함을 둘 봤다 — 페이징은 응답의
+        `_links.base` 가 답을 갖고 있는데 밖에서 짐작하다 Cloud 에서 404 를 냈고,
+        접두사는 `ajs-context-path` 가 답을 갖고 있는데 목록으로 찍고 있었다.
+        **응답 안에 답이 있으면 짐작하지 않는다.**
+
+        실측 — 세 인스턴스:
+
+            Apache  Server/DC  ajs-context-path="/confluence"  ← 목록으로는 못 맞힌다
+            Acme   Server/DC  ajs-context-path=""
+            ONAP    Cloud      메타 없음 (SPA) → 표준 "/wiki" 로 덮인다
+
+        **자기서술을 믿고 끝내지는 않는다.** 리버스 프록시가 HTML 을 다시 쓰는
+        구성이 실재하므로(이 메서드 위의 사고 기록), 여기서는 **후보만** 만들고
+        판정은 기존 두 엔드포인트 검증이 그대로 한다.
+        """
+        found = self._context_path_from_html()
+        if found is None:
+            return list(self._FALLBACK_PREFIXES)
+        # 중복 제거 — 자기서술이 표준값과 같으면 두 번 찌를 이유가 없다.
+        return [found] + [p for p in self._FALLBACK_PREFIXES if p != found]
+
+    def _context_path_from_html(self) -> str | None:
+        """
+        Confluence 가 렌더한 HTML 의 `<meta name="ajs-context-path">` 를 읽는다.
+        Server/DC 는 이것으로 마운트 위치를 스스로 알린다. Cloud 는 SPA 라 없다.
+
+        **못 읽는 것은 정상이다** — 여기서 실패해도 조용히 `None` 을 돌려주고
+        폴백 목록으로 간다. 이 경로가 죽으면 접두사 판별 전체가 죽는 것이 아니라
+        예전과 같아질 뿐이어야 한다.
+        """
+        try:
+            r = self._get(self.base + "/")
+            if r.status_code != 200:
+                return None
+            m = re.search(
+                r'<meta[^>]+name=["\']ajs-context-path["\'][^>]*'
+                r'content=["\']([^"\']*)["\']',
+                r.text[:200_000], re.I)
+            if not m:
+                return None
+        except requests.RequestException:
+            return None
+        except ValueError:
+            return None
+        path = m.group(1).strip()
+        if path and not path.startswith("/"):
+            return None            # 상대경로는 컨텍스트가 아니다
+        return path.rstrip("/")
 
     def _prefix_actually_works(self, prefix: str) -> bool:
         """
@@ -286,7 +371,20 @@ class ConfluenceClient:
             for item in data.get("results", []):
                 yield item
             nxt = data.get("_links", {}).get("next")
-            url = (self.base + nxt) if nxt else None
+            # **`next` 는 접두사 기준의 상대경로다.** `self.base + nxt` 로 이으면
+            # Cloud 에서 `/wiki` 가 빠져 2쪽부터 404 가 난다 — 1쪽은 `_url()` 로
+            # 만들어 정상이라 **첫 페이지만 보는 스페이스에서는 안 드러난다.**
+            # Server/DC 는 접두사가 "" 라 우연히 맞아서, 그 판만 쓰는 동안은
+            # 영영 안 보인다(실측 2026-08-22: ONAP Cloud 493건 싱크가 2쪽에서
+            # `No endpoint GET /rest/api/content/search` 로 죽었다).
+            #
+            # 응답이 답을 갖고 있다 — `_links.base` 가 접두사까지 포함한 절대
+            # 주소다. 없으면 `_url()` 로 붙인다.
+            if nxt:
+                api_base = data.get("_links", {}).get("base")
+                url = (api_base.rstrip("/") + nxt) if api_base else self._url(nxt)
+            else:
+                url = None
             params = None      # next 링크에 쿼리가 이미 들어 있다
 
     def list_page_ids(self, space: str) -> set:
@@ -303,6 +401,26 @@ class ConfluenceClient:
 
 
 # ---------------------------------------------------------------- 상태
+
+def _cursor_for(state: dict, space: str, known: set) -> str | None:
+    """
+    그 스페이스의 증분 기준 시각. **없으면 `None` — 즉 전량을 받는다.**
+
+    예전에는 커서가 볼트 전체에 하나였다. 그러면 **이미 싱크한 볼트에 스페이스를
+    더해도 아무것도 안 받는다** — 새 스페이스의 백로그는 전부 그 시각보다 과거라
+    `lastModified > 커서` 에 하나도 안 걸린다. 에러도 안 난다:
+    `받음 0 · 실패 0` 으로 끝나 정상처럼 보인다(실측 2026-08-23, ONAP `DW`
+    15,001건이 통째로 안 왔다). `--full` 로 우회할 수 있지만 그건 전량 재다운로드다.
+
+    **옛 볼트를 깨지 않는다.** `cursors` 가 없던 볼트는 전역 커서를 갖고 있는데,
+    그것은 *이미 받은 스페이스들*에 대해서는 맞는 값이다. 그래서 그 스페이스에만
+    물려주고(`known`), 처음 보는 스페이스는 `None` 으로 둔다.
+    """
+    per = state.get("cursors") or {}
+    if space in per:
+        return per[space]
+    return state.get("cursor") if space in known else None
+
 
 def _now_cursor() -> str:
     """
@@ -324,7 +442,9 @@ def _load_state(root: Path) -> dict:
                 f"  {e}\n"
                 f"  이 파일을 지우면 전체를 다시 받습니다 (원본은 mirror/raw 에 남아 있습니다)."
             ) from e
-    return {"cursor": None, "pages": {}, "partial": None}
+    # `cursor` 는 **전역** 이고 `cursors` 가 **스페이스별** 이다. 둘 다 두는 이유는
+    # 아래 `_cursor_for` 의 이관 때문 — 예전 볼트에는 전역만 있다.
+    return {"cursor": None, "cursors": {}, "pages": {}, "partial": None}
 
 
 def _save_state(root: Path, state: dict) -> None:
@@ -452,12 +572,13 @@ def sync(root: Path, client: ConfluenceClient, spaces: list,
     state = _load_state(root)
     if full:
         state["cursor"] = None
+        state["cursors"] = {}
         state["partial"] = None
 
     report = SyncReport(spaces=list(spaces))
     report.resumed_from = state.get("partial")
     started = time.time()
-    cursor = state.get("cursor")
+    known = {p.get("space") for p in state.get("pages", {}).values()}
     # **다음 커서를 스캔 **전에** 잡는다.**
     #
     # 끝나고 잡으면 스캔이 도는 동안 수정된 페이지가 유실된다 — 이미 지나갔거나 아직
@@ -469,7 +590,7 @@ def sync(root: Path, client: ConfluenceClient, spaces: list,
     since_checkpoint = 0
 
     for space in spaces:
-        cql = _cql_for_space(space, since=(cursor if not full else None))
+        cql = _cql_for_space(space, since=(None if full else _cursor_for(state, space, known)))
 
         for item in client.search(cql):
             try:
@@ -552,7 +673,13 @@ def sync(root: Path, client: ConfluenceClient, spaces: list,
     # **대가는 실패가 계속되면 매번 전체를 다시 훑는 것이다.** 그건 보이는 비용이고
     # (`실패 N` 이 매번 찍힌다) 반대쪽은 조용한 유실이다.
     if not report.failed:
-        state["cursor"] = next_cursor
+        # **훑은 스페이스만 옮긴다.** 전역 하나였을 때는 `--space` 목록에 없던
+        # 스페이스의 커서까지 함께 밀려, 다음에 그 스페이스를 도로 넣으면 그
+        # 사이의 변경을 통째로 건너뛰었다.
+        state.setdefault("cursors", {})
+        for sp in spaces:
+            state["cursors"][sp] = next_cursor
+        state["cursor"] = next_cursor      # 옛 판이 읽어도 동작하도록 남긴다
     state["partial"] = None
     _save_state(root, state)
     report.elapsed_s = time.time() - started

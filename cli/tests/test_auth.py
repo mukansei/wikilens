@@ -15,7 +15,8 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from wikilens.auth import (
-    BasicAuth, BearerAuth, HeaderAuth, OAuth2ClientCredentials, auth_from_env,
+    AnonymousAuth, BasicAuth, BearerAuth, HeaderAuth, OAuth2ClientCredentials,
+    auth_from_env,
 )
 from wikilens.sync import ConfluenceClient
 from wikilens import credentials
@@ -130,6 +131,60 @@ def _isolate_env_file(tmp_path, monkeypatch):
     "SystemExit 이 안 났다"로 깨졌고, 나머지는 우연히 통과하고 있었다.
     """
     monkeypatch.setattr(credentials, "ENV_PATH", tmp_path / "없는env.sh")
+
+
+ALL_CREDS = ("IAM_TOKEN_URL", "IAM_CLIENT_ID", "IAM_CLIENT_SECRET",
+             "CONFLUENCE_TOKEN", "CONFLUENCE_EMAIL", "CONFLUENCE_HEADERS")
+
+
+def test_anonymous_requires_explicit_opt_in(monkeypatch):
+    """
+    **자격증명이 없다고 익명으로 내려가면 안 된다.**
+
+    토큰 하나 빠진 것과 공개 위키인 것은 겉으로 같다. 조용히 익명이 되면 그
+    차이가 **"권한 있는 문서가 통째로 빠진 미러"** 로 나타난다 — 에러 없이
+    잘못된 결과이고, 다음 싱크에도 안 고쳐진다. 안 되면 시끄럽게 안 되는 편이 낫다.
+    """
+    for k in ALL_CREDS + ("CONFLUENCE_AUTH",):
+        monkeypatch.delenv(k, raising=False)
+    with pytest.raises(SystemExit) as e:
+        auth_from_env()
+    assert "CONFLUENCE_AUTH=none" in str(e.value), "안내가 익명 모드를 안 알려준다"
+
+
+def test_anonymous_when_explicitly_asked(monkeypatch):
+    """공개 위키. 명시하면 자격증명 없이 간다 (실측: ONAP·Apache 둘 다 붙는다)."""
+    for k in ALL_CREDS:
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("CONFLUENCE_AUTH", "none")
+    a = auth_from_env()
+    assert isinstance(a, AnonymousAuth)
+
+
+def test_anonymous_sends_nothing(monkeypatch):
+    """
+    **정말로 아무것도 안 보낸다.** 세션에 남아 있던 자격증명을 그대로 쓰면
+    "익명으로 붙었다" 는 판단이 통째로 틀린다.
+    """
+    import requests
+    sess = requests.Session()
+    before_auth, before_headers = sess.auth, dict(sess.headers)
+    AnonymousAuth().apply(sess)
+    assert sess.auth is before_auth
+    assert dict(sess.headers) == before_headers
+    assert AnonymousAuth().refresh() is False
+
+
+def test_explicit_credentials_beat_anonymous(monkeypatch):
+    """
+    자격증명이 있는데 `none` 을 주면 **명시가 이긴다** — 익명이다. 실수로 켜는
+    것을 막는 것은 이 함수가 아니라 사람이 적은 값이다.
+    """
+    for k in ALL_CREDS:
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("CONFLUENCE_TOKEN", "pat123")
+    monkeypatch.setenv("CONFLUENCE_AUTH", "none")
+    assert isinstance(auth_from_env(), AnonymousAuth)
 
 
 def test_env_selects_oauth_when_iam_configured(monkeypatch):
