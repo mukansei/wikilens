@@ -1,7 +1,7 @@
 {
   "name": "wikilens-local",
   "description": "Confluence 위키를 내 노트북에 미러링해 검색합니다. 다른 문서가 이 페이지를 부르는 이름(앵커 텍스트)까지 색인해 제목에 없는 표현으로도 찾습니다. 서버 불필요·오프라인 가능. 각자 자기 토큰으로 싱크하므로 볼 수 있는 문서만 들어옵니다.",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "license": "MIT",
   "keywords": [
     "confluence",
