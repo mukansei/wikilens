@@ -32,7 +32,12 @@ code_has() {   # code_has <파일> <패턴>
 
 check() {
   total=$((total+1))
-  if eval "$2" >/dev/null 2>&1; then
+  # **서브셸로 돌린다.** `eval` 을 현재 셸에서 돌리면 계약 본문의 `exit` 이
+  # 스크립트 전체를 끝낸다 — 실측(2026-08-26): "조직판이면 해당 없음" 을 뜻하는
+  # `|| exit 0` 이 든 계약 두 개가 2026-08-20 부터 **뒤따르는 계약 50개를 통째로
+  # 건너뛰게** 했고, 종료코드는 0 이라 `check.sh` 가 6일 내내 초록이었다.
+  # 가장 나쁜 모양이다 — 검사가 줄어든 것은 성공으로 보인다.
+  if ( eval "$2" ) >/dev/null 2>&1; then
     printf '  \033[0;32mOK  \033[0m %s\n' "$1"
   else
     printf '  \033[0;31m깨짐\033[0m %s\n' "$1"
@@ -205,6 +210,32 @@ for e in mp[\"plugins\"]:
 # 설치된 플러그인이 조용히 구버전으로 동작한다 — 버전 번호가 같으니 아무도 의심하지
 # 않는다. 실제로 그 상태로 CLI 경로 해석이 통째로 반영 안 돼 있었다(2026-08-05 실측:
 # 소스는 되는데 설치본은 `CLI=` 가 비고 래퍼가 CLI 를 못 찾았다).
+# **버전이 넷으로 흩어져 있었다.** CLI 0.2.0 · server 0.1.0 · plugin 0.17.8/0.14.15 라
+# "이 조합이 함께 검증됐다" 를 가리킬 이름이 없었다. 정본은 `VERSION` 하나이고 넷은
+# 사본이다 — 형식이 각자 강제해서(정적 JSON 은 생성이 안 된다) 사본을 없앨 수 없다.
+# 그래서 README 배지와 같은 방식으로 **계약이 대조한다.**
+#
+# 올리는 것은 `contract/bump-version.sh` 가 한다. 손으로 넷을 고치면 하나를 빠뜨린다.
+check "버전 넷이 VERSION 과 같음 (흩어지면 릴리스를 가리킬 이름이 없다)" \
+  'python3 -c "
+import json,pathlib,re,sys
+want=pathlib.Path(\"VERSION\").read_text().strip()
+bad=[]
+def take(p,pat):
+    m=re.search(pat, pathlib.Path(p).read_text(encoding=\"utf-8\"), re.M)
+    return m.group(1) if m else \"(못 찾음)\"
+got={
+ \"cli/pyproject.toml\": take(\"cli/pyproject.toml\", r\"^version = .(.*).$\"),
+ \"server/build.gradle.kts\": take(\"server/build.gradle.kts\", r\"^version = .(.*).$\"),
+}
+for f in (\"plugin/local\",\"plugin/client\"):
+    got[f]=json.loads(pathlib.Path(f+\"/.claude-plugin/plugin.json\").read_text())[\"version\"]
+for k,v in got.items():
+    if v!=want: bad.append(f\"{k}={v}\")
+if bad:
+    print(\"VERSION=\"+want+\" 과 다름: \"+\", \".join(bad), file=sys.stderr); sys.exit(1)
+"'
+
 check "설치된 플러그인이 소스와 같은 내용 (버전 동일 + 내용 상이 = 조용한 구버전)" \
   'python3 -c "
 import json,pathlib,filecmp,sys

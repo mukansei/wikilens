@@ -2,7 +2,7 @@
 
 **형상** 서버 이미지 둘(`ANCHOR=4.0` 기본 · `ANCHOR=0.0` 대조) · **$0**(모델 없음).
 코웨이 13,491건 30질의 · ONAP 15,493건 15질의. 실행 전에 예측을 못박았다
-(`scratchpad/anchor-design.md`).
+(`docs/design/design-2026-08-23-anchor.md`).
 
 ## 왜 쟀나
 
