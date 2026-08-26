@@ -455,6 +455,25 @@ check "공개판 이력에 조직 계정이 없음 (git 은 브랜치별 user �
   'grep -q "github.com/mukansei/wikilens" README.md || exit 0
    [ -z "$(git log --format="%an <%ae>%n%cn <%ce>" -50 | grep -iE "acme|파트너사")" ]'
 
+# **태그도 조직 정보를 나른다 — `git log` 로는 안 보인다.**
+#
+# `git tag -a` 는 태그 객체에 **tagger 를 박는다.** 워크트리별 `user.email` 을
+# 나눠 뒀어도 태그를 다른 트리에서 만들면 그쪽 설정이 들어간다 — 실측(2026-08-26):
+# 공개 저장소의 `v0.18.1` tagger 가 조직 계정이었고, 커밋 317개는 전부 깨끗해서
+# 위 계약이 통과했다. GitHub 태그 페이지에 그 이름이 그대로 보인다.
+#
+# **태그 객체 안의 이름도 본다.** `refs/tags/A:refs/tags/B` 로 밀면 겉이름만
+# 바뀌고 객체 안 `tag A` 는 남는다 — 내부 구분용 이름이 그대로 공개된다.
+check "공개판 태그에 조직 계정·내부 이름이 없음 (tagger 는 git log 에 안 보인다)" \
+  'grep -q "github.com/mukansei/wikilens" README.md || exit 0
+   for t in $(git tag -l "v*"); do
+     o=$(git cat-file -p "$t" 2>/dev/null) || continue
+     printf "%s" "$o" | grep -q "^tagger" || continue          # 경량 태그는 tagger 가 없다
+     printf "%s" "$o" | grep -iE "^tagger.*(acme|파트너사)" && exit 1
+     printf "%s" "$o" | grep -qE "^tag $t\$" || exit 1        # 객체 안 이름이 ref 와 달라짐
+   done
+   exit 0'
+
 # **그리고 실제로 조직 정보가 샜는지 직접 본다.** 위 검사는 "그 판의 파일인가" 만 보고,
 # 파일 안에 새 문장이 들어오는 것은 못 잡는다 — 실측으로 겪은 것이 정확히 그 모양이다
 # (`DECISIONS.md` 는 oss 전용 파일이 아닌데 익명화가 풀렸다).
