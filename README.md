@@ -327,47 +327,42 @@ export CONFLUENCE_PREFIX=""        # Server/DC 강제
 
 ```bash
 git clone https://github.com/mukansei/wikilens.git && cd wikilens
+./server/wikilens-setup.sh
+```
 
-# 1. 이미지 짓기 — 이후 전부 이 이미지로 합니다
-#    **이미지가 배포된 곳은 없습니다.** 레지스트리에 올린 적이 없으므로 직접 짓습니다.
-#    실측: --no-cache 로 88초.
+**한 번 물어보고 나머지를 합니다** — 이미지 짓기 · 자격증명 저장 · 스페이스 목록에서
+고르기 · 싱크 · 기동 · 확인까지. 값 다섯을 외우지 않아도 됩니다.
+
+<details>
+<summary><b>손으로 하려면</b> — 스크립트가 무엇을 하는지</summary>
+
+```bash
+# 1. 이미지 — **배포된 곳이 없어 직접 짓습니다.** --no-cache 로 88초.
 docker compose build
+IMAGE=$(docker compose config --images | head -1)   # 이름은 <디렉터리>-wikilens 입니다
 
-# 2. 볼트 만들기 — **파이썬도 CLI 도 안 깝니다.** 이미지가 CLI 를 갖고 있습니다.
-#    스페이스 키는 Confluence URL 의 /spaces/<KEY>/ 자리이고, sync 대신 doctor 를
-#    주면 목록이 나옵니다. 공개 위키라면 CONFLUENCE_TOKEN 대신 CONFLUENCE_AUTH=none.
+# 2. 볼트 — **파이썬도 CLI 도 안 깝니다.** 이미지가 CLI 를 갖고 있습니다.
+#    스페이스 키를 모르면 sync 대신 doctor 를 주면 목록이 나옵니다.
 docker run --rm \
   -e CONFLUENCE_URL=https://회사.atlassian.net -e CONFLUENCE_TOKEN=<서비스계정 PAT> \
   -v ~/.wikilens/vault:/vault \
-  wikilens-wikilens sync --root /vault --space PLATFORM
+  "$IMAGE" sync --root /vault --space PLATFORM
 
-#    **자격증명은 이때만 줍니다.** 서버로 뜨는 컨테이너에는 안 들어갑니다 —
-#    그래야 "위키에 쓰기 금지" 가 규율이 아니라 설계 보장으로 남습니다.
-#
-#    **이미지 이름은 `<디렉터리>-wikilens` 입니다.** 위처럼 clone 했다면
-#    `wikilens-wikilens` 이고, 다른 이름의 디렉터리면 다릅니다(`docker images` 로 확인).
+#    **자격증명은 이때만 줍니다.** 서버로 뜨는 컨테이너에는 안 들어갑니다.
+#    **키가 틀리면 "싱크 완료" 로 끝나고 페이지가 0건입니다** — 스크립트는 그것을 셉니다.
 
-# 3. 서버 기동 — 마운트는 `~/.wikilens` 한 줄입니다
+# 3. 기동 — 마운트는 `~/.wikilens` 한 줄입니다
 docker compose up -d
-
-#    compose 없이 이미지만으로도 같습니다 — **한 줄입니다**:
-#      docker run -d -p 8787:8787 -v ~/.wikilens:/data/.wikilens IMAGE
-#
-#    관리 토큰은 첫 기동에 만들어져 로그에 한 번 찍힙니다(`state/admin-token`).
-#    직접 정하려면 `-e WIKILENS_ADMIN_TOKEN=…` 를 주세요 — 그 값이 이깁니다.
-#    **기본이 잠김이라는 성질은 그대로입니다** — 값이 없으면 여전히 404 입니다.
-#
-#    컨테이너의 `HOME` 이 `/data` 라 `~/.wikilens` 가 `/data/.wikilens` 로 풀립니다.
-#    **설정값은 호스트와 같습니다**(`application.yml` 은 여전히 `~/.wikilens/vault`) —
-#    그 한 줄이면 vault·state·index 가 한 번에
-#    붙습니다. **마운트를 안 주면 빈 껍데기로 뜹니다** — `health` 는 200 인데 검색이
-#    0건입니다. 그 상태를 로그가 정확히 말합니다.
+#    포트를 바꾸려면 WIKILENS_PORT · 언어를 바꾸려면 WIKILENS_ANALYZER (색인 시점 값입니다)
+#    관리 토큰은 첫 기동에 만들어져 로그에 한 번 찍힙니다. 기본이 잠김인 성질은 그대로입니다.
 
 # 4. 확인 — 여기서 초록이 아니면 사용자는 "문서가 없다" 로 봅니다
-#    프록시는 표준 라이브러리만 쓰고 **파이썬 3.9 에서 돕니다**(macOS 기본).
 WIKILENS_SERVER=http://localhost:8787 WIKILENS_USER=alice@corp \
   python3 plugin/client/mcp/wikilens_mcp.py --status
 ```
+
+</details>
+
 
 <sub>Docker 대신 직접 띄우려면 `cd server && ./gradlew bootRun` 입니다. 기동 시 볼트를
 찾아 전량 색인합니다. 다만 Docker 쪽이 ripgrep 을 갖고 있고 경로가 절대경로로 못 박혀

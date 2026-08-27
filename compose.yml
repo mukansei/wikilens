@@ -25,8 +25,11 @@ services:
       # 배제 목록은 루트 `.dockerignore` 가 정본이다(`server/.dockerignore` 는 안 읽힌다).
       context: .
       dockerfile: server/Dockerfile
+    # **호스트 포트를 바꿀 수 있어야 한다** — 8787 이 이미 쓰이는 머신에서 이 파일을
+    # 고치게 하면 그 수정이 `git pull` 마다 충돌한다. 컨테이너 안은 8787 고정이다
+    # (`application.yml` 이 그 값이고, 사용자에게 알리는 주소만 밖에서 정한다).
     ports:
-      - "8787:8787"
+      - "${WIKILENS_PORT:-8787}:8787"
     # **셋 다 호스트의 `~/.wikilens` 아래다.** 상태·색인이 named volume 이던 때는
     # D15 의 "지우는 방법이 `rm -rf ~/.wikilens` 하나" 가 거짓이었고, 무엇보다
     # **유일한 복구 불가 자산인 궤적이 안 보이는 곳**에 있었다 — 백업하려면
@@ -65,6 +68,12 @@ services:
       # 등록 전까지 전 검색이 0건이 된다. 에러가 아니라 0건이라 원인을 못 찾는다.
       # 켜려면 `WIKILENS_ACL_ENFORCED=true docker compose up -d`.
       WIKILENS_ACL_ENFORCED: ${WIKILENS_ACL_ENFORCED:-false}
+
+      # **색인 시점에 정해지는 값이라 여기 있어야 한다**(D14). 질의는 설정이 아니라
+      # 색인에 기록된 분석기를 따르므로, 바꾸려면 재색인해야 한다. 한국어가 아닌
+      # 코퍼스에서 기본값을 그대로 두면 **에러 없이 검색 품질만 나빠진다** —
+      # 조사를 뗄 것이 없는데 형태소 분석기를 물리는 셈이다.
+      WIKILENS_ANALYZER: ${WIKILENS_ANALYZER:-korean}
     restart: unless-stopped
 
     # **이 한도가 없으면 이미지의 `-XX:MaxRAMPercentage=75` 가 아무것도 안 막는다.**

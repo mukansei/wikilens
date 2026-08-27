@@ -377,6 +377,26 @@ check "커밋 본문에 Co-Authored-By 가 없음 (공개판 저자 계약과 �
 check "이미지가 refresh 스크립트를 나름 (clone 없는 경로가 성립해야 한다)" \
   'grep -q "server/wikilens-refresh.sh /app/wikilens-refresh.sh" server/Dockerfile'
 
+# **운영자에게도 안내 스크립트가 있다** — 사용자 두 갈래에는 setup 커맨드가 있는데
+# 운영자만 README 의 네 명령을 손으로 옮겨 적었다. 그 과정에서 나온 함정 셋(이미지
+# 이름 · 스페이스 키 · 확인 단계)이 전부 거기서 없어진다.
+check "운영자 setup 스크립트가 있고 README 가 그것을 가리킴" \
+  '[ -x server/wikilens-setup.sh ] && grep -q "wikilens-setup.sh" README.md'
+
+# **`find` 를 대입문에 바로 쓰지 않는다.** 없는 디렉터리에 1 을 반환하고 pipefail 이
+# 그것을 올려 `set -e` 가 죽인다 — `mirror/` 가 없는 **첫 구축이 정확히 그 경우**라
+# 실측(2026-08-27)에서 4단계 제목만 찍고 조용히 끝났다. refresh.sh 의 curl 과 같은
+# 실패인데 거기 주석을 적어 놓고 같은 자리에서 또 물렸다.
+check "setup 의 페이지 세기가 set -e 에 안 죽음 (첫 구축이 그 경우다)" \
+  'code_has server/wikilens-setup.sh "count_pages" \
+   && ! code_has server/wikilens-setup.sh "=[$][(]find"'
+
+# **분석기는 색인 시점 값이라 틀려도 에러가 안 난다**(D14) — 검색 품질만 조용히
+# 나빠진다. compose 로 노출하고 setup 이 묻는다.
+check "분석기를 compose 로 바꿀 수 있고 setup 이 물음 (틀려도 에러가 안 난다)" \
+  'code_has compose.yml "WIKILENS_ANALYZER: [$][{]" \
+   && code_has server/wikilens-setup.sh "WIKILENS_ANALYZER"'
+
 # **관리 토큰은 세 갈래 전부 말한다.** 재사용·명시가 조용하면 `docker logs` 가 돌아간
 # 뒤 자리를 찾을 길이 없다(실측: 두 번째 기동 로그에 `관리 토큰` 0건).
 #
