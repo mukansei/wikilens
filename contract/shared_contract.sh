@@ -274,6 +274,25 @@ for e in mp[\"plugins\"]:
 #     작업본 → (push) → 원격 → (marketplace update) → 클론 → (install) → 설치본
 #
 # 그래서 아래 메시지가 세 단계를 다 말한다. 하나만 하면 조용히 제자리다.
+# **서버는 Confluence 자격증명을 갖지 않는다 — 읽기 전용이 설계 보장이어야 한다.**
+#
+# 한 이미지가 서버와 CLI 를 모두 담게 되면서(2026-08-26) 그 경계가 흐려질 자리가
+# 생겼다. `sync` 는 자격증명이 필요하지만 **`serve` 는 아니다** — 가지면 "위키에
+# 쓰기 금지" 가 설계 보장에서 **규율로 내려간다**(코드 리뷰로 지켜야 하는 약속).
+#
+# 자격증명은 `docker run` 시점에 준다. `compose.yml` 의 서비스 정의나 Dockerfile 의
+# `ENV` 에 넣으면 그 근거가 무너지므로 여기서 막는다.
+check "서버 이미지·compose 에 Confluence 자격증명이 없음 (읽기 전용은 설계 보장이다)" \
+  '! grep -qE "^[^#]*(CONFLUENCE_|IAM_)" compose.yml \
+   && ! grep -qE "^ENV .*(CONFLUENCE_|IAM_)" server/Dockerfile'
+
+# **그리고 서버 코드가 자격증명을 아예 안 읽는다.** 마운트가 `~/.wikilens` 통째라
+# `env.sh`(600)가 컨테이너에서 보이지만, **읽을 코드가 없다** — 보이는 것과 쓰는
+# 것은 다르고 후자가 없어야 보장이다. 주석은 걷어내고 본다(`code_has` 와 같은 이유).
+check "서버 코드에 Confluence 자격증명 참조가 없음 (env.sh 가 마운트에 보인다)" \
+  '[ -z "$(find server/src/main/kotlin -name "*.kt" -exec sed -E "s|//.*$||; s|^[[:space:]]*[*].*$||" {} + \
+           | grep -E "CONFLUENCE_|IAM_TOKEN_URL|env\\.sh")" ]'
+
 check "설치된 플러그인이 소스 버전 이상 (뒤처지면 만든 것이 사용자에게 없다)" \
   'python3 -c "
 import json,pathlib,sys
@@ -401,7 +420,7 @@ check "측정 테스트가 질의를 손으로 다시 짓지 않음 (LuceneQuery
 # 두 판이 대소문자를 다르게 다루면 **판을 옮긴 사용자가 같은 질의에 다른 답을 받는다.**
 # 두 경로가 어긋나기 쉬운 이유는 각자의 기본값이 반대라서다 — ripgrep(로컬판의 Grep)은
 # 대소문자를 구분하고, 서버는 리터럴 경로가 ignoreCase 라 정규식도 거기 맞췄다.
-# 실측: rg 로 `acme` 가 `Acme` 를 못 찾고, 서버는 찾는다. 합의가 파일로만 이어져 있어
+# 실측: rg 로 `coway` 가 `Coway` 를 못 찾고, 서버는 찾는다. 합의가 파일로만 이어져 있어
 # 한쪽만 고쳐도 아무 에러가 안 난다.
 # 서버 쪽 스캔이 `ContentService` 에서 `JvmGrepEngine`·`RipgrepEngine` 으로 나뉘면서
 # 이 검사도 함께 옮겼다 — **계약이 파일 경로를 grep 하므로 파일을 나눌 때 계약도
@@ -443,7 +462,7 @@ check "공개판이면 oss 전용 파일이 조직판으로 안 덮임 (동기�
      && ! grep -q "mOrder\|ACUPI\|디지털세일즈" bench/queries.py \
      && grep -q "같은 제목" docs/experiment-2026-08-14-answer.md \
      && grep -q "emptyList<C>" server/src/test/kotlin/io/wikilens/index/Bm25LengthNormTest.kt \
-     && ! grep -q "AcmeSDK" docs/report-2026-08-21-learning-effect.md'
+     && ! grep -q "CowaySDK" docs/report-2026-08-21-learning-effect.md'
 
 # **커밋 저자도 조직 정보다.** git 은 브랜치별 `user.email` 설정이 없어서(전역/로컬
 # 하나뿐), 공개판에서 커밋하면 조직 계정이 그대로 박힌다 — 실측(2026-08-20): 304커밋
@@ -451,9 +470,21 @@ check "공개판이면 oss 전용 파일이 조직판으로 안 덮임 (동기�
 #
 # 되돌리기 어려운 쪽이라 **커밋 전에** 잡는 것이 요점이다. 공개판에서 작업할 때는
 # `git config user.email` 을 개인 값으로 바꾸고, 조직판으로 돌아갈 때 되돌린다.
+# **커밋 메시지도 조직 정보를 나른다 — 세탁이 파일 내용만 했다.**
+#
+# `filter-repo --replace-text` 는 **메시지를 안 건드린다.** 실측(2026-08-27):
+# 공개판 커밋 메시지 19줄에 `Coway`·`wiki.coway.com` 이 남아 있었고, 파일 계약과
+# 저자 계약이 둘 다 통과했다 — 검사 범위 밖이었다.
+#
+# 호스트명도 함께 본다. 차단 목록이 제품·직군명 위주라 **도메인이 빠져 있었다.**
+check "공개판 커밋 메시지·파일에 조직 도메인·사번이 없음 (세탁은 파일 내용만 한다)" \
+  'grep -q "github.com/mukansei/wikilens" README.md || exit 0
+   [ -z "$(git log oss --format="%s%n%b" | grep -iE "coway|메가존|megazone|t2512624")" ] \
+   && [ -z "$(git grep -ilE "coway\.com|t2512624|@partner" -- . ":!contract/shared_contract.sh")" ]'
+
 check "공개판 이력에 조직 계정이 없음 (git 은 브랜치별 user 설정이 없다)" \
   'grep -q "github.com/mukansei/wikilens" README.md || exit 0
-   [ -z "$(git log --format="%an <%ae>%n%cn <%ce>" -50 | grep -iE "acme|파트너사")" ]'
+   [ -z "$(git log --format="%an <%ae>%n%cn <%ce>" -50 | grep -iE "coway|메가존")" ]'
 
 # **태그도 조직 정보를 나른다 — `git log` 로는 안 보인다.**
 #
@@ -469,7 +500,7 @@ check "공개판 태그에 조직 계정·내부 이름이 없음 (tagger 는 gi
    for t in $(git tag -l "v*"); do
      o=$(git cat-file -p "$t" 2>/dev/null) || continue
      printf "%s" "$o" | grep -q "^tagger" || continue          # 경량 태그는 tagger 가 없다
-     printf "%s" "$o" | grep -iE "^tagger.*(acme|파트너사)" && exit 1
+     printf "%s" "$o" | grep -iE "^tagger.*(coway|메가존)" && exit 1
      printf "%s" "$o" | grep -qE "^tag $t\$" || exit 1        # 객체 안 이름이 ref 와 달라짐
    done
    exit 0'
@@ -479,20 +510,20 @@ check "공개판 태그에 조직 계정·내부 이름이 없음 (tagger 는 gi
 # (`DECISIONS.md` 는 oss 전용 파일이 아닌데 익명화가 풀렸다).
 check "공개판에 조직 문서 제목·식별자가 없음 (전 파일)" \
   'if grep -q "github.com/mukansei/wikilens" README.md; then
-     [ -z "$(git grep -lE "AcmeSDK|Admin BE-|국내DT영업|코디 신청|ACUPI Task|CDMC" \
+     [ -z "$(git grep -lE "CowaySDK|Admin BE-|국내DT영업|코디 신청|ACUPI Task|CDMC" \
              -- . ":!contract/shared_contract.sh")" ]
    fi'
 
 # 이 도구는 Cloud·Server/DC 어느 조직 인스턴스에도 붙는다. 그런데 개발 코퍼스가 한
 # 회사 것이라 그 이름이 **배포물로 새기 쉽다** — 실제로 `setup` 이 만들어 주는
-# `~/.wikilens/env.sh` 템플릿에 "Acme(wiki.example.com)라면" 이 들어가 있었다. 남의
+# `~/.wikilens/env.sh` 템플릿에 "Coway(wiki.coway.com)라면" 이 들어가 있었다. 남의
 # 회사 사람이 설치하면 자기 자격증명 파일에서 그 이름을 보게 된다.
 # 검사 대상은 **사용자가 통째로 받는 플러그인**이다. `cli/wikilens/layout.py` 의
-# "측정한 것 (Acme 2,377건)" 같은 주석은 남긴다 — 문서의 같은 표기와 마찬가지로
+# "측정한 것 (Coway 2,377건)" 같은 주석은 남긴다 — 문서의 같은 표기와 마찬가지로
 # 수치의 출처를 밝히는 라벨이고, 지우면 그 수가 어디서 나왔는지 알 수 없게 된다.
 #
 # **회사명만으로는 부족하다 — 목록이 좁아서 실제로 샜다**(2026-08-20 전수 검수).
-# 공개판을 분리하면서 `acme` 로만 훑었는데, 이 계약의 목록이 정본처럼 보였기 때문이다.
+# 공개판을 분리하면서 `coway` 로만 훑었는데, 이 계약의 목록이 정본처럼 보였기 때문이다.
 # 그때 배포물 넷에 남아 있던 것: 스킬·README 의 검색 예시에 든 **직군명**, 테스트
 # 픽스처의 **실제 문서 제목+ID 쌍**, 그리고 사내 **시스템명** 셋.
 #
@@ -502,7 +533,7 @@ check "공개판에 조직 문서 제목·식별자가 없음 (전 파일)" \
 # 그래서 **제품·직군·조직 단위까지** 막는다. 회사명 하나만 막는 가드는 "가드가 있다"
 # 는 사실만 주고 넓이는 안 준다.
 check "설치되는 플러그인에 회사 고유값이 없음 (측정 라벨은 주석·문서에만)" \
-  '! grep -rniE "acme|cwdomesticdt|파트너사|파트너사|코디|코닥|국내DT|영업DT|ACUPI|mOrder|통합회원|서비스매니저|디지털세일즈" plugin/local plugin/client'
+  '! grep -rniE "coway|cwdomesticdt|megazone|메가존|코디|코닥|국내DT|영업DT|ACUPI|mOrder|통합회원|서비스매니저|디지털세일즈" plugin/local plugin/client'
 
 
 # 설정을 코드에 추가하고 `application.yml` 에 안 적으면, **있는 줄도 모르는 옵션**이 된다.
@@ -896,10 +927,16 @@ check "와이어 포맷 정본이 있고 양쪽이 그것을 검사함" \
 # mount 만 권한을 재매핑하기 때문이다. 그래서 검증이 통과해도 이 계약이 따로 필요하다.
 #
 # `mkdir`·`chown` 이 `USER` **앞**이어야 한다. 뒤면 비루트라 chown 이 못 돈다.
+# **경로를 하드코딩하지 않는다** — `ENV HOME` 을 옮기면(2026-08-26: `/home/wikilens`
+# → `/data`) 이 계약만 옛 자리를 봐서 깨진다. `HOME` 값을 읽어 그 아래를 검사한다.
 check "컨테이너가 마운트 지점을 소유함 (없으면 compose 기동 실패)" \
-  'grep -q "chown -R wikilens:wikilens /home/wikilens/.wikilens" server/Dockerfile \
-   && [ $(grep -n "chown -R wikilens:wikilens /home/wikilens" server/Dockerfile | cut -d: -f1) \
-        -lt $(grep -n "^USER wikilens" server/Dockerfile | cut -d: -f1) ]'
+  'home=$(grep -oE "^ENV HOME=\S+" server/Dockerfile | cut -d= -f2)
+   [ -n "$home" ] || exit 1
+   grep -q "chown -R wikilens:wikilens $home" server/Dockerfile || exit 1
+   grep -q "mkdir -p $home/.wikilens/vault" server/Dockerfile || exit 1
+   c=$(grep -n "chown -R wikilens:wikilens $home" server/Dockerfile | head -1 | cut -d: -f1)
+   u=$(grep -n "^USER wikilens" server/Dockerfile | head -1 | cut -d: -f1)
+   [ "$c" -lt "$u" ]'
 
 # README 최상단 배지는 빌드 파일의 버전을 **손으로 복제**한 값이다(저장소가 비공개라
 # shields.io 가 아무것도 못 읽는다). 어긋나면 배지만 옛 버전을 말한다 — 근거와
