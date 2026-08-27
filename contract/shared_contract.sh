@@ -515,14 +515,14 @@ check "공개판이면 oss 전용 파일이 조직판으로 안 덮임 (동기�
 #
 # 호스트명도 함께 본다. 차단 목록이 제품·직군명 위주라 **도메인이 빠져 있었다.**
 #
-# **GitHub 조직 슬러그도 뒤늦게 더했다**(2026-08-27). `example-org` 는
+# **GitHub 조직 슬러그도 뒤늦게 더했다**(2026-08-27). `cw-smart-catalogue` 는
 # 회사명을 안 담고 있어 `coway` grep 에도, 차단 목록에도 안 걸렸다 — 세탁 네 번과
 # 전수 조사 한 번을 전부 통과했고 공개판 트리에 4곳이 살아 있었다.
 # **차단 목록은 "무엇이 조직을 가리키나" 가 아니라 "무엇이 회사명인가" 로 자라 왔다.**
 check "공개판 커밋 메시지·파일에 조직 도메인·사번이 없음 (세탁은 파일 내용만 한다)" \
   'if grep -q "github.com/mukansei/wikilens" README.md; then
-     [ -z "$(git log oss --format="%s%n%b" | grep -iE "coway|메가존|megazone|t2512624|example-org")" ] \
-     && [ -z "$(git grep -ilE "coway\.com|t2512624|@partner|example-org" -- . ":!contract/shared_contract.sh")" ]
+     [ -z "$(git log oss --format="%s%n%b" | grep -iE "coway|메가존|megazone|t2512624|cw-smart-catalogue")" ] \
+     && [ -z "$(git grep -ilE "coway\.com|t2512624|@partner|cw-smart-catalogue" -- . ":!contract/shared_contract.sh")" ]
    fi'
 
 check "공개판 이력에 조직 계정이 없음 (git 은 브랜치별 user 설정이 없다)" \
