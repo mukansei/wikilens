@@ -1,0 +1,28 @@
+# 빌드 컨텍스트는 데몬으로 통째로 전송된다. 필요한 것만 남긴다.
+#
+# **컨텍스트가 저장소 루트다**(`compose.yml`). 서버 하나만 짓던 시절에는 `./server`
+# 였는데, 이미지가 CLI 도 담게 되면서 `cli/` 가 컨텍스트에 있어야 한다.
+# 그래서 배제 목록도 여기로 올라왔다 — `server/.dockerignore` 는 안 읽힌다.
+
+# 산출물·캐시 — 이미지 안에서 다시 만든다. 넣으면 호스트 JDK 로 만든 클래스가
+# 컨테이너 JDK 것과 섞인다.
+server/build/
+server/.gradle/
+cli/build/
+**/__pycache__/
+**/*.egg-info/
+
+# **볼트 심링크.** `server/mirror-root` 는 볼트로 가는 링크다(gitignore 대상).
+# 컨텍스트에 들어가면 위키 본문 전체가 데몬으로 전송되고, 최악의 경우 이미지에
+# 구워진다. **이 줄을 지우면 조용히 그렇게 된다.**
+server/mirror-root
+.wikilens/
+
+# 측정 산출물 — 이미지와 무관하고 크다
+bench/results/
+
+# 이미지에 들어갈 이유가 없는 것들
+.git/
+docs/
+plugin/
+*.log

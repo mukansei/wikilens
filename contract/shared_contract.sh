@@ -293,6 +293,43 @@ check "서버 코드에 Confluence 자격증명 참조가 없음 (env.sh 가 마
   '[ -z "$(find server/src/main/kotlin -name "*.kt" -exec sed -E "s|//.*$||; s|^[[:space:]]*[*].*$||" {} + \
            | grep -E "CONFLUENCE_|IAM_TOKEN_URL|env\\.sh")" ]'
 
+# **싱크 컨테이너의 마운트 지점과 `--root` 가 같아야 한다 — 갈리면 조용히 버려진다.**
+#
+# `refresh.sh` 가 컨테이너 쪽 경로를 `/home/wikilens/.wikilens/vault` 로 박아 뒀는데
+# 이미지의 `HOME` 이 `/data` 로 바뀌자(2026-08-26) 싱크가 **마운트 안 된 자리에 쓰고
+# 컨테이너와 함께 사라졌다.** 실측(2026-08-27): 호스트 볼트가 빈 채로 남았고,
+# 뒤의 재색인은 서버가 보는 옛 볼트를 다시 색인해 `indexedDocs > 0` 을 통과했다 —
+# **종료 코드 0 · 전부 초록 · 싱크는 아무것도 안 함.**
+#
+# 그래서 둘을 **같은 줄에서 같은 상수로** 쓰고, 이미지의 `HOME` 에 안 매달린다.
+#
+# 부정 검사는 `code_has` 로 본다 — 옛 경로를 **설명하는 주석**에 걸려 빨개졌다.
+# 긍정 쪽이 주석에 걸린 것(조용히 실패 27)과 반대 방향의 같은 실수다.
+check "싱크 마운트 지점과 --root 가 같음 (갈리면 볼트가 조용히 버려진다)" \
+  'grep -q -- "-v \"\$VAULT\":/vault" server/wikilens-refresh.sh \
+   && grep -q -- "sync --root /vault" server/wikilens-refresh.sh \
+   && ! code_has server/wikilens-refresh.sh "/home/wikilens"'
+
+# **싱크가 끝났다고 볼트에 뭔가 있는 것은 아니다.** 위 결함이 정확히 이 틈으로 빠졌다.
+check "refresh 가 싱크 후 빈 볼트를 잡음 (종료 코드만으로는 못 본다)" \
+  'grep -q "ls -A \"\$VAULT\"" server/wikilens-refresh.sh'
+
+# **정기 갱신 스크립트가 이미지에 들어 있다** — README 가 "저장소 없이" 를 안내하는데
+# 갱신만 clone 을 요구하면 그 경로가 반쪽이다.
+check "이미지가 refresh 스크립트를 나름 (clone 없는 경로가 성립해야 한다)" \
+  'grep -q "server/wikilens-refresh.sh /app/wikilens-refresh.sh" server/Dockerfile'
+
+# **관리 토큰은 세 갈래 전부 말한다.** 재사용·명시가 조용하면 `docker logs` 가 돌아간
+# 뒤 자리를 찾을 길이 없다(실측: 두 번째 기동 로그에 `관리 토큰` 0건).
+#
+# **개수로 세지 않는다.** 처음엔 `grep -c "관리 토큰" -ge 3` 이었는데, 바로 위
+# 주석 블록이 그 낱말을 갖고 있어 `echo` 를 지워도 통과했다(실측). 세 갈래를
+# 각각 이름으로 본다 — 주석은 `code_has` 가 걷어낸다.
+check "관리 토큰 안내가 세 갈래 전부에 있음 (조용한 것은 없는 것과 구별 안 된다)" \
+  'code_has server/entrypoint.sh "관리 토큰: 환경변수" \
+   && code_has server/entrypoint.sh "관리 토큰: \$f 에서 읽었" \
+   && code_has server/entrypoint.sh "관리 토큰을 생성했습니다"'
+
 check "설치된 플러그인이 소스 버전 이상 (뒤처지면 만든 것이 사용자에게 없다)" \
   'python3 -c "
 import json,pathlib,sys
@@ -477,10 +514,16 @@ check "공개판이면 oss 전용 파일이 조직판으로 안 덮임 (동기�
 # 저자 계약이 둘 다 통과했다 — 검사 범위 밖이었다.
 #
 # 호스트명도 함께 본다. 차단 목록이 제품·직군명 위주라 **도메인이 빠져 있었다.**
+#
+# **GitHub 조직 슬러그도 뒤늦게 더했다**(2026-08-27). `example-org` 는
+# 회사명을 안 담고 있어 `coway` grep 에도, 차단 목록에도 안 걸렸다 — 세탁 네 번과
+# 전수 조사 한 번을 전부 통과했고 공개판 트리에 4곳이 살아 있었다.
+# **차단 목록은 "무엇이 조직을 가리키나" 가 아니라 "무엇이 회사명인가" 로 자라 왔다.**
 check "공개판 커밋 메시지·파일에 조직 도메인·사번이 없음 (세탁은 파일 내용만 한다)" \
-  'grep -q "github.com/mukansei/wikilens" README.md || exit 0
-   [ -z "$(git log oss --format="%s%n%b" | grep -iE "coway|메가존|megazone|t2512624")" ] \
-   && [ -z "$(git grep -ilE "coway\.com|t2512624|@partner" -- . ":!contract/shared_contract.sh")" ]'
+  'if grep -q "github.com/mukansei/wikilens" README.md; then
+     [ -z "$(git log oss --format="%s%n%b" | grep -iE "coway|메가존|megazone|t2512624|example-org")" ] \
+     && [ -z "$(git grep -ilE "coway\.com|t2512624|@partner|example-org" -- . ":!contract/shared_contract.sh")" ]
+   fi'
 
 check "공개판 이력에 조직 계정이 없음 (git 은 브랜치별 user 설정이 없다)" \
   'grep -q "github.com/mukansei/wikilens" README.md || exit 0

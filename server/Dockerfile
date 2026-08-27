@@ -35,14 +35,14 @@ WORKDIR /src
 
 # 래퍼와 빌드 스크립트를 먼저 복사해 **의존성 다운로드를 레이어로 굳힌다** —
 # 소스만 바뀔 때 매번 다시 받지 않는다.
-COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
-COPY gradle ./gradle
+COPY server/gradlew server/settings.gradle.kts server/build.gradle.kts server/gradle.properties ./
+COPY server/gradle ./gradle
 # **`|| true` 를 안 붙인다.** 붙이면 의존성 해석 실패(네트워크·저장소 문제)가 조용히
 # 지나가고 다음 단계에서 엉뚱한 모습으로 터진다 — 이 저장소가 `check.sh` 에서 지운
 # 바로 그 형태다. stdout 만 버리고 **stderr 와 종료 코드는 살린다.**
 RUN ./gradlew --no-daemon dependencies > /dev/null
 
-COPY src ./src
+COPY server/src ./src
 # 테스트는 여기서 안 돌린다. `check.sh` 가 정본이고, 그것은 Python·계약까지 함께
 # 보는데 이 이미지에는 그 둘이 없다 — 반쪽 검증을 통과 신호로 만들지 않는다.
 RUN ./gradlew --no-daemon bootJar -x test
@@ -53,8 +53,14 @@ FROM eclipse-temurin:25-jre@sha256:f19dbf0a22d0b3658fda48ce7d7181df05ad14bda151d
 # **apt 패키지는 버전을 고정하지 않는다** — 베이스가 digest 로 고정돼 있으므로 apt
 # 저장소 스냅샷도 사실상 같이 굳고, 여기에 `=버전` 을 박으면 그 버전이 저장소에서
 # 내려간 날 빌드가 깨진다(우분투는 보안 업데이트로 옛 버전을 치운다).
+# **python3 는 CLI(`sync`·`acl`) 때문이다.** 이미지 하나가 서버와 싱크를 모두
+# 담으면 clone 없이 볼트를 만들 수 있다 — 그전에는 이미지를 받아도 `cli/` 가
+# 밖에 있어 저장소가 필요했다(`docs/design/design-2026-08-26-image-entrypoints.md`).
+#
+# **서버만 띄우는 사람에게는 안 쓰는 런타임이다.** 그것이 이 선택의 대가이고,
+# 대안(이미지 둘)을 버린 이유는 유지가 둘이 되기 때문이다.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ripgrep curl \
+ && apt-get install -y --no-install-recommends ripgrep curl python3 python3-venv \
  && rm -rf /var/lib/apt/lists/*
 
 # 루트로 안 돈다.
@@ -82,10 +88,29 @@ RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin wikilens
 # `/api/health` 200).
 #
 # **`USER` 앞이어야 한다** — 뒤면 비루트라 `chown` 이 못 돈다. 계약이 순서를 검사한다.
-RUN mkdir -p /home/wikilens/.wikilens/vault \
-             /home/wikilens/.wikilens/state \
-             /home/wikilens/.wikilens/index \
- && chown -R wikilens:wikilens /home/wikilens/.wikilens
+# **`/home/wikilens` 가 아니라 `/data` 다.** 컨테이너에서 `/home/<user>` 는 사람이
+# 로그인하는 시스템의 관례라 낯설고, 마운트에 쓸 때 좌우가 안 닮는다
+# (`-v ~/.wikilens:/home/wikilens/.wikilens`). `/app` 은 jar 와 진입점이 있어
+# 마운트하면 **코드가 가려진다**(실측: jar 가 사라져 서버가 못 뜬다).
+#
+# **설정값은 안 바꾼다** — `application.yml` 은 여전히 `~/.wikilens/vault` 이고
+# `HOME=/data` 라 그것이 `/data/.wikilens/vault` 로 풀린다. 컨테이너만 다른 설정을
+# 두면 "이 배포는 경로가 다르다" 를 기억해야 한다.
+RUN mkdir -p /data/.wikilens/vault \
+             /data/.wikilens/state \
+             /data/.wikilens/index \
+ && chown -R wikilens:wikilens /data
+
+# **CLI 를 격리된 venv 에.** 시스템 파이썬에 넣으면 배포판 패키지와 섞인다
+# (Debian 계열은 PEP 668 로 그것을 막기도 한다). 진입점이 `/opt/venv/bin/wikilens`
+# 를 직접 부르므로 PATH 에 안 넣어도 된다.
+#
+# **`USER` 앞이어야 한다** — `/opt` 는 root 만 쓸 수 있어서, 뒤에 두면
+# `Permission denied` 로 빌드가 죽는다(실측).
+COPY cli /tmp/cli
+RUN python3 -m venv /opt/venv \
+ && /opt/venv/bin/pip install --no-cache-dir /tmp/cli \
+ && rm -rf /tmp/cli
 
 USER wikilens
 
@@ -98,7 +123,10 @@ USER wikilens
 # 어긋난다**(실측: `--user 502:20` → `HOME=/`).
 #
 # ENV 로 두면 uid 와 무관하게 유지된다(실측: 같은 오버라이드에서 `/home/wikilens`).
-ENV HOME=/home/wikilens
+#
+# **`useradd --create-home` 이 만든 자리를 벗어나므로 `/data` 는 위에서 직접 만들고
+# 소유권을 줬다.** 그 단계가 빠지면 비루트가 못 쓴다.
+ENV HOME=/data
 
 WORKDIR /app
 # 글롭이지만 **하나만 맞는 것이 보장된다** — `build.gradle.kts` 가 `-plain.jar` 를
@@ -106,14 +134,31 @@ WORKDIR /app
 # 소리내며 실패하므로 조용히 엉뚱한 것을 집을 일은 없다.
 COPY --from=build --chown=wikilens:wikilens /src/build/libs/*.jar /app/wikilens.jar
 
+# **진입점이 서버와 싱크를 가른다.** 자격증명은 이미지에 굽지 않고 `docker run`
+# 시점에 준다 — `serve` 로 뜬 컨테이너에는 애초에 없다. 그래야 "위키에 쓰기 금지"
+# 가 규율이 아니라 설계 보장으로 남는다. 계약이 그것을 검사한다.
+COPY --chown=wikilens:wikilens server/entrypoint.sh /app/entrypoint.sh
+
+# **정기 갱신 스크립트를 이미지가 나른다 — clone 없이 쓸 수 있어야 한다.**
+# 호스트에서 도는 물건이다(자격증명을 쥐고 `docker run` 을 부른다). 그런데 저장소에만
+# 있으면 README 가 "이미지로도 됩니다 — 저장소나 CLI 설치 없이" 라고 안내한 경로에서
+# 정기 갱신만 다시 clone 을 요구했다. 꺼내는 법은 README 에 한 줄로 적혀 있다.
+COPY --chown=wikilens:wikilens server/wikilens-refresh.sh /app/wikilens-refresh.sh
+RUN chmod +x /app/entrypoint.sh
+
 # **경로를 환경변수로 덮지 않는다.** `application.yml` 의 기본값이 이미
 # `~/.wikilens/{vault,index,state}` 이고, 컨테이너에서 `~` 는 `/home/wikilens` 로 풀린다
 # (`USER wikilens` 라 이미지에 `HOME` 이 박힌다 — 실측). 호스트와 **같은 설정값**을 쓰면
 # "이 배포는 경로가 다르다" 를 기억할 일이 없다.
 #
-#   ~/.wikilens/vault   볼트 (읽기 전용으로 마운트해도 된다 — 서버는 읽기만 한다)
-#   ~/.wikilens/state   궤적 로그·사용자 등록. **유일한 복구 불가 자산이라 영속 볼륨.**
+#   ~/.wikilens/vault   볼트
+#   ~/.wikilens/state   궤적 로그·사용자 등록. **유일한 복구 불가 자산.**
 #   ~/.wikilens/index   Lucene 색인. 지워도 재색인으로 복구된다.
+#
+# **마운트는 `~/.wikilens` 통째로 한 줄이다.** 셋을 따로 적던 시절에는 `state` 를
+# 빠뜨리면 궤적이 컨테이너와 함께 사라졌고 그게 조용했다. 그 안에 `env.sh`(600)도
+# 있지만 **서버 코드에 자격증명 참조가 한 줄도 없다**(계약이 검사한다) — 보이는
+# 것과 쓰는 것은 다르고, 읽기 전용 보장은 후자가 없다는 사실이 지킨다.
 #
 # **`VOLUME` 선언은 일부러 안 한다.** 하면 마운트를 안 준 `docker run` 이 **익명 볼륨
 # 셋을 조용히 만든다**(실측). 그렇게 만들어진 상태 디렉터리는 운영자가 모르는 채 쌓이고
@@ -128,10 +173,9 @@ EXPOSE 8787
 #
 # 컨테이너 메모리를 힙 상한에 반영한다 — 안 주면 JVM 이 호스트 RAM 을 기준으로 잡아
 # cgroup 한도를 넘어 OOMKill 된다.
-ENTRYPOINT ["java", \
-            "--enable-native-access=ALL-UNNAMED", \
-            "-XX:MaxRAMPercentage=75", \
-            "-jar", "/app/wikilens.jar"]
+# 인자 없이 뜨면 `serve` 다 — `docker compose up` 이 그대로 동작한다.
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["serve"]
 
 # 컨테이너가 "떴다" 와 "쓸 수 있다" 는 다르다. `/api/health` 는 포트가 열렸는지만
 # 말하므로, 볼트를 못 읽어 색인이 빈 상태도 healthy 로 보인다 — 그 구별은

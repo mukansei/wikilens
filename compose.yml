@@ -19,7 +19,10 @@
 services:
   wikilens:
     build:
-      context: ./server
+      # **컨텍스트가 저장소 루트다** — 이미지가 `cli/` 도 담기 때문이다.
+      # 배제 목록은 루트 `.dockerignore` 가 정본이다(`server/.dockerignore` 는 안 읽힌다).
+      context: .
+      dockerfile: server/Dockerfile
     ports:
       - "8787:8787"
     # **셋 다 호스트의 `~/.wikilens` 아래다.** 상태·색인이 named volume 이던 때는
@@ -27,9 +30,15 @@ services:
     # **유일한 복구 불가 자산인 궤적이 안 보이는 곳**에 있었다 — 백업하려면
     # `docker run --rm -v …` 를 쳐야 했고 `docker compose down -v` 한 번에 사라졌다.
     volumes:
-      - ${WIKILENS_VAULT:-~/.wikilens/vault}:/home/wikilens/.wikilens/vault:ro
-      - ${WIKILENS_STATE:-~/.wikilens/state}:/home/wikilens/.wikilens/state
-      - ${WIKILENS_INDEX:-~/.wikilens/index}:/home/wikilens/.wikilens/index
+      # **한 줄이다.** 호스트와 컨테이너의 경로가 같아서(`~/.wikilens`) 통째로
+      # 붙이면 vault·state·index 가 한 번에 붙는다 — 셋을 따로 적던 시절에는
+      # `state` 를 빠뜨리면 **궤적이 컨테이너와 함께 사라졌고** 그게 조용했다.
+      #
+      # **`env.sh`(자격증명)도 이 안에 있지만 서버는 그것을 안 읽는다** — 서버
+      # 코드에 `CONFLUENCE_*` 참조가 한 줄도 없다(계약이 검사한다). 읽기 전용
+      # 보장은 마운트 옵션이 아니라 **그 사실**이 지킨다. `sync` 는 별도 실행이고
+      # 그때만 자격증명을 받는다.
+      - ${WIKILENS_HOME:-~/.wikilens}:/data/.wikilens
 
     # **리눅스 호스트에서는 이 값을 줘야 한다.**
     #

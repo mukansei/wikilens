@@ -1,7 +1,8 @@
 # WikiLens
 
 <!--
-  배지의 버전은 **손으로 복제한 값**이다. 정본은 `server/build.gradle.kts` 와
+  배지는 **정적**이다 — 이 저장소는 비공개라 shields.io 가 빌드·라이선스 상태를 못 읽는다.
+  그래서 여기 적힌 버전은 손으로 복제한 값이고, 정본은 `server/build.gradle.kts` 와
   `cli/pyproject.toml` 이다. **어긋나면 `shared_contract.sh` 가 빨개진다** — 이 저장소가
   "두 곳이 같아야 하는데 연결이 없다" 로 반복해서 물린 자리라 검사를 붙였다.
 
@@ -132,9 +133,13 @@ Claude Code 안에서 **세 줄**입니다.
 /wikilens-local:setup          # 자격증명·볼트·CLI·첫 싱크까지 한 번에
 ```
 
-준비물은 둘입니다 — Confluence 주소와 개인 액세스 토큰(PAT).
+준비물은 셋입니다.
 
-토큰이 없으면 `setup` 이 발급처를 안내합니다.
+| | |
+|---|---|
+| Confluence 주소 | |
+| 개인 액세스 토큰(PAT) | 없으면 `setup` 이 발급처를 안내합니다 |
+| **저장소 접근 권한** | 비공개 저장소라 **첫 줄이 여기서 막힙니다.** `gh auth login` 또는 git credential helper 가 먼저 있어야 합니다 |
 
 나머지는 `setup` 이 합니다.
 
@@ -275,12 +280,36 @@ WL=~/.wikilens/venv/bin/wikilens        # 이 자리는 PATH 에 없습니다 (D
 export CONFLUENCE_URL=https://회사.atlassian.net CONFLUENCE_TOKEN=<서비스계정 PAT>
 export WIKILENS_ADMIN_TOKEN=<임의의 긴 ASCII 문자열>
 
-# 1. 볼트 만들기 — 호스트에서 합니다. 컨테이너는 싱크하지 않습니다.
+# 1. 볼트 만들기
 #    스페이스 키는 Confluence URL 의 /spaces/<KEY>/ 자리이고, `$WL doctor` 도 목록을 냅니다.
 $WL sync --space PLATFORM --root ~/.wikilens/vault
 
-# 2. 서버 기동 — compose 기본값이 같은 자리라 볼트 경로를 안 줘도 됩니다
+#    **서버가 이미 떠 있다면 `wikilens-refresh.sh` 하나면 됩니다** — 싱크와 재색인을
+#    함께 하고, 싱크가 실패하면 재색인하지 않습니다(3번 참고).
+
+#    이미지로도 됩니다 — 저장소나 CLI 설치 없이:
+#      docker run --rm -e CONFLUENCE_URL=... -e CONFLUENCE_TOKEN=... \
+#        -v ~/.wikilens/vault:/data/.wikilens/vault \
+#        ghcr.io/…/wikilens sync --space PLATFORM
+#
+#    **자격증명은 이때만 줍니다.** 서버로 뜨는 컨테이너에는 안 들어갑니다 —
+#    그래야 "위키에 쓰기 금지" 가 규율이 아니라 설계 보장으로 남습니다.
+
+# 2. 서버 기동 — 마운트는 `~/.wikilens` 한 줄입니다
 docker compose up -d --build
+
+#    compose 없이 이미지만으로도 같습니다 — **한 줄입니다**:
+#      docker run -d -p 8787:8787 -v ~/.wikilens:/data/.wikilens IMAGE
+#
+#    관리 토큰은 첫 기동에 만들어져 로그에 한 번 찍힙니다(`state/admin-token`).
+#    직접 정하려면 `-e WIKILENS_ADMIN_TOKEN=…` 를 주세요 — 그 값이 이깁니다.
+#    **기본이 잠김이라는 성질은 그대로입니다** — 값이 없으면 여전히 404 입니다.
+#
+#    컨테이너의 `HOME` 이 `/data` 라 `~/.wikilens` 가 `/data/.wikilens` 로 풀립니다.
+#    **설정값은 호스트와 같습니다**(`application.yml` 은 여전히 `~/.wikilens/vault`) —
+#    그 한 줄이면 vault·state·index 가 한 번에
+#    붙습니다. **마운트를 안 주면 빈 껍데기로 뜹니다** — `health` 는 200 인데 검색이
+#    0건입니다. 그 상태를 로그가 정확히 말합니다.
 
 # 3. 확인 — 여기서 초록이 아니면 사용자는 "문서가 없다" 로 봅니다
 WIKILENS_SERVER=http://localhost:8787 WIKILENS_USER=alice@corp \
@@ -345,20 +374,48 @@ curl -XPOST -H "X-WikiLens-Admin: $WIKILENS_ADMIN_TOKEN" \
 돌린 뒤 문서가 줄었다면 원인은 시행이 아니라 수집 실패입니다.
 기동 로그의 `unresolved` 가 그 수를 냅니다.
 
-#### 정기 갱신은 cron 한 줄입니다
-
-`&&` 가 필수입니다. 실패했는데 재색인하면 반쪽 상태가 반영됩니다.
+#### 정기 갱신은 스크립트 하나입니다
 
 ```bash
-WL=~/.wikilens/venv/bin/wikilens
-$WL sync --root ~/.wikilens/vault \
-  && curl -XPOST -H "X-WikiLens-Admin: $TOKEN" localhost:8787/api/admin/reindex
+# 저장소가 없다면 이미지에서 꺼냅니다 — clone 이 필요 없습니다
+docker run --rm IMAGE cat /app/wikilens-refresh.sh > ~/.wikilens/wikilens-refresh.sh
+chmod +x ~/.wikilens/wikilens-refresh.sh
 
-# 시행을 켰다면 acl 도 사이에 넣으세요 — sync 보다 자주 돌려야 합니다
-# $WL sync --root ~/.wikilens/vault && $WL acl --root ~/.wikilens/vault && curl …
+crontab -e
+# 0 9 * * 1 WIKILENS_ADMIN_TOKEN=… WIKILENS_IMAGE=… ~/.wikilens/wikilens-refresh.sh --space PLATFORM
 ```
 
-cron 에서는 절대경로가 특히 중요합니다. cron 의 PATH 는 대개 `/usr/bin:/bin` 입니다.
+`wikilens-refresh.sh` 가 **싱크 → 재색인 → 확인**을 한 번에 합니다. 첫 구축에도
+같은 것을 씁니다 — 절차가 하나뿐이어야 손으로 옮겨 적다 빠뜨리지 않습니다.
+
+**호스트에서 돕니다**(자격증명을 쥐고 `docker run` 을 부릅니다). 이미지 이름은
+`WIKILENS_IMAGE` 로 줍니다 — 기본값은 `compose` 가 짓는 `wikilens-wikilens` 라
+`docker run` 으로 직접 띄웠다면 다릅니다. **없는 이름이면 있는 것을 찍어 말합니다**
+(`docker run` 이 Hub 에서 받으려다 내는 `pull access denied` 는 이름 문제로 안 읽힙니다).
+
+**무엇을 대신 지켜주나:**
+
+- **싱크가 실패하면 재색인하지 않습니다.** 반쪽 상태가 반영되는 것을 막습니다
+- **싱크 후 볼트가 비면 멈춥니다.** 종료 코드만으로는 못 봅니다 — 컨테이너가 다른
+  자리에 쓰면 싱크는 성공하고 볼트는 빈 채로 남는데, 뒤의 재색인은 서버가 보는 **옛
+  볼트**를 다시 색인해 통과합니다. 실제로 겪었습니다(2026-08-27)
+- **자격증명을 `sync` 컨테이너에만 넘깁니다** — 서버에는 안 들어갑니다
+- **`~/.wikilens/env.sh` 를 읽어 넘깁니다** — 그 파일은 `export KEY=VAL` 형식이라
+  `docker --env-file` 이 거부합니다(실측)
+- **끝나고 색인이 0건이면 실패로 끊습니다** — 볼트를 못 읽어도 재색인 자체는
+  HTTP 200 입니다
+
+```
+WIKILENS_IMAGE   기본 wikilens-wikilens
+WIKILENS_VAULT   기본 ~/.wikilens/vault
+WIKILENS_SERVER  기본 http://localhost:8787
+WIKILENS_ENV     기본 ~/.wikilens/env.sh
+```
+
+CLI 를 호스트에 설치했다면 그것을 직접 불러도 됩니다 — 다만 `&&` 로 이어야 합니다.
+실패했는데 재색인하면 못 받은 상태가 그대로 반영됩니다.
+
+시행을 켰다면 `acl` 도 사이에 넣으세요 — `sync` 보다 자주 돌려야 합니다.
 
 자격증명도 `export` 가 아니라 `~/.wikilens/env.sh` (600) 에서 읽습니다.
 
