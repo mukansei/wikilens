@@ -30,7 +30,7 @@
 
 설치하면 이렇게 됩니다. Claude Code 안에서 평소처럼 물어보면 됩니다.
 
-```
+```bash
 › 우리 배포 절차 문서 어디 있어?
 
   search("배포 절차")
@@ -164,7 +164,7 @@ Claude Code 안에서 **세 줄**입니다.
 
 저장소를 clone 할 필요가 없습니다. 마켓플레이스가 알아서 받아옵니다.
 
-```
+```bash
 /plugin marketplace add https://github.com/mukansei/wikilens.git
 /plugin install wikilens-local@wikilens
 /wikilens-local:setup          # 자격증명·볼트·CLI·첫 싱크까지 한 번에
@@ -290,7 +290,7 @@ export CONFLUENCE_PREFIX=""        # Server/DC 강제
 
 볼트를 받지 않고, 값 둘(**서버 주소**·**본인 식별자**)만 넣으면 됩니다.
 
-```
+```bash
 /plugin install wikilens-client@wikilens
 /wikilens-client:setup
 ```
