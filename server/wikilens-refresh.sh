@@ -74,6 +74,12 @@ docker run --rm "${creds[@]}" \
 
 # **"싱크가 끝났다" 와 "볼트에 뭔가 있다" 는 다르다.** 위 경로 불일치가 정확히 이
 # 틈으로 빠져나갔다 — 종료 코드는 0 이었다.
+#
+# **다만 이건 첫 실행에만 듣는다.** 볼트가 이미 있으면 싱크가 아무것도 안 써도
+# 옛 파일 때문에 통과한다(실측) — 운영 환경은 항상 여기다. 진짜 방어는 마운트 지점과
+# `--root` 를 같은 상수로 묶은 위쪽이고, 이건 그것이 또 어긋났을 때를 위한 얕은 그물이다.
+# 갱신 여부까지 보려면 파일 mtime 을 재야 하는데, 변경 없는 증분 싱크와 구별되지
+# 않아 안 한다.
 if [ -z "$(ls -A "$VAULT" 2>/dev/null)" ]; then
   echo "  ✗ 싱크는 끝났는데 볼트가 비어 있습니다: $VAULT" >&2
   echo "    컨테이너가 다른 자리에 썼거나 스페이스가 비었습니다." >&2
@@ -88,8 +94,17 @@ if [ -z "${WIKILENS_ADMIN_TOKEN:-}" ]; then
   echo "    안 주면 404 입니다 — 서버를 띄울 때 준 값과 같아야 합니다." >&2
   exit 1
 fi
+# **`|| true` 가 없으면 이 줄에서 스크립트가 끝난다.** `set -e` 는 대입문의 실패도
+# 잡는데, curl 은 **서버가 안 떠 있으면 종료 코드 7** 이다 — 가장 흔한 실패에서
+# 아래 안내가 한 줄도 안 나오고 cron 로그에는 `exit 7` 만 남는다(실측 2026-08-27).
 code=$(curl -s -o /dev/null -w '%{http_code}' -XPOST \
-  -H "X-WikiLens-Admin: $WIKILENS_ADMIN_TOKEN" "$SERVER/api/admin/reindex")
+  -H "X-WikiLens-Admin: $WIKILENS_ADMIN_TOKEN" "$SERVER/api/admin/reindex" || true)
+if [ -z "$code" ] || [ "$code" = "000" ]; then
+  # 000 은 curl 이 응답을 못 받은 것 — 주소·포트·기동 여부지 토큰 문제가 아니다.
+  echo "  ✗ 서버에 닿지 못했습니다: $SERVER" >&2
+  echo "    떠 있는지, WIKILENS_SERVER 가 맞는지 보세요(기본 http://localhost:8787)." >&2
+  exit 1
+fi
 [ "$code" = "200" ] || {
   echo "  ✗ 재색인 HTTP $code — 404 면 토큰 불일치입니다(거부는 403 이 아니라 404)." >&2
   exit 1
@@ -97,10 +112,31 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -XPOST \
 
 # **끝났다고 쓸 수 있는 것은 아니다.** 색인이 0건이면 볼트를 못 읽은 것이고,
 # 그 상태도 HTTP 200 이다(조용히 실패 14번의 계열).
-curl -s "$SERVER/api/stats" | python3 -c '
+# **먼저 받고 나서 읽는다 — 파이프로 이으면 원인이 뭉개진다.** 예전에는
+# `curl | python3` 이라 서버 불통도 색인 0건도 같은 `||` 로 떨어져 **"색인이 0건입니다
+# — 볼트 경로를 확인하세요" 라고 오진**했다(볼트는 멀쩡했다). 파이썬 트레이스백도
+# 그대로 노출됐다. 실측 2026-08-27.
+stats=$(curl -s "$SERVER/api/stats" || true)
+if [ -z "$stats" ]; then
+  echo "  ✗ 재색인은 200 이었는데 /api/stats 가 비었습니다: $SERVER" >&2
+  echo "    서버가 그 사이에 죽었을 수 있습니다." >&2
+  exit 1
+fi
+printf '%s' "$stats" | python3 -c '
 import json, sys
-d = json.load(sys.stdin)
+raw = sys.stdin.read()
+try:
+    d = json.loads(raw)
+except ValueError:
+    sys.stderr.write("  ✗ /api/stats 가 JSON 이 아닙니다 — 앞 200자: %s\n" % raw[:200])
+    sys.exit(2)
 n = d.get("indexedDocs", 0)
 print("  색인 {:,}건 · 분석기 {}".format(n, d.get("analyzer")))
 sys.exit(0 if n else 1)
-' || { echo "  ✗ 색인이 0건입니다 — 볼트 경로를 확인하세요." >&2; exit 1; }
+' || {
+  # **`$?` 를 먼저 잡는다** — 블록 안에서 명령을 하나라도 돌리면 덮인다.
+  # 2 = 응답이 JSON 이 아님(파이썬이 이미 말했다) · 1 = 색인 0건
+  rc=$?
+  [ "$rc" = "1" ] && echo "  ✗ 색인이 0건입니다 — 볼트 경로를 확인하세요." >&2
+  exit 1
+}

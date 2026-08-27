@@ -314,6 +314,31 @@ check "싱크 마운트 지점과 --root 가 같음 (갈리면 볼트가 조용�
 check "refresh 가 싱크 후 빈 볼트를 잡음 (종료 코드만으로는 못 본다)" \
   'grep -q "ls -A \"\$VAULT\"" server/wikilens-refresh.sh'
 
+# **`set -e` 는 대입문의 실패도 잡는다 — 그래서 curl 은 `|| true` 가 필요하다.**
+# 서버가 안 떠 있으면 curl 이 종료 코드 7 이고, 그러면 뒤따르는 안내가 **한 줄도
+# 실행되지 않은 채** 스크립트가 끝난다(실측 2026-08-27: cron 로그에 `exit 7` 만).
+# 가장 흔한 실패가 가장 적은 정보를 내던 자리다.
+check "refresh 의 curl 이 set -e 에 안 죽음 (서버 불통이 가장 흔한 실패다)" \
+  'c=$(grep -c "|| true" server/wikilens-refresh.sh); [ "$c" -ge 2 ] \
+   && code_has server/wikilens-refresh.sh "서버에 닿지 못했습니다"'
+
+# **응답을 파이프로 바로 읽지 않는다 — 원인이 뭉개진다.** `curl | python3` 이던 시절
+# 서버 불통과 색인 0건이 같은 `||` 로 떨어져 **"볼트 경로를 확인하세요" 로 오진**했고
+# 파이썬 트레이스백이 그대로 노출됐다. 받아 두고 나서 판정한다.
+# 부정 패턴의 파이프는 문자 클래스로 감싼다 — 안 감싸면 교대로 읽혀
+# **긍정 쪽 줄에 매칭되어 계약이 뒤집힌다.** 그리고 `[|]` 만으로는 부족했다 —
+# 고친 코드의 `|| true` 에 걸렸다(실측). 파이프 **뒤에 오는 명령**까지 봐야 한다.
+check "refresh 가 stats 를 받아 두고 판정 (파이프로 이으면 원인이 뭉개진다)" \
+  'code_has server/wikilens-refresh.sh "stats=[$][(]curl" \
+   && ! code_has server/wikilens-refresh.sh "api/stats. [|] *python"'
+
+# **토큰 파일은 `-s` 로 본다 — `-r` 은 0바이트도 통과시킨다.** 쓰다 죽으면 빈 파일이
+# 남는데, 그러면 빈 토큰을 쥐고 "읽었습니다" 를 찍는다. 서버가 404 로 닫아 안전하긴
+# 하지만 **운영자가 토큰을 의심하지 않게 된다.**
+check "관리 토큰 파일을 -s 로 검사 (-r 은 빈 파일을 통과시킨다)" \
+  'code_has server/entrypoint.sh "\[ -s \"\$f\" \]" \
+   && ! code_has server/entrypoint.sh "\[ -r \"\$f\" \]"'
+
 # **정기 갱신 스크립트가 이미지에 들어 있다** — README 가 "저장소 없이" 를 안내하는데
 # 갱신만 clone 을 요구하면 그 경로가 반쪽이다.
 check "이미지가 refresh 스크립트를 나름 (clone 없는 경로가 성립해야 한다)" \
@@ -494,12 +519,13 @@ check "모델용 지시 문서가 명령형 존댓말로 통일됨 (평서형은
 # **"조직판 질의로 덮이지 않았나"** 이므로, 공개 코퍼스의 표식이 있고 조직 고유
 # 낱말이 없는지를 본다. 표식 하나만 보면 양쪽이 다 없는 빈 파일도 통과한다.
 check "공개판이면 oss 전용 파일이 조직판으로 안 덮임 (동기화가 되돌릴 목록을 빠뜨림)" \
-  'grep -q "github.com/mukansei/wikilens" README.md || exit 0            # 조직판이면 해당 없음
-   grep -q "lf-onap.atlassian.net" bench/queries.py \
-     && ! grep -q "mOrder\|ACUPI\|디지털세일즈" bench/queries.py \
-     && grep -q "같은 제목" docs/experiment-2026-08-14-answer.md \
-     && grep -q "emptyList<C>" server/src/test/kotlin/io/wikilens/index/Bm25LengthNormTest.kt \
-     && ! grep -q "CowaySDK" docs/report-2026-08-21-learning-effect.md'
+  'if grep -q "github.com/mukansei/wikilens" README.md; then         # 조직판이면 해당 없음
+     grep -q "lf-onap.atlassian.net" bench/queries.py \
+       && ! grep -q "mOrder\|ACUPI\|디지털세일즈" bench/queries.py \
+       && grep -q "같은 제목" docs/experiment-2026-08-14-answer.md \
+       && grep -q "emptyList<C>" server/src/test/kotlin/io/wikilens/index/Bm25LengthNormTest.kt \
+       && ! grep -q "CowaySDK" docs/report-2026-08-21-learning-effect.md
+   fi'
 
 # **커밋 저자도 조직 정보다.** git 은 브랜치별 `user.email` 설정이 없어서(전역/로컬
 # 하나뿐), 공개판에서 커밋하면 조직 계정이 그대로 박힌다 — 실측(2026-08-20): 304커밋
@@ -526,8 +552,9 @@ check "공개판 커밋 메시지·파일에 조직 도메인·사번이 없음 
    fi'
 
 check "공개판 이력에 조직 계정이 없음 (git 은 브랜치별 user 설정이 없다)" \
-  'grep -q "github.com/mukansei/wikilens" README.md || exit 0
-   [ -z "$(git log --format="%an <%ae>%n%cn <%ce>" -50 | grep -iE "coway|메가존")" ]'
+  'if grep -q "github.com/mukansei/wikilens" README.md; then
+     [ -z "$(git log --format="%an <%ae>%n%cn <%ce>" -50 | grep -iE "coway|메가존")" ]
+   fi'
 
 # **태그도 조직 정보를 나른다 — `git log` 로는 안 보인다.**
 #
@@ -539,14 +566,16 @@ check "공개판 이력에 조직 계정이 없음 (git 은 브랜치별 user �
 # **태그 객체 안의 이름도 본다.** `refs/tags/A:refs/tags/B` 로 밀면 겉이름만
 # 바뀌고 객체 안 `tag A` 는 남는다 — 내부 구분용 이름이 그대로 공개된다.
 check "공개판 태그에 조직 계정·내부 이름이 없음 (tagger 는 git log 에 안 보인다)" \
-  'grep -q "github.com/mukansei/wikilens" README.md || exit 0
-   for t in $(git tag -l "v*"); do
-     o=$(git cat-file -p "$t" 2>/dev/null) || continue
-     printf "%s" "$o" | grep -q "^tagger" || continue          # 경량 태그는 tagger 가 없다
-     printf "%s" "$o" | grep -iE "^tagger.*(coway|메가존)" && exit 1
-     printf "%s" "$o" | grep -qE "^tag $t\$" || exit 1        # 객체 안 이름이 ref 와 달라짐
-   done
-   exit 0'
+  'if grep -q "github.com/mukansei/wikilens" README.md; then
+     bad=0
+     for t in $(git tag -l "v*"); do
+       o=$(git cat-file -p "$t" 2>/dev/null) || continue
+       printf "%s" "$o" | grep -q "^tagger" || continue        # 경량 태그는 tagger 가 없다
+       printf "%s" "$o" | grep -qiE "^tagger.*(coway|메가존)" && bad=1
+       printf "%s" "$o" | grep -qE "^tag $t\$" || bad=1       # 객체 안 이름이 ref 와 달라짐
+     done
+     [ "$bad" = "0" ]
+   fi'
 
 # **그리고 실제로 조직 정보가 샜는지 직접 본다.** 위 검사는 "그 판의 파일인가" 만 보고,
 # 파일 안에 새 문장이 들어오는 것은 못 잡는다 — 실측으로 겪은 것이 정확히 그 모양이다
