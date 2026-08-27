@@ -339,6 +339,20 @@ check "관리 토큰 파일을 -s 로 검사 (-r 은 빈 파일을 통과시킨�
   'code_has server/entrypoint.sh "\[ -s \"\$f\" \]" \
    && ! code_has server/entrypoint.sh "\[ -r \"\$f\" \]"'
 
+# **MCP 프록시는 파이썬 3.9 에서 돌아야 한다 — macOS 기본이 3.9 다.**
+#
+# 사용자는 CLI 를 안 깔기 때문에 `cli/pyproject.toml` 의 requires-python 보호를 못
+# 받는다. `.mcp.json` 이 python3 로 부르고, 그 python3 가 3.9 면 프록시가 **기동 중
+# 죽어 MCP 도구 다섯이 통째로 사라진다**(실측 2026-08-27: `float | None` 주석과
+# write_text 의 newline 인자가 둘 다 3.10+ 였다). 사용자에게는 traceback 도 안 보인다.
+#
+# **문법만 보는 검사라 완전하지 않다** — 진짜 확인은 3.9 인터프리터로
+# plugin/tests/test_mcp_proxy.py 를 돌리는 것이고, 그 판이 없는 머신이 있어 못 넣었다.
+check "MCP 프록시에 3.10+ 전용 문법이 없음 (사용자 python3 가 3.9 면 도구가 사라진다)" \
+  '! code_has plugin/client/mcp/wikilens_mcp.py "[a-z_]+: [a-zA-Z]+ [|] (None|str|int)" \
+   && ! code_has plugin/client/mcp/wikilens_mcp.py "write_text[(].*newline" \
+   && code_has plugin/client/mcp/wikilens_mcp.py "version_info < [(]3, 9[)]"'
+
 # **정기 갱신 스크립트가 이미지에 들어 있다** — README 가 "저장소 없이" 를 안내하는데
 # 갱신만 clone 을 요구하면 그 경로가 반쪽이다.
 check "이미지가 refresh 스크립트를 나름 (clone 없는 경로가 성립해야 한다)" \

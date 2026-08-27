@@ -312,8 +312,8 @@ export CONFLUENCE_PREFIX=""        # Server/DC 강제
 
 | 전제 | 왜 |
 |---|---|
-| **운영자는 저장소가 필요합니다** | `compose.yml`·`cli/`·MCP 프록시가 저장소 안에 있고 아래 경로가 그것에 상대적입니다. 사용자는 플러그인만 설치하므로 해당 없습니다 |
-| **CLI 는 PATH 에 없습니다** | `~/.wikilens/venv` 에 깔립니다. 아래처럼 절대경로로 부르거나 `WL=~/.wikilens/venv/bin/wikilens` 로 별칭을 잡으세요 |
+| **운영자는 저장소가 필요합니다** | **이미지가 배포된 곳이 없어** 직접 지어야 하고, `compose.yml`·MCP 프록시도 저장소 안에 있습니다. 사용자는 플러그인만 설치하므로 해당 없습니다 |
+| **파이썬은 필요 없습니다** | 볼트를 만드는 CLI 가 이미지 안에 있습니다. 마지막 확인 단계만 파이썬을 쓰는데 표준 라이브러리뿐이고 3.9 면 됩니다(macOS 기본) |
 | **볼트는 `~/.wikilens/vault` 입니다** | 로컬판·서버판·`compose.yml` 이 전부 이 자리를 기본으로 봅니다. 옮기지 않는 편이 낫습니다 (아래 참고) |
 
 <sub>볼트를 기본 자리에 두면 지우는 방법이 `rm -rf ~/.wikilens` 하나로 유지되고,
@@ -323,34 +323,32 @@ export CONFLUENCE_PREFIX=""        # Server/DC 강제
 
 > **권한 시행은 기본이 꺼짐입니다**(`acl-enforced=false`). 그래서 기본 구성에서는
 > **서버에 닿는 사람 전원이 서비스 계정의 권한 범위 전부를 봅니다.** 그래도 되는 팀이면
-> 아래 세 단계가 전부이고, 아니면 [시행을 켜세요](docs/server-operations.md#권한-시행을-켜려면).
+> 아래 네 단계가 전부이고, 아니면 [시행을 켜세요](docs/server-operations.md#권한-시행을-켜려면).
 
 ```bash
 git clone https://github.com/mukansei/wikilens.git && cd wikilens
 
-python3 -m venv ~/.wikilens/venv && ~/.wikilens/venv/bin/pip install ./cli
-WL=~/.wikilens/venv/bin/wikilens        # 이 자리는 PATH 에 없습니다 (D15)
+# 1. 이미지 짓기 — 이후 전부 이 이미지로 합니다
+#    **이미지가 배포된 곳은 없습니다.** 레지스트리에 올린 적이 없으므로 직접 짓습니다.
+#    실측: --no-cache 로 88초.
+docker compose build
 
-export CONFLUENCE_URL=https://회사.atlassian.net CONFLUENCE_TOKEN=<서비스계정 PAT>
-export WIKILENS_ADMIN_TOKEN=<임의의 긴 ASCII 문자열>
+# 2. 볼트 만들기 — **파이썬도 CLI 도 안 깝니다.** 이미지가 CLI 를 갖고 있습니다.
+#    스페이스 키는 Confluence URL 의 /spaces/<KEY>/ 자리이고, sync 대신 doctor 를
+#    주면 목록이 나옵니다. 공개 위키라면 CONFLUENCE_TOKEN 대신 CONFLUENCE_AUTH=none.
+docker run --rm \
+  -e CONFLUENCE_URL=https://회사.atlassian.net -e CONFLUENCE_TOKEN=<서비스계정 PAT> \
+  -v ~/.wikilens/vault:/vault \
+  wikilens-wikilens sync --root /vault --space PLATFORM
 
-# 1. 볼트 만들기
-#    스페이스 키는 Confluence URL 의 /spaces/<KEY>/ 자리이고, `$WL doctor` 도 목록을 냅니다.
-$WL sync --space PLATFORM --root ~/.wikilens/vault
-
-#    **서버가 이미 떠 있다면 `wikilens-refresh.sh` 하나면 됩니다** — 싱크와 재색인을
-#    함께 하고, 싱크가 실패하면 재색인하지 않습니다(3번 참고).
-
-#    이미지로도 됩니다 — 저장소나 CLI 설치 없이:
-#      docker run --rm -e CONFLUENCE_URL=... -e CONFLUENCE_TOKEN=... \
-#        -v ~/.wikilens/vault:/data/.wikilens/vault \
-#        ghcr.io/…/wikilens sync --space PLATFORM
-#
 #    **자격증명은 이때만 줍니다.** 서버로 뜨는 컨테이너에는 안 들어갑니다 —
 #    그래야 "위키에 쓰기 금지" 가 규율이 아니라 설계 보장으로 남습니다.
+#
+#    **이미지 이름은 `<디렉터리>-wikilens` 입니다.** 위처럼 clone 했다면
+#    `wikilens-wikilens` 이고, 다른 이름의 디렉터리면 다릅니다(`docker images` 로 확인).
 
-# 2. 서버 기동 — 마운트는 `~/.wikilens` 한 줄입니다
-docker compose up -d --build
+# 3. 서버 기동 — 마운트는 `~/.wikilens` 한 줄입니다
+docker compose up -d
 
 #    compose 없이 이미지만으로도 같습니다 — **한 줄입니다**:
 #      docker run -d -p 8787:8787 -v ~/.wikilens:/data/.wikilens IMAGE
@@ -365,7 +363,8 @@ docker compose up -d --build
 #    붙습니다. **마운트를 안 주면 빈 껍데기로 뜹니다** — `health` 는 200 인데 검색이
 #    0건입니다. 그 상태를 로그가 정확히 말합니다.
 
-# 3. 확인 — 여기서 초록이 아니면 사용자는 "문서가 없다" 로 봅니다
+# 4. 확인 — 여기서 초록이 아니면 사용자는 "문서가 없다" 로 봅니다
+#    프록시는 표준 라이브러리만 쓰고 **파이썬 3.9 에서 돕니다**(macOS 기본).
 WIKILENS_SERVER=http://localhost:8787 WIKILENS_USER=alice@corp \
   python3 plugin/client/mcp/wikilens_mcp.py --status
 ```
@@ -374,7 +373,7 @@ WIKILENS_SERVER=http://localhost:8787 WIKILENS_USER=alice@corp \
 찾아 전량 색인합니다. 다만 Docker 쪽이 ripgrep 을 갖고 있고 경로가 절대경로로 못 박혀
 있어 권장입니다.</sub>
 
-3번이 왜 중요하냐면, 이 시스템의 실패는 대부분 **에러가 아니라 0건**으로 나타나고
+4번이 왜 중요하냐면, 이 시스템의 실패는 대부분 **에러가 아니라 0건**으로 나타나고
 0건은 "문서가 없다" 와 구별되지 않기 때문입니다.
 
 | 빠뜨리면 | 증상 | `--status` 가 하는 말 |

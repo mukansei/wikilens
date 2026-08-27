@@ -11,7 +11,27 @@ Claude Code(stdio) ↔ WikiLens 서버(HTTP) 사이의 얇은 어댑터.
 훅이 필요 없는 이유: 읽기가 서버를 거치므로 서버가 궤적을 직접 관측한다.
 클라이언트 버퍼링도, 핫 패스 비용도, 세션 조립도 없다.
 """
+import sys as _sys
+
+# **파이썬 3.9 에서 돌아야 한다 — macOS 기본이 3.9 다.**
+#
+# 이 프록시는 사용자가 아무것도 안 깐 상태에서 도는 것이 설계 전제인데(그래서 표준
+# 라이브러리만 쓴다), 정작 3.10+ 문법 둘이 섞여 있었다 — `float | None` 주석과
+# `write_text(newline=)`. `.mcp.json` 이 `python3` 로 부르므로 사용자의 `python3` 가
+# 3.9 면 **기동 중 죽어 MCP 도구 다섯이 통째로 사라졌다**(실측 2026-08-27).
+# 그 실패는 사용자에게 traceback 조차 안 보인다 — 도구가 그냥 없다.
+#
+# 아래 문턱은 **실측한 하한**이다(3.9.6 에서 `test_mcp_proxy.py` 85건 전부 통과).
+# 더 낮은 판은 확인한 적이 없으므로 traceback 대신 한 문장으로 끊는다.
+if _sys.version_info < (3, 9):
+    _sys.stderr.write(
+        "WikiLens: 파이썬 3.9 이상이 필요합니다 (지금 %d.%d).\n"
+        "  다른 인터프리터를 쓰려면 WIKILENS_PYTHON 을 설정하세요.\n"
+        % _sys.version_info[:2])
+    raise SystemExit(1)
+
 import atexit
+import io
 import json
 import os
 import pathlib
@@ -109,7 +129,7 @@ SUPPORTED = {"2024-11-05", "2025-03-26", "2025-06-18"}
 
 # --------------------------------------------------------------- HTTP
 
-def post(path: str, payload: dict, timeout: float | None = None) -> dict:
+def post(path: str, payload: dict, timeout=None) -> dict:
     req = urllib.request.Request(
         f"{SERVER}{path}",
         data=json.dumps(payload).encode(),
@@ -207,7 +227,12 @@ def _probe_index(s: dict) -> bool:
         print("  (서버를 재기동할 때마다 필요합니다.)")
         ok = False
     if not docs:
-        print("\n색인이 비어 있습니다. 운영자에게 재색인을 요청하세요.")
+        # **독자가 둘이다** — 이 진단은 사용자도 돌리고 구축 중인 운영자도 돌린다
+        # (README 서버판 3단계). "운영자에게 요청하세요" 만 찍으면 운영자 본인에게는
+        # 자기한테 요청하라는 말이 된다. 무엇이 필요한지를 먼저 말하고 역할은 뒤에 붙인다.
+        print("\n색인이 비어 있습니다 — 볼트를 싱크한 뒤 재색인해야 합니다.")
+        print("  구축 중이라면: wikilens sync … 다음 POST /api/admin/reindex")
+        print("  사용자라면: 운영자에게 알리세요.")
         ok = False
 
     # 문자 집합 필터로 빠진 문서. **빠진 것은 검색 결과에 안 나오는 것으로만 드러나고**
@@ -471,9 +496,11 @@ def configure(argv: list[str]) -> int:
     # `setup_vault._ensure_config_dir` 와 같은 이유).
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     os.chmod(CONFIG_PATH.parent, 0o700)
-    CONFIG_PATH.write_text(
-        json.dumps(cfg, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8", newline="\n")
+    # **`write_text(newline=)` 은 파이썬 3.10+ 다** — macOS 기본이 3.9 라 거기서 죽었다
+    # (실측 2026-08-27: `TypeError: write_text() got an unexpected keyword argument`).
+    # 이 프록시는 사용자가 아무것도 안 깐 상태에서 도는 것이 설계 전제이므로 `open` 을 쓴다.
+    with io.open(CONFIG_PATH, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(cfg, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
     print(f"CONFIG={CONFIG_PATH}")
     if quarantined:
