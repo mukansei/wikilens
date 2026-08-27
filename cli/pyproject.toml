@@ -1,6 +1,6 @@
 [project]
 name = "wikilens"
-version = "0.18.4"
+version = "0.18.5"
 description = "Confluence 위키를 로컬 마크다운으로 미러링하고 별칭 색인을 생성합니다"
 requires-python = ">=3.10"
 license = "MIT"
