@@ -36,11 +36,11 @@
   search("배포 절차")
   3건 (어휘 후보 24 · 학습 힌트 1)
 
-  * 1. [200000001] 릴리스 파이프라인 운영 가이드  (PLATFORM) rel=0.74
-    2. [200000042] 배포 체크리스트                (PLATFORM)
-  S 3. [200000107] 롤백 절차                      (SRE)
+  * 1. [200001001] 릴리스 파이프라인 운영 가이드  (PLATFORM) rel=0.74
+    2. [200001042] 배포 체크리스트                (PLATFORM)
+  S 3. [200001107] 롤백 절차                      (SRE)
 
-  read(200000001)
+  read(200001001)
 
 › 릴리스 파이프라인 운영 가이드(PLATFORM)에 있습니다. 요약하면 —
   ① 태그를 올리면 CI 가 스테이징에 배포하고 ② QA 승인 후 …
@@ -373,6 +373,9 @@ WIKILENS_SERVER=http://localhost:8787 WIKILENS_USER=alice@corp \
 찾아 전량 색인합니다. 다만 Docker 쪽이 ripgrep 을 갖고 있고 경로가 절대경로로 못 박혀
 있어 권장입니다.</sub>
 
+**운영 상세는 [`server/README.md`](server/README.md) 입니다** — 경로·PATH, 분석기 고르기,
+상태 디렉터리 락, API 명세, 옛 배포에서 올리기.
+
 4번이 왜 중요하냐면, 이 시스템의 실패는 대부분 **에러가 아니라 0건**으로 나타나고
 0건은 "문서가 없다" 와 구별되지 않기 때문입니다.
 
@@ -633,8 +636,8 @@ Confluence 고유 개념(`ac:link` storage format · `ancestors` · CQL)에만 �
 
 | 경로 | 내용 | 언어 |
 |---|---|---|
-| **`cli/`** | Confluence 싱크 · 파싱 · 앵커 전치 — **볼트를 만드는 유일한 곳** | Python |
-| **`server/`** | Lucene/Nori 색인 · 학습 레이어 · HTTP API | Kotlin |
+| **`cli/`** | Confluence 싱크 · 파싱 · 앵커 전치 — **볼트를 만드는 유일한 곳** ([안내](cli/README.md)) | Python |
+| **`server/`** | Lucene/Nori 색인 · 학습 레이어 · HTTP API ([운영 안내](server/README.md)) | Kotlin |
 | **`plugin/local/`** | 스킬 + 커맨드 2개 ([사용 안내](plugin/local/README.md)) | Python |
 | **`plugin/client/`** | MCP 도구 5개 + 스킬 ([사용 안내](plugin/client/README.md)) | Python |
 | `contract/` | 교차 언어 계약 검사 + 공유 골든 픽스처 | — |
