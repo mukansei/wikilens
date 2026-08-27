@@ -62,6 +62,10 @@ python3 ~/.claude/plugins/cache/wikilens/wikilens-client/*/mcp/wikilens_mcp.py -
 **MCP 도구 다섯은 Windows 에서 그대로 됩니다** — MCP 프록시가 순수 파이썬이라
 셸이 필요 없습니다. 파이썬만 있으면 됩니다.
 
+**파이썬 3.9 이상이면 됩니다**(macOS 기본이 3.9 입니다). 그보다 낮으면 프록시가
+한 문장으로 끊습니다 — 예전에는 3.10+ 문법이 섞여 있어 **기동 중 죽고 MCP 도구
+다섯이 통째로 사라졌습니다**(사용자에게는 traceback 조차 안 보입니다).
+
 다만 **인터프리터 이름이 다릅니다.** macOS·리눅스는 `python3`, Windows 는 대개
 `python` 또는 `py` 입니다. 플러그인은 `python3` 를 기본으로 쓰되 환경변수로 바꿀 수
 있게 해뒀습니다 — `python3` 로 안 뜨면 이것을 설정하세요:
@@ -161,23 +165,33 @@ Git for Windows 가 있으면 Bash 도구를 쓰고
 
 ## 운영자용
 
-서버 구축·운영은 저장소의 [`server/README.md`](../../server/README.md) 를 보세요.
+<!-- **상대 링크를 쓰지 않는다.** 이 파일은 설치되면 사용자 손에 복사되는데, 거기에는
+     `README.md commands mcp skills` 넷뿐이라 `../../server/README.md` 가 없다(실측
+     2026-08-27). 같은 이유로 마켓플레이스 URL 도 안 박는다 — 로컬판 README 참고. -->
+
+서버 구축·운영은 **저장소의 `server/README.md`** 를 보세요(설치본에는 없습니다).
 요약하면:
 
 ```bash
-# 서비스 계정으로 1회 싱크 (사용자별 싱크 없음 → Confluence 부하 1배)
-CONFLUENCE_TOKEN=<서비스계정> wikilens --root ~/.wikilens/vault sync --space PLATFORM
-cd server && ./gradlew bootRun      # 기동 시 볼트를 찾아 전량 색인합니다
+docker compose build                      # 이미지가 배포된 곳은 없습니다 — 직접 짓습니다
+
+# 서비스 계정으로 1회 싱크 (사용자별 싱크 없음 → Confluence 부하 1배).
+# **파이썬도 CLI 도 안 깝니다** — 이미지가 CLI 를 갖고 있습니다.
+docker run --rm -e CONFLUENCE_URL=… -e CONFLUENCE_TOKEN=<서비스계정> \
+  -v ~/.wikilens/vault:/vault  wikilens-wikilens sync --root /vault --space PLATFORM
+
+docker compose up -d                      # 기동 시 볼트를 찾아 전량 색인합니다
 ```
 
 볼트 경로를 따로 알려주지 않아도 됩니다 — 서버가 `~/.wikilens/config.json` 의 `vault`
 를 폴백으로 읽습니다. 다른 자리에 두려면 `--wikilens.vault-root=/절대/경로` 로 명시하세요
 (명시가 항상 이깁니다).
 
-- **정기 갱신은 cron 으로.** `wikilens sync ... && curl -XPOST .../admin/reindex` —
-  `&&` 가 중요합니다. 싱크가 실패했는데 재색인이 돌면 절반만 반영됩니다.
+- **정기 갱신은 `server/wikilens-refresh.sh` 하나입니다.** 싱크 → 재색인 → 확인을
+  한 번에 하고 싱크가 실패하면 재색인하지 않습니다 — 손으로 `&&` 를 잇던 절차가
+  문서 네 곳에 복제돼 있었고 하나가 빠지면 조용히 반쪽이 됐습니다.
   자격증명은 `~/.wikilens/env.sh`(600)에 두면 됩니다 — cron 은 환경이 최소라
-  `export` 가 없는데, CLI 가 그 파일을 폴백으로 읽습니다(`server/README.md`).
+  `export` 가 없는데, CLI 가 그 파일을 폴백으로 읽습니다.
 - **재기동에 손댈 것이 없습니다.** 색인과 ACL 페이지 맵은 기동 시 자동으로 적재되고,
   사용자 등록은 `state/acl-users.json` 에 원자적으로 저장됩니다 — 예전에는 메모리
   전용이라 재기동마다 전원이 사라졌고 그 상태가 "문서가 없다" 와 구별되지 않았습니다.
@@ -189,8 +203,10 @@ cd server && ./gradlew bootRun      # 기동 시 볼트를 찾아 전량 색인�
   등록을 안 하면 전원이 빈손인데 그게 "문서가 없다"와 구별되지 않습니다. 끄면 등록
   없이 전원이 전 문서를 봅니다 — **볼트를 싱크한 계정의 권한 범위를 전원이 공유해도
   되는 경우에만** 맞습니다. `--status` 가 `ACL_ENFORCED=no` 로 계속 알립니다.
-- **관리 API 는 기본이 잠김입니다.** `--wikilens.admin-token=<문자열>` 을 주고
-  호출할 때 `-H "X-WikiLens-Admin: <토큰>"` 을 붙이세요. 안 주면 전부 404 입니다.
+- **관리 API 는 기본이 잠김입니다.** 토큰은 **첫 기동에 자동 생성**되어 로그에 한 번
+  찍히고 `state/admin-token` 에 남습니다 — 직접 정하려면 `WIKILENS_ADMIN_TOKEN` 을
+  주세요(그 값이 이깁니다). 호출할 때 `-H "X-WikiLens-Admin: <토큰>"` 을 붙이고,
+  안 붙이면 전부 404 입니다.
   **토큰은 ASCII 로 쓰세요** — 헤더 인코딩 때문에 비ASCII 는 프록시를 거치면
   깨질 수 있습니다(기동 시 경고합니다).
 - **권한 수집은 `wikilens acl` 로 따로 돌립니다** — `sync` 와 주기가 다릅니다(권한

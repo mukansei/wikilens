@@ -638,7 +638,7 @@ Confluence 고유 개념(`ac:link` storage format · `ancestors` · CQL)에만 �
 | **`plugin/local/`** | 스킬 + 커맨드 2개 ([사용 안내](plugin/local/README.md)) | Python |
 | **`plugin/client/`** | MCP 도구 5개 + 스킬 ([사용 안내](plugin/client/README.md)) | Python |
 | `contract/` | 교차 언어 계약 검사 + 공유 골든 픽스처 | — |
-| `docs/` | [아키텍처](docs/architecture.md) · 설계 제안(임베딩 · [진술된 답](docs/declared-answer-design.md) · [유용 판정](docs/usefulness-signals.md)) · 코드 리뷰와 실험 기록([학습](docs/experiment-2026-08-14-learning.md) · [진술·번역본](docs/experiment-2026-08-14-answer.md)) | — |
+| `docs/` | README 에서 옮긴 상세([학습 레이어](docs/learning-layer.md) · [적용 범위](docs/scope.md) · [서버 운영](docs/server-operations.md)) · [아키텍처](docs/architecture.md) · 설계 제안([진술된 답](docs/declared-answer-design.md) · [유용 판정](docs/usefulness-signals.md)) · 실험 기록([학습](docs/experiment-2026-08-14-learning.md) · [진술](docs/experiment-2026-08-14-answer.md)) | — |
 | `.claude-plugin/` | 마켓플레이스 매니페스트 (**반드시 저장소 루트**) | — |
 
 Python 과 Kotlin 은 **파일로만** 연결됩니다. 볼트 포맷이 곧 인터페이스입니다.

@@ -183,6 +183,8 @@ wikilens --root ~/.wikilens/vault acl && curl -XPOST -H "X-WikiLens-Admin: $TOKE
 ```
 
 `&&` 가 중요합니다 — 실패했는데 재색인하면 반쪽 권한이 반영됩니다.
+**서버판 정기 갱신이라면 손으로 잇지 말고 `server/wikilens-refresh.sh` 를 쓰세요** —
+같은 순서를 지키면서 싱크 후 볼트가 비는 경우까지 잡습니다.
 
 ### 도입 판단
 

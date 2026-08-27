@@ -83,33 +83,52 @@ wikilens sync --space <KEY>          # --root 를 안 주면 ~/.wikilens/vault
 ## Docker 로 띄우기
 
 ```bash
-export WIKILENS_ADMIN_TOKEN=<임의의 긴 ASCII 문자열>
-WIKILENS_VAULT=~/.wikilens/vault docker compose up -d --build
+docker compose up -d --build
 ```
 
-`compose.yml` 이 저장소 루트에 있습니다. **요점은 볼륨 셋입니다** — 이미지에는 코드만
-있고 데이터는 전부 밖에 있습니다.
+`compose.yml` 이 저장소 루트에 있습니다. **요점은 마운트 한 줄입니다** — 이미지에는
+코드만 있고 데이터는 전부 밖에 있습니다.
 
-| 마운트 | 무엇 | 지우면 |
+```
+~/.wikilens  →  /data/.wikilens        (컨테이너의 HOME 이 /data 입니다)
+```
+
+그 한 줄에 셋이 함께 붙습니다.
+
+| 아래 | 무엇 | 지우면 |
 |---|---|---|
-| `/vault` (`:ro`) | 위키 미러. 호스트의 `wikilens sync` 가 만듭니다 | 재싱크 |
-| `/state` | 궤적 로그·사용자 등록 | **복구 불가** — 백업 대상은 여기뿐입니다 |
-| `/index` | Lucene 색인 | 재색인으로 복구 |
+| `vault/` | 위키 미러. `sync` 가 만듭니다 | 재싱크 |
+| `state/` | 궤적 로그·사용자 등록 | **복구 불가** — 백업 대상은 여기뿐입니다 |
+| `index/` | Lucene 색인 | 재색인으로 복구 |
+
+**셋을 따로 적지 않는 이유**는 `state` 를 빠뜨리기 때문입니다 — 그러면 궤적이 컨테이너와
+함께 사라지고 그게 조용합니다. 다른 자리를 쓰려면 `WIKILENS_HOME` 을 주세요.
+
+**`:ro` 는 안 겁니다.** 셋을 따로 마운트하던 시절에는 볼트만 읽기 전용으로 걸 수
+있었는데, 한 줄로 합치면서 `state`·`index` 가 같은 마운트에 들어와 불가능해졌습니다
+(실측 2026-08-27: 컨테이너에서 볼트 파일을 고치면 호스트에도 반영됩니다).
+**읽기 전용 보장은 마운트 옵션이 아니라 "서버 코드에 `CONFLUENCE_*` 참조가 한 줄도
+없다" 가 지킵니다** — 계약이 검사합니다.
 
 **볼트는 이미지에 굽지 않습니다.** 위키 본문은 데이터이고, 이미지에 구우면 그 사본을
-회수할 수 없습니다 — 레지스트리에 올라간 순간 권한 취소가 불가능해집니다. `:ro` 로
-마운트하는 것도 같은 이유입니다. 읽기 전용을 규율이 아니라 마운트 옵션으로 얻습니다.
+회수할 수 없습니다 — 레지스트리에 올라간 순간 권한 취소가 불가능해집니다.
+
+**관리 토큰은 첫 기동에 자동 생성됩니다**(`state/admin-token`, 로그에 한 번 찍힘).
+직접 정하려면 `WIKILENS_ADMIN_TOKEN` 을 주세요 — 그 값이 이깁니다. **기본이 잠김이라는
+성질은 그대로입니다**: 값이 없으면 관리 API 는 여전히 404 입니다.
 
 **싱크는 이 컨테이너가 하지 않습니다.** `sync`·`acl` 은 Confluence 자격증명이 필요한데
 서버는 그걸 가질 이유가 없습니다(가지면 "위키에 쓰기 금지" 가 설계 보장에서 규율로
-내려갑니다 — `DECISIONS.md` D22). 호스트 cron 이 돌리고 끝나면 재색인을 부릅니다:
+내려갑니다 — `DECISIONS.md` D22). 호스트에서 따로 돌리고 끝나면 재색인을 부릅니다 —
+**그 절차는 스크립트 하나입니다:**
 
 ```bash
-wikilens sync --root ~/.wikilens/vault && wikilens acl --root ~/.wikilens/vault \
-  && curl -XPOST -H "X-WikiLens-Admin: $TOKEN" localhost:8787/api/admin/reindex
+./server/wikilens-refresh.sh --space PLATFORM
 ```
 
-`&&` 가 필수입니다 — 실패했는데 재색인하면 반쪽 상태가 반영됩니다.
+싱크 → 재색인 → 확인을 한 번에 하고, **싱크가 실패하면 재색인하지 않습니다.**
+예전에는 이 절차가 문서 네 곳에 `&&` 체인으로 복제돼 있었고, `&&` 하나가 빠지면
+반쪽 상태가 조용히 반영됐습니다.
 
 **이미지가 ripgrep 을 갖고 있습니다.** 호스트에서는 서비스 매니저의 `PATH` 에 따라
 조용히 JVM 스캔으로 떨어질 수 있는데(아래 절), 컨테이너에서는 우리가 PATH 를 정하므로
@@ -185,11 +204,14 @@ madvise 를 못 쓰면 그냥 안 씁니다.
 
 ## 관리 API 는 기본이 잠김입니다
 
+**Docker 로 띄우면 첫 기동에 자동 생성됩니다**(`state/admin-token`, 로그에 한 번 찍힘).
+직접 정하거나 Docker 밖에서 띄운다면 값을 주세요 — 명시가 이깁니다:
+
 ```bash
---wikilens.admin-token=<임의의 긴 문자열>
+--wikilens.admin-token=<임의의 긴 ASCII 문자열>     # 또는 WIKILENS_ADMIN_TOKEN
 ```
 
-**안 주면 `/api/admin` 하위가 전부 404 입니다.** 열림이 기본이면 조용히 열린 채
+**값이 없으면 `/api/admin` 하위가 전부 404 입니다.** 열림이 기본이면 조용히 열린 채
 배포되기 때문입니다 — 그러면 서버에 닿는 누구나 `POST /api/admin/acl/user?userKey=자기자신`
 으로 스스로 권한을 부여합니다. 호출할 때는 헤더를 붙이세요:
 
@@ -279,11 +301,11 @@ wikilens acl --root ~/.wikilens/vault      # 그다음 POST /api/admin/reindex
 이미 동작하고 테스트된 것을 다시 만들 이유가 없습니다.
 
 ```bash
-CONFLUENCE_TOKEN=<서비스계정> wikilens --root ./mirror-root sync --space PLATFORM \
-  && curl -XPOST localhost:8787/api/admin/reindex
+./server/wikilens-refresh.sh --space PLATFORM
 ```
 
-**`&&` 를 빼지 마세요.** 싱크가 실패했는데 재색인이 돌면 절반만 반영됩니다.
+**손으로 두 명령을 잇지 마세요** — 싱크가 실패했는데 재색인이 돌면 절반만 반영됩니다.
+스크립트가 그 순서를 지키고, 싱크 후 볼트가 비는 경우까지 잡습니다.
 
 `/admin/reindex` 는 **볼트가 비면 색인을 건드리지 않고** `{"skipped":true}` 를 돌려줍니다 —
 경로를 잘못 준 재색인이 마지막으로 성공한 색인을 지우면 안 되기 때문입니다. 기동 적재와
@@ -304,9 +326,13 @@ EOF
 chmod 600 ~/.wikilens/env.sh
 ```
 ```cron
-0 4 * * *  wikilens --root /srv/wikilens/mirror sync --space PLATFORM \
-             && curl -sf -XPOST localhost:8787/api/admin/reindex
+0 4 * * *  WIKILENS_ADMIN_TOKEN=… /path/to/wikilens/server/wikilens-refresh.sh --space PLATFORM
 ```
+
+**`&&` 체인을 손으로 쓰지 마세요.** `wikilens-refresh.sh` 가 싱크 → 재색인 → 확인을
+한 번에 하고, 싱크가 실패하면 재색인하지 않으며, **싱크 후 볼트가 비면 멈춥니다**
+(종료 코드만으로는 못 보는 자리입니다). 저장소가 없다면 이미지에서 꺼냅니다:
+`docker run --rm IMAGE cat /app/wikilens-refresh.sh`.
 
 **예전에는 이게 조용히 실패했습니다** — CLI 가 환경변수만 읽어서 cron 에서는
 `CONFLUENCE_URL 환경변수가 필요합니다` 로 죽었습니다(실측: `env -i` 로 재현).
