@@ -534,7 +534,7 @@ check "코드베이스 배제가 스킬과 MCP 도구 설명 양쪽에 있음 (�
 # 이제 `LuceneQuery` 가 정의처이고 둘 다 그것을 부른다(실측: `LuceneQuery` 의 분석기를
 # KOREAN→Standard 로 바꾸니 측정이 23/30 → 16/30 으로 따라 움직였다).
 # **부스트 변경은 `FieldBoostTest` 가 잡는다** — 이 검사는 복제가 되살아나는 것을 막는다.
-check "측정 테스트가 질의를 손으로 다시 짓지 않음 (LuceneQuery 가 정의처)" \
+check "측정 테스트가 질의를 손으로 다시 만들지 않음 (LuceneQuery 가 정의처)" \
   'grep -q "object LuceneQuery" server/src/main/kotlin/io/wikilens/index/LuceneQuery.kt \
    && grep -q "LuceneQuery.textQuery" server/src/main/kotlin/io/wikilens/index/LuceneIndex.kt \
    && grep -q "LuceneQuery.textQuery" server/src/test/kotlin/io/wikilens/index/Bm25LengthNormTest.kt \

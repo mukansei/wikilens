@@ -62,7 +62,7 @@ class AnalyzerChoiceTest {
     }
 
     @Test
-    fun `색인이 어떤 분석기로 지어졌는지 기록한다`() {
+    fun `어떤 분석기로 색인했는지 기록한다`() {
         val dir = createTempDirectory("mark")
         LuceneIndex(dir, AnalyzerKind.ENGLISH).use { it.rebuild(listOf(page("1", "hello"))) }
 
@@ -110,7 +110,7 @@ class AnalyzerChoiceTest {
             assertEquals(AnalyzerKind.KOREAN, idx.activeKind)
             assertTrue(idx.search("server", acl, 5).isEmpty(), "아직 옛 색인이다")
 
-            idx.rebuild(doc)   // 설정(english)으로 다시 짓는다
+            idx.rebuild(doc)   // 설정(english)으로 다시 색인한다
 
             assertEquals(AnalyzerKind.ENGLISH, idx.activeKind, "재색인이 전환 지점이다")
             assertEquals("english", idx.builtWith())
@@ -170,7 +170,7 @@ class AnalyzerChoiceTest {
             assertNull(idx.builtWith(), "선행 조건: 기록이 없다")
             assertEquals(
                 AnalyzerKind.KOREAN, idx.activeKind,
-                "설정(english)이 아니라 옛 색인이 지어진 korean 으로 읽어야 한다",
+                "설정(english)이 아니라 옛 색인을 만든 korean 으로 읽어야 한다",
             )
         }
     }

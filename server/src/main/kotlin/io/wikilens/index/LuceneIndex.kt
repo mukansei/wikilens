@@ -21,12 +21,12 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * Lucene 색인.
  *
- * **[buildKind] 는 "무엇으로 지을까"이지 "무엇으로 질의할까"가 아니다.** 질의는 항상
- * 디스크 색인이 실제로 지어진 분석기를 쓴다([Snapshot.kind]) — 색인에 기록이 있는데
+ * **[buildKind] 는 "무엇으로 색인할까"이지 "무엇으로 질의할까"가 아니다.** 질의는 항상
+ * 디스크 색인이 실제로 만들어진 분석기를 쓴다([Snapshot.kind]) — 색인에 기록이 있는데
  * 설정을 따라가면, 설정이 낡았을 때 **에러 없이 0건**이 된다. 기록을 그대로 쓰면
  * 그 불일치가 애초에 성립하지 않는다.
  *
- * 둘은 [rebuild] 에서 만난다: 재색인이 [buildKind] 로 다시 짓고, 그 순간부터 질의도
+ * 둘은 [rebuild] 에서 만난다: 재색인이 [buildKind] 로 다시 만들고, 그 순간부터 질의도
  * 그것을 쓴다. 그래서 분석기를 바꾸는 절차는 "설정 바꾸고 재색인" 하나뿐이고,
  * 재색인 전까지는 **옛 분석기로 정상 동작**한다.
  */
@@ -148,7 +148,7 @@ class LuceneIndex(
     fun rebuild(pages: Collection<IndexedPage>) {
         val started = System.nanoTime()
         val prev = snapshotRef.get().kind
-        // 짓는 것은 **설정된** 분석기로. 질의는 이 뒤로 자동으로 같은 것을 쓴다.
+        // 색인은 **설정된** 분석기로. 질의는 이 뒤로 자동으로 같은 것을 쓴다.
         run {
             // 공유 분석기다 — `use` 로 감싸면 질의 경로가 닫힌 것을 쓰게 된다.
             val cfg = IndexWriterConfig(analyzerOf(buildKind)).apply {
@@ -158,7 +158,7 @@ class LuceneIndex(
             // 닫으면 다음 재색인과 검색이 함께 죽는다).
             IndexWriter(directory, cfg).use { w ->
                 for (p in pages) w.addDocument(toDocument(p))
-                // **어떤 분석기로 지었는지를 색인 안에 남긴다.** 커밋 데이터라 커밋과
+                // **어떤 분석기로 색인했는지를 색인 안에 남긴다.** 커밋 데이터라 커밋과
                 // 원자적이다 — 옆에 파일을 두면 색인과 따로 놀 수 있다.
                 w.setLiveCommitData(mapOf(ANALYZER_KEY to buildKind.key).entries)
                 w.commit()
@@ -194,7 +194,7 @@ class LuceneIndex(
     private fun swap(meta: Map<String, PageMeta>? = null, tree: TreeIndex? = null) {
         // 열기 실패는 그대로 던진다 — 공유 [directory] 라 여기서 정리할 것이 없다.
         val reader = DirectoryReader.open(directory)
-        // **디스크가 정본이다** — 어떤 분석기로 지었는지는 커밋 데이터에 있으므로 설정이
+        // **디스크가 정본이다** — 어떤 분석기로 색인했는지는 커밋 데이터에 있으므로 설정이
         // 아니라 그것을 따라간다. 기록이 없으면 설정이 아니라 [LEGACY_KIND] 다: 여기 닿은
         // 것은 색인이 **있는데** 기록만 없다는 뜻이고 그건 기록 이전 버전이 지은 것뿐이다.
         // 설정을 쓰면 english 로 띄운 순간 옛 korean 색인을 english 로 두드린다.
@@ -221,7 +221,7 @@ class LuceneIndex(
     }
 
     /**
-     * 설정과 디스크가 다르면 알린다. **경고일 뿐 고장이 아니다** — 질의는 디스크가 지어진
+     * 설정과 디스크가 다르면 알린다. **경고일 뿐 고장이 아니다** — 질의는 디스크를 만든
      * 분석기를 쓰므로 검색은 정상이다.
      */
     private fun reportAnalyzer() {
@@ -231,7 +231,7 @@ class LuceneIndex(
             // 그건 재색인 전까지 조용히 어긋나는 자리다.
             if (activeKind != buildKind) {
                 log.warn(
-                    "분석기 기록이 없는 색인입니다(이 기능 이전에 지어진 것). '{}' 로 지어졌다고 " +
+                    "분석기 기록이 없는 색인입니다(이 기능 이전에 만든 것). '{}' 로 색인했다고 " +
                         "보고 질의합니다 — 설정 '{}' 을 적용하려면 POST /api/admin/reindex 로 다시 지으세요.",
                     activeKind.key, buildKind.key,
                 )
@@ -240,7 +240,7 @@ class LuceneIndex(
         }
         if (built == buildKind.key) return
         log.warn(
-            "색인은 '{}' 로 지어졌고 설정은 '{}' 입니다. 검색은 '{}' 로 정상 동작합니다 — " +
+            "색인은 '{}' 로 만들었고 설정은 '{}' 입니다. 검색은 '{}' 로 정상 동작합니다 — " +
                 "설정을 적용하려면 POST /api/admin/reindex 로 다시 지으세요.",
             built, buildKind.key, built,
         )
@@ -250,7 +250,7 @@ class LuceneIndex(
     fun builtWith(): String? =
         withSnapshot { it.reader?.indexCommit?.userData?.get(ANALYZER_KEY) }
 
-    /** 지금 **질의에 쓰이는** 분석기. 디스크 색인이 지어진 것과 항상 같다. */
+    /** 지금 **질의에 쓰이는** 분석기. 디스크 색인을 만든 것과 항상 같다. */
     val activeKind: AnalyzerKind get() = snapshotRef.get().kind
 
     /**
@@ -336,7 +336,7 @@ class LuceneIndex(
         const val ANALYZER_KEY = "wikilens.analyzer"
 
         /**
-         * 기록 없는 색인이 지어졌을 분석기. 기록 이전 버전은 `KoreanAnalyzer` 하드코딩이라
+         * 기록 없는 색인을 만들었을 분석기. 기록 이전 버전은 `KoreanAnalyzer` 하드코딩이라
          * 전부 korean 이다. 재색인 한 번이면 안 쓰인다 — 마이그레이션 전용.
          */
         val LEGACY_KIND = AnalyzerKind.KOREAN

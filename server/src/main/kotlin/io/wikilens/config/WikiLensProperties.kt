@@ -28,7 +28,7 @@ data class WikiLensProperties(
     /**
      * 본문 분석기: `korean`(기본) · `english` · `standard`.
      *
-     * "무엇으로 **지을까**" 다 — 질의는 색인이 실제로 지어진 분석기를 쓴다
+     * "무엇으로 **색인할까**" 다 — 질의는 색인이 실제로 만들어진 분석기를 쓴다
      * ([io.wikilens.index.LuceneIndex]). 둘은 재색인에서 만난다.
      */
     val analyzer: String = "korean",
