@@ -13,7 +13,7 @@ description: |
 
 # 팀 위키 검색
 
-`wiki` MCP 도구 셋으로 팀의 Confluence를 검색합니다. 로컬에 파일이 없으므로
+`librarian` MCP 도구 셋으로 팀의 Confluence를 검색합니다. 로컬에 파일이 없으므로
 Read나 Grep 같은 파일 도구로는 접근할 수 없습니다.
 
 ## 반드시 search 부터

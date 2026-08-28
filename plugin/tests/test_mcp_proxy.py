@@ -160,7 +160,13 @@ def main() -> int:
         check("응답 형식", r and r.get("jsonrpc") == "2.0" and r.get("id") == 1)
         check("프로토콜 버전 반환", r["result"]["protocolVersion"] == "2025-06-18")
         check("tools capability 선언", "tools" in r["result"]["capabilities"])
-        check("serverInfo", r["result"]["serverInfo"]["name"] == "wiki")
+        # **이름을 여기 적지 않는다** — `.mcp.json` 의 키와 `serverInfo` 가 갈리면
+        # 도구가 다른 이름으로 붙는데 둘 다 "정상" 으로 보인다(같은 언어 안의 값 중복,
+        # 조용히 실패 28). 정본은 `.mcp.json` 이고 여기서는 일치만 본다.
+        _mcp = json.loads((PROXY.parents[1] / ".mcp.json").read_text(encoding="utf-8"))
+        _declared = next(iter(_mcp["mcpServers"]))
+        check(f"serverInfo 가 .mcp.json 키와 같음 ({_declared})",
+              r["result"]["serverInfo"]["name"] == _declared)
 
         rpc(proc, {"jsonrpc": "2.0", "method": "notifications/initialized"})
 

@@ -77,7 +77,7 @@ python3 ~/.claude/plugins/cache/wikilens/wikilens-client/*/mcp/wikilens_mcp.py -
 setx WIKILENS_PYTHON python      # 또는 py
 ```
 
-설정 후 Claude Code 를 재시작하세요. `/plugin` 목록에서 `wiki` 서버가 연결됐는지
+설정 후 Claude Code 를 재시작하세요. `/plugin` 목록에서 `librarian` 서버가 연결됐는지
 확인하고, 안 되면 `python --version` 으로 그 이름이 맞는지 먼저 보세요.
 
 **진단 명령은 셸에 따라 형태가 다릅니다**(https://code.claude.com/docs/en/setup).

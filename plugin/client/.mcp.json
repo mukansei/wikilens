@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "wiki": {
+    "librarian": {
       "command": "${WIKILENS_PYTHON:-python3}",
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/mcp/wikilens_mcp.py"

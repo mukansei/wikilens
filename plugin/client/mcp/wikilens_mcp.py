@@ -809,7 +809,10 @@ def handle(msg: dict) -> None:
         reply(mid, {
             "protocolVersion": want if want in SUPPORTED else PROTOCOL,
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "wiki", "version": "0.1.0"},
+            # **이름이 곧 역할 안내다.** 사서는 책을 읽어 주지 않고 서가를 가리킨다 —
+            # 이 층은 13,933건을 8건으로 좁힐 뿐 의미 판정을 안 한다(고르기는 모델 몫).
+            # `.mcp.json` 의 키와 **같아야 한다**(0.18.6 까지는 `wiki` 였다).
+            "serverInfo": {"name": "librarian", "version": "0.1.0"},
         })
     elif method == "notifications/initialized":
         pass                                    # 알림에는 응답하지 않는다
