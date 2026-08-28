@@ -31,7 +31,7 @@ CONFLUENCE_AUTH=none \
 `CONFLUENCE_AUTH=none` 은 **명시해야 켜집니다.** 자동 폴백을 안 넣은 이유는
 "자격증명을 빠뜨림" 과 "공개 위키" 가 겉으로 같아 보이기 때문입니다.
 
-영어 코퍼스라 색인은 `--wikilens.analyzer=english` 로 짓습니다.
+영어 코퍼스라 색인은 `--wikilens.analyzer=english` 로 만듭니다.
 벤치 질의는 `bench/queries.py` 에 있고 **그 위키의 실제 pageId 를 가리킵니다** —
 `bench/` 를 돌리면 이 저장소의 주장을 당신 손으로 검사할 수 있습니다.
 

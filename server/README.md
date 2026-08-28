@@ -438,7 +438,7 @@ jar 안의 `application.yml` 을 고치려면 다시 빌드해야 하므로, 배
 
 ```
 색인은 'korean' 로 만들었고 설정은 'english' 입니다. 검색은 'korean' 로 정상 동작합니다 —
-설정을 적용하려면 POST /api/admin/reindex 로 다시 지으세요.
+설정을 적용하려면 POST /api/admin/reindex 로 다시 색인하세요.
 ```
 
 기록을 안 쓰고 설정을 따라가면 그 사이가 **에러 없이 0건**입니다. 색인에 답이 적혀

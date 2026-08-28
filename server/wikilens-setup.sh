@@ -51,7 +51,7 @@ IMAGE=$(docker compose config --images 2>/dev/null | head -1)
 
 say "1/5  이미지 — $IMAGE"
 if docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  echo "  이미 있습니다. 다시 지으려면: docker compose build"
+  echo "  이미 있습니다. 다시 빌드하려면: docker compose build"
 else
   echo "  빌드 중입니다 (처음이면 1~2분)…"
   docker compose build || fail "빌드에 실패했습니다."

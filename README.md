@@ -316,7 +316,7 @@ export CONFLUENCE_PREFIX=""        # Server/DC 강제
 
 | 전제 | 왜 |
 |---|---|
-| **운영자는 저장소가 필요합니다** | **이미지가 배포된 곳이 없어** 직접 지어야 하고, `compose.yml`·MCP 프록시도 저장소 안에 있습니다. 사용자는 플러그인만 설치하므로 해당 없습니다 |
+| **운영자는 저장소가 필요합니다** | **이미지가 배포된 곳이 없어** 직접 빌드해야 하고, `compose.yml`·MCP 프록시도 저장소 안에 있습니다. 사용자는 플러그인만 설치하므로 해당 없습니다 |
 | **파이썬은 필요 없습니다** | 볼트를 만드는 CLI 가 이미지 안에 있습니다. 마지막 확인 단계만 파이썬을 쓰는데 표준 라이브러리뿐이고 3.9 면 됩니다(macOS 기본) |
 | **볼트는 `~/.wikilens/vault` 입니다** | 로컬판·서버판·`compose.yml` 이 전부 이 자리를 기본으로 봅니다. 옮기지 않는 편이 낫습니다 (아래 참고) |
 
@@ -334,14 +334,14 @@ git clone https://github.com/mukansei/wikilens.git && cd wikilens
 ./server/wikilens-setup.sh
 ```
 
-**한 번 물어보고 나머지를 합니다** — 이미지 짓기 · 자격증명 저장 · 스페이스 목록에서
+**한 번 물어보고 나머지를 합니다** — 이미지 빌드 · 자격증명 저장 · 스페이스 목록에서
 고르기 · 싱크 · 기동 · 확인까지. 값 다섯을 외우지 않아도 됩니다.
 
 <details>
 <summary><b>손으로 하려면</b> — 스크립트가 무엇을 하는지</summary>
 
 ```bash
-# 1. 이미지 — **배포된 곳이 없어 직접 짓습니다.** --no-cache 로 88초.
+# 1. 이미지 — **배포된 곳이 없어 직접 빌드합니다.** --no-cache 로 88초.
 docker compose build
 IMAGE=$(docker compose config --images | head -1)   # 이름은 <디렉터리>-wikilens 입니다
 

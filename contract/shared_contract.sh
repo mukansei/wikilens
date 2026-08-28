@@ -528,7 +528,7 @@ check "코드베이스 배제가 스킬과 MCP 도구 설명 양쪽에 있음 (�
    && [ "$(grep -c "NOT_FOR_CODEBASE" plugin/client/mcp/wikilens_mcp.py)" -ge 3 ]'
 
 # **측정 장치가 프로덕션과 같은 질의를 써야 한다.** `Bm25LengthNormTest` 는 유사도를
-# 갈아끼우려고 자기 `IndexSearcher` 를 여는데, 그러면 질의도 자기가 짓게 된다. 한때
+# 갈아끼우려고 자기 `IndexSearcher` 를 여는데, 그러면 질의도 자기가 만들게 된다. 한때
 # 분석기와 파서를 손으로 다시 만들고 "같은 구성이어야 한다" 는 주석으로 이어 뒀는데,
 # 그 주석은 아무것도 안 막았다 — 프로덕션이 바뀌면 **측정만 옛 질의를 재게 된다.**
 # 이제 `LuceneQuery` 가 정의처이고 둘 다 그것을 부른다(실측: `LuceneQuery` 의 분석기를

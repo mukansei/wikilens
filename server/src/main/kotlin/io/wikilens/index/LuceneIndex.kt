@@ -232,7 +232,7 @@ class LuceneIndex(
             if (activeKind != buildKind) {
                 log.warn(
                     "분석기 기록이 없는 색인입니다(이 기능 이전에 만든 것). '{}' 로 색인했다고 " +
-                        "보고 질의합니다 — 설정 '{}' 을 적용하려면 POST /api/admin/reindex 로 다시 지으세요.",
+                        "보고 질의합니다 — 설정 '{}' 을 적용하려면 POST /api/admin/reindex 로 다시 색인하세요.",
                     activeKind.key, buildKind.key,
                 )
             }
@@ -241,7 +241,7 @@ class LuceneIndex(
         if (built == buildKind.key) return
         log.warn(
             "색인은 '{}' 로 만들었고 설정은 '{}' 입니다. 검색은 '{}' 로 정상 동작합니다 — " +
-                "설정을 적용하려면 POST /api/admin/reindex 로 다시 지으세요.",
+                "설정을 적용하려면 POST /api/admin/reindex 로 다시 색인하세요.",
             built, buildKind.key, built,
         )
     }
