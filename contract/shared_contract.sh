@@ -383,6 +383,14 @@ check "이미지가 refresh 스크립트를 나름 (clone 없는 경로가 성�
 check "운영자 setup 스크립트가 있고 README 가 그것을 가리킴" \
   '[ -x server/wikilens-setup.sh ] && grep -q "wikilens-setup.sh" README.md'
 
+# **setup 이 찍는 저장소 URL 에서 계정을 벗긴다.** `git remote` 에는
+# `https://<계정>@github.com/…` 형태가 흔한데(자격증명 헬퍼가 붙인다) 그대로 찍으면
+# **운영자 계정이 사용자 안내에 실려 나간다** — 실측으로 그렇게 나왔다(2026-08-28).
+# 조직 계정이 새는 자리라 조용하다.
+check "setup 이 안내하는 저장소 URL 에 계정이 안 붙음 (remote 에 흔한 형태다)" \
+  'code_has server/wikilens-setup.sh "REPO_URL=.*sed" \
+   && code_has server/wikilens-setup.sh "marketplace add"'
+
 # **`find` 를 대입문에 바로 쓰지 않는다.** 없는 디렉터리에 1 을 반환하고 pipefail 이
 # 그것을 올려 `set -e` 가 죽인다 — `mirror/` 가 없는 **첫 구축이 정확히 그 경우**라
 # 실측(2026-08-27)에서 4단계 제목만 찍고 조용히 끝났다. refresh.sh 의 curl 과 같은

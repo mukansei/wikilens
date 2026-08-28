@@ -48,7 +48,7 @@ crontab -e
 같은 것을 씁니다 — 절차가 하나뿐이어야 손으로 옮겨 적다 빠뜨리지 않습니다.
 
 **호스트에서 돕니다**(자격증명을 쥐고 `docker run` 을 부릅니다). 이미지 이름은
-`WIKILENS_IMAGE` 로 줍니다 — 기본값은 `compose` 가 짓는 `wikilens-wikilens` 라
+`WIKILENS_IMAGE` 로 줍니다 — 기본값은 `compose` 가 붙이는 `wikilens-wikilens` 라
 `docker run` 으로 직접 띄웠다면 다릅니다. **없는 이름이면 있는 것을 찍어 말합니다**
 (`docker run` 이 Hub 에서 받으려다 내는 `pull access denied` 는 이름 문제로 안 읽힙니다).
 

@@ -44,7 +44,7 @@ docker compose version >/dev/null 2>&1 || fail "docker compose 가 없습니다(
 docker info >/dev/null 2>&1 || fail "docker 데몬이 안 떠 있습니다."
 
 # ── 1. 이미지 ──────────────────────────────────────────────────────────────
-# **이름을 추측하지 않는다.** compose 가 짓는 이름을 compose 에게 묻는다 —
+# **이름을 추측하지 않는다.** compose 가 붙이는 이름을 compose 에게 묻는다 —
 # 프로젝트 이름이 디렉터리에서 오므로 clone 이름이 다르면 이미지 이름도 다르다.
 IMAGE=$(docker compose config --images 2>/dev/null | head -1)
 [ -n "$IMAGE" ] || fail "compose 에서 이미지 이름을 못 읽었습니다. 저장소 루트가 맞습니까?"
@@ -53,7 +53,7 @@ say "1/5  이미지 — $IMAGE"
 if docker image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "  이미 있습니다. 다시 지으려면: docker compose build"
 else
-  echo "  짓는 중입니다 (처음이면 1~2분)…"
+  echo "  빌드 중입니다 (처음이면 1~2분)…"
   docker compose build || fail "빌드에 실패했습니다."
 fi
 
@@ -181,9 +181,26 @@ else
   echo "  python3 가 없어 진단을 건너뜁니다 — 다른 머신에서 --status 를 돌려보세요."
 fi
 
+# **저장소 주소를 물어본다** — 조직판과 공개판이 다르고, 사용자가 마켓플레이스를
+# 등록할 때 필요한 것이 그 주소다. 여기서 안 찍으면 운영자가 따로 찾아야 한다.
+# **사용자 이름을 벗긴다.** `git remote` 에 `https://<계정>@github.com/…` 형태가
+# 흔한데(자격증명 헬퍼가 붙인다) 그대로 찍으면 **운영자 계정이 사용자에게 전달된다**
+# — 실측으로 그렇게 나왔다. `@` 앞을 잘라낸다.
+REPO_URL=$(git remote get-url origin 2>/dev/null \
+        || git remote get-url "$(git remote 2>/dev/null | head -1)" 2>/dev/null \
+        || echo "<이 저장소의 URL>")
+REPO_URL=$(printf '%s' "$REPO_URL" | sed -E 's|(https?://)[^/@]+@|\1|')
+
 say "다음"
 cat <<EOF
-  사용자에게 알릴 것:  서버 주소 $SERVER · 각자 /wikilens-client:setup
+  사용자에게 알릴 것 — Claude Code 안에서 세 줄입니다:
+
+    /plugin marketplace add $REPO_URL
+    /plugin install wikilens-client@wikilens
+    /wikilens-client:setup          서버 주소 $SERVER · 본인 식별자
+
+  마켓플레이스 등록이 **첫 줄**입니다 — 그게 없으면 install 이 플러그인을 못 찾습니다.
+  설치 뒤에는 Claude Code 재시작이 필요합니다(설정을 시작할 때 한 번 읽습니다).
 
   정기 갱신:  crontab -e
     0 9 * * 1 WIKILENS_IMAGE=$IMAGE $PWD/server/wikilens-refresh.sh $(printf -- '--space %s ' $SPACES)
