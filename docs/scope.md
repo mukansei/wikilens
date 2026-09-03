@@ -9,36 +9,9 @@ Confluence Cloud 와 Server/Data Center 양쪽, 인증 4방식을 지원합니�
 Confluence 고유 개념 (`ac:link` storage format · `ancestors` · CQL) 에만 의존하므로,
 어느 조직의 인스턴스든 같은 코드가 돕니다.
 
-### 이 저장소의 숫자는 어디서 나왔나
-
-두 코퍼스에서 나왔고, **당신이 재현할 수 있는 것은 둘째뿐입니다.**
-
-| | 어디 | 재현 |
-|---|---|---|
-| **개발 코퍼스** (13,933건) | 비공개 인스턴스 (접근 불가) | **불가** — 접근 권한이 없습니다 |
-| **공개 코퍼스** (15,494건) | 리눅스 재단 ONAP 위키 | **가능** — 자격증명 없이 받습니다 |
-
-`Acme 2,383건` 같은 표기는 전자입니다. **회사명을 익명 대체했으므로 그 라벨만으로는
-출처를 확인할 수 없습니다** — 숫자를 믿어 달라는 말이 아니라, 어느 코퍼스에서 나왔는지
-구별해 두려는 표기입니다. 검증하려면 아래를 직접 돌리세요.
-
-```bash
-CONFLUENCE_URL=https://lf-onap.atlassian.net \
-CONFLUENCE_AUTH=none \
-  wikilens sync --space Meetings --space DW --root ~/.wikilens/vault-onap
-```
-
-`CONFLUENCE_AUTH=none` 은 **명시해야 켜집니다.** 자동 폴백을 안 넣은 이유는
-"자격증명을 빠뜨림" 과 "공개 위키" 가 겉으로 같아 보이기 때문입니다.
-
-영어 코퍼스라 색인은 `--wikilens.analyzer=english` 로 만듭니다.
-벤치 질의는 `bench/queries.py` 에 있고 **그 위키의 실제 pageId 를 가리킵니다** —
-`bench/` 를 돌리면 이 저장소의 주장을 당신 손으로 검사할 수 있습니다.
-
-**당신의 위키를 재려면 `GROUPS` 를 통째로 갈아야 합니다.** 남의 코퍼스에서 만든 질의는
-당신의 색인을 못 재고, 전 그룹 `못 찾음` 은 "이 도구가 나쁘다" 와 구별되지 않습니다.
-
-> 배포되는 플러그인·CLI 에는 조직 고유값이 없습니다.
+> 저장소 곳곳의 `Acme 2,383건` 같은 표기는 **측정 출처 라벨**입니다. 그 수치가 어느
+> 코퍼스에서 나왔는지 밝히는 것이지 종속이 아닙니다. 배포되는 플러그인·CLI 에는
+> 회사 고유값이 없습니다.
 
 언어는 한국어를 기본으로 합니다.
 
@@ -74,19 +47,22 @@ BM25 가 무너집니다.
 | | macOS · Linux · WSL | Windows |
 |---|---|---|
 | **서버판 사용자**(검색만) | 됩니다 | **됩니다** — 프록시가 순수 파이썬이라 셸이 필요 없습니다 |
-| 서버 운영(sync·acl) | 됩니다 | **Git for Windows** 가 있으면 됩니다 |
-| 로컬판 | 됩니다 | **Git for Windows** 가 있으면 됩니다 |
+| 서버 운영(sync·acl) | 됩니다 | **Git for Windows 가 필요합니다** |
+| 로컬판 | 됩니다 | **Git for Windows 가 필요합니다** |
 
 Claude Code 는 Git for Windows 가 있으면 **Git Bash 로 Bash 도구**를 쓰고, 없으면
 PowerShell 도구를 씁니다 (https://code.claude.com/docs/en/setup).
 
 볼트를 *만드는* 경로가 셸 스크립트입니다 — `wikilens_cli.sh` 래퍼, 자격증명
-`~/.wikilens/env.sh`. 그래서 Bash 도구가 있어야 로컬판과 서버 운영이 됩니다.
+`~/.wikilens/env.sh`. 그래서 **볼트를 만드는 쪽은 Git for Windows 를 요구사항으로
+둡니다**(2026-08-28 결정). PowerShell 전용 경로를 따로 만들면 같은 일을 하는 두 번째
+경로가 생기고, 그때부터 둘이 갈립니다 — 이 저장소가 반복해서 지워온 실패 모양입니다.
 
-검색만 하는 서버판 사용자는 해당 없습니다.
+**검색만 하는 서버판 사용자는 해당 없습니다** — 프록시가 순수 파이썬이라 셸을 안 씁니다.
+선은 "볼트를 만드는가" 이고, 그 한 줄로 갈립니다.
 
 <details>
-<summary><b>Windows 준비</b> — Git for Windows 가 있는 경우</summary>
+<summary><b>Windows 준비</b> — Git for Windows 설치부터</summary>
 
 ```powershell
 # 1. Git for Windows — Claude Code 가 Bash 도구를 쓰게 해줍니다

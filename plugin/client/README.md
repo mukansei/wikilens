@@ -85,9 +85,10 @@ Git for Windows 가 있으면 Bash 도구를 쓰고
 (`python3 "${CLAUDE_PLUGIN_ROOT}/..."`), 없으면 PowerShell 도구를 씁니다
 (`python "$env:CLAUDE_PLUGIN_ROOT\..."`). 변수 문법이 다르니 그대로 복사하지 마세요.
 
-> **로컬판(`wikilens-local`)은 아직 Bash 가 필요합니다** — 볼트를 만드는 래퍼가 셸
-> 스크립트입니다. Windows 에서 로컬판을 쓰려면 Git for Windows 를 설치하거나 WSL 을
-> 쓰세요. 서버판 사용자는 볼트를 만들지 않으므로 해당 없습니다.
+> **로컬판(`wikilens-local`)은 Bash 가 필요합니다** — 볼트를 만드는 래퍼가 셸
+> 스크립트이고, 그것이 요구사항입니다(PowerShell 전용 경로는 만들지 않습니다).
+> Windows 에서 로컬판을 쓰려면 Git for Windows 를 설치하거나 WSL 을 쓰세요.
+> **서버판 사용자는 볼트를 만들지 않으므로 해당 없습니다** — 파이썬만 있으면 됩니다.
 
 ## 쓰는 법
 

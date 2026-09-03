@@ -521,6 +521,20 @@ check "두 스킬이 같은 우선순위를 말함 (서버판 우선 · 배타�
 check "MCP 서버 이름이 .mcp.json·프록시·로컬 스킬에서 같음 (갈리면 판 우선순위가 뒤집힌다)" \
   'python3 contract/mcp_server_name.py'
 
+# **MCP 프록시는 셸을 안 쓴다 — 그것이 Windows 지원의 경계다.**
+#
+# D31 이 "Windows 는 Git for Windows 를 요구한다" 로 닫으면서, **서버판 사용자만은
+# 예외**로 뒀다 — 프록시가 순수 파이썬이라 셸이 없어도 돈다. 여기에 `subprocess` 나
+# `os.system` 이 한 줄 들어오는 순간 그 예외가 사라지고, **Git 없는 Windows 사용자가
+# 조용히 잘려 나간다**(설치는 되는데 도구가 안 뜬다).
+#
+# **교대(`|`)를 쓰지 않고 셋으로 나눈다** — 이 머신의 `grep` 에서 부정 검사의
+# 교대가 안 먹었다(실측: `subprocess` 를 넣어도 통과). D30 과 같은 계열이다.
+check "MCP 프록시가 셸을 안 씀 (서버판 사용자의 Windows 경로가 여기 걸려 있다)" \
+  '! code_has plugin/client/mcp/wikilens_mcp.py "subprocess" \
+   && ! code_has plugin/client/mcp/wikilens_mcp.py "os[.]system" \
+   && ! code_has plugin/client/mcp/wikilens_mcp.py "os[.]popen"'
+
 # **배제 조항은 스킬만으로는 아무것도 안 막는다.** 서버판 MCP 도구는 스킬 선택과
 # 무관하게 항상 도구 목록에 뜨므로(바로 위 항목·D13), 모델이 실제로 읽는 것은 도구
 # 설명이다. 한때 스킬에만 "코드베이스 자체에는 쓰지 마세요" 가 있고 도구 설명에는
