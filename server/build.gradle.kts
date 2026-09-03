@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "io.wikilens"
-version = "0.19.2"
+version = "0.19.3"
 
 kotlin {
     jvmToolchain(25)

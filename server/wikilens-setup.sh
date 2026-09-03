@@ -157,8 +157,18 @@ fi
 echo "  페이지 $after 건"
 
 # ── 5. 기동과 확인 ─────────────────────────────────────────────────────────
+# **리눅스에서는 uid 를 넘겨야 한다.** bind mount 가 호스트 소유권을 그대로 쓰는데
+# 이미지는 uid 10001 로 돌고 `~/.wikilens` 는 700 이라(위에서 그렇게 만든다) 컨테이너가
+# **traverse 조차 못 한다** — 그러면 색인이 0건이 되고, 그건 "문서가 없다" 와 구별되지
+# 않는다. macOS 는 Docker Desktop 이 uid 를 가려주므로 이 문제가 안 보인다
+# (`compose.yml` 의 `WIKILENS_UID` 주석). **그래서 macOS 에서의 통과가 리눅스를
+# 보증하지 않는다** — 여기서 호스트 uid 를 그대로 넘겨 그 차이를 없앤다.
+#
+# 두 판 모두에 넘겨도 안전하다: macOS 에서도 호스트 uid 로 도는 것이 맞고,
+# 컨테이너가 쓰는 자리는 마운트한 `~/.wikilens` 뿐이다.
 say "5/5  기동"
 WIKILENS_HOME="$HOME_DIR" WIKILENS_ANALYZER="$WIKILENS_ANALYZER" \
+WIKILENS_UID="$(id -u)" WIKILENS_GID="$(id -g)" \
   docker compose up -d || fail "기동에 실패했습니다."
 
 echo "  기동을 기다리는 중…"

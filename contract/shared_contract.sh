@@ -405,6 +405,17 @@ check "분석기를 compose 로 바꿀 수 있고 setup 이 물음 (틀려도 �
   'code_has compose.yml "WIKILENS_ANALYZER: [$][{]" \
    && code_has server/wikilens-setup.sh "WIKILENS_ANALYZER"'
 
+# **setup 이 호스트 uid 를 넘긴다 — 리눅스에서 안 넘기면 색인이 0건이다.**
+#
+# bind mount 가 호스트 소유권을 그대로 쓰는데 이미지는 uid 10001 로 돌고
+# `~/.wikilens` 는 700 이라 컨테이너가 traverse 조차 못 한다. 에러가 아니라 **0건**이라
+# "문서가 없다" 와 구별되지 않는다. **macOS 는 Docker Desktop 이 uid 를 가려 이 문제가
+# 안 보인다** — 그래서 이 머신에서의 통과가 리눅스를 보증하지 않는다(`compose.yml` 주석).
+check "setup 이 호스트 uid 를 넘김 (리눅스에서 안 넘기면 색인이 조용히 0건)" \
+  'code_has server/wikilens-setup.sh "WIKILENS_UID=" \
+   && code_has server/wikilens-setup.sh "WIKILENS_GID=" \
+   && code_has compose.yml "WIKILENS_UID:-10001"'
+
 # **관리 토큰은 세 갈래 전부 말한다.** 재사용·명시가 조용하면 `docker logs` 가 돌아간
 # 뒤 자리를 찾을 길이 없다(실측: 두 번째 기동 로그에 `관리 토큰` 0건).
 #

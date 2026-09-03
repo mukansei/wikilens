@@ -13,14 +13,14 @@
       "name": "wikilens-client",
       "source": "./plugin/client",
       "description": "팀 공용 서버가 색인한 Confluence 위키를 검색합니다. 다른 문서가 이 페이지를 부르는 이름(앵커 텍스트)까지 색인해 제목에 없는 표현으로도 찾고, 한국어 형태소 분석과 팀의 탐색 이력 학습이 더해집니다. 내 디스크에는 아무것도 받지 않습니다 — 서버가 요청마다 권한을 확인합니다. wikilens-local 과 함께 켜져 있으면 이쪽이 우선합니다.",
-      "version": "0.19.2",
+      "version": "0.19.3",
       "category": "documentation"
     },
     {
       "name": "wikilens-local",
       "source": "./plugin/local",
       "description": "Confluence 위키를 내 노트북에 미러링해 검색합니다. 다른 문서가 이 페이지를 부르는 이름(앵커 텍스트)까지 색인해 제목에 없는 표현으로도 찾습니다. 서버가 필요 없고 오프라인에서도 되며, 각자 자기 토큰으로 싱크하므로 볼 수 있는 문서만 들어옵니다. wikilens-client 가 함께 켜져 있으면 그쪽이 우선합니다.",
-      "version": "0.19.2",
+      "version": "0.19.3",
       "category": "documentation"
     }
   ]

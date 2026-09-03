@@ -61,6 +61,27 @@ PowerShell 도구를 씁니다 (https://code.claude.com/docs/en/setup).
 **검색만 하는 서버판 사용자는 해당 없습니다** — 프록시가 순수 파이썬이라 셸을 안 씁니다.
 선은 "볼트를 만드는가" 이고, 그 한 줄로 갈립니다.
 
+### 리눅스 호스트에서 갈리는 것 하나
+
+**서버는 리눅스에서 검증됩니다** — 이미지가 `eclipse-temurin`(Debian) 이라 서버·Lucene·
+ripgrep·CLI 가 컨테이너 안에서 리눅스로 돕니다. 갈리는 것은 **호스트의 bind mount
+소유권** 하나입니다.
+
+리눅스는 bind mount 가 호스트 소유권을 그대로 씁니다. 이미지는 uid 10001 로 도는데
+`~/.wikilens` 는 700 이라 **컨테이너가 traverse 조차 못 하고, 그러면 색인이 0건**이
+됩니다 — 에러가 아니라 0건이라 "문서가 없다" 와 구별되지 않습니다.
+
+`wikilens-setup.sh` 는 호스트 uid 를 그대로 넘겨 이 차이를 없앱니다. 손으로 띄운다면
+같은 값을 주세요:
+
+```bash
+WIKILENS_UID=$(id -u) WIKILENS_GID=$(id -g) docker compose up -d
+```
+
+**macOS 는 Docker Desktop 이 uid 를 가려 이 문제가 안 보입니다** — 그래서 macOS 에서의
+통과가 리눅스를 보증하지 않습니다. 700 을 푸는 쪽은 택하지 않았습니다: 공용 서버에서
+다른 로컬 사용자가 위키 본문을 읽으면 안 됩니다.
+
 <details>
 <summary><b>Windows 준비</b> — Git for Windows 설치부터</summary>
 
