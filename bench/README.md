@@ -99,7 +99,7 @@ B·C 가 자기 스킬을 못 쓴다. `setup.sh up` 이 설치본을 내리고 `
 ```
 A 원시grep   Bash 만
 B 로컬판     Skill + Bash + Read
-C 서버판     mcp__plugin_wikilens-client_wiki__* (search·read·grep·tree·answer)
+C 서버판     mcp__plugin_wikilens-client_librarian__* (search·read·grep·tree·answer)
 ```
 
 **`down` 이 되돌린다 — 벤치가 죽으면 안 돌아오므로 끝나면 반드시 부를 것.**
