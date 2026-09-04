@@ -362,6 +362,33 @@ Python과 Kotlin이 **파일로만** 연결되어 있다. 아래를 바꾸면 �
    **실행하기 전에는 안 보였다.** 코드로는 양쪽 다 그럴듯했고 `./check.sh` 는 내내
    초록이었다.
 
+30. **영어 코퍼스에서 학습 층이 통째로 침묵한다** (2026-09-04 실측). `Gate.classify` 는
+   마커에 안 걸리는 **9낱말 이상** 질의를 `UNKNOWN` 으로 두고, `UNKNOWN.cacheable=false`
+   라 `TrajectoryStore` 가 간선을 안 만든다. 그 마커 목록이 한국어 17개 · 영어 9개인데
+   **영어 쪽은 전부 검색창 말투**(`where is`·`show me`·`look up`)여서, 사람이 실제로
+   묻는 `how do I …` 는 어디에도 안 걸리고 그런 문장은 대개 9낱말을 넘는다.
+
+   같은 시각 두 서버의 `/api/stats` `byKind`:
+
+       운영 (korean)   LOCALIZATION 8 · UNKNOWN 0    → 게이트가 사실상 항등함수
+       벤치 (english)  LOCALIZATION 2 · UNKNOWN 8    → **80% 가 잘린다**
+
+   그래서 `--wikilens.analyzer=english` 로 띄우면 궤적은 정상으로 쌓이고 `/api/stats` 의
+   `trajectories` 도 늘어나는데 **포스팅만 안 는다.** 같은 표현을 몇 번을 반복해도 힌트가
+   0이다(실측: 4그룹 × 4회 반복 → 서빙 0). 오류도 경고도 없다.
+
+   **`TrajectoryStore` 의 KDoc 이 이 불확실성을 적어두고 있었다** — "마커가 넓고 8토큰
+   이하는 전부 LOCALIZATION 이라 게이트가 항등함수인지 알 방법이 없었다. UNKNOWN 비율이
+   그 답이다." 답은 **언어에 따라 다르다** 였다. `Gate.kt` 주석이 "잔여 위험" 이라 부른
+   것이 영어에서는 지배적 경로다.
+
+   같은 그룹 안에서도 길이만으로 갈린다 — `i wrote a test, how do I get it into the ci
+   chain`(13낱말, UNKNOWN)과 `how do test suites get run automatically`(7낱말,
+   LOCALIZATION)는 **같은 정답을 향한 같은 의도**다.
+
+   근거는 `docs/experiment-2026-09-04-learning-activation.md`. **고치지 않았다** —
+   예측이 빗나간 뒤에 통과하도록 문턱을 바꾸면 측정이 아니라 맞추기가 된다.
+
 ---
 
 ## 의도적으로 이상해 보이는 것
