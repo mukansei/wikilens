@@ -142,7 +142,7 @@ IR 에서 [good abandonment](https://dl.acm.org/doi/10.1145/1571941.1571951) 로
 >
 > **폴백이 얼마나 틀리는지는 이제 서버가 셉니다** — `fallbackAgreeRate`. 진술이 있는
 > 궤적에서 `reads.last()` 가 같은 답을 골랐는지를 대조한 값입니다. 남은 수와
-> 기각한 안은 [`docs/usefulness-signals.md`](docs/usefulness-signals.md).
+> 기각한 안은 [`usefulness-signals.md`](usefulness-signals.md).
 
 ### 검색 결과에 어떻게 섞이나
 
