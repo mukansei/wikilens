@@ -22,7 +22,12 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
-VAULT="$HOME/.wikilens/vault"
+# **`harness.py` 와 같은 변수를 본다.** 그쪽은 `WIKILENS_VAULT` 를 읽는데 여기만
+# 기본 볼트로 박혀 있으면 **서버는 A 볼트를 색인하고 판정은 B 볼트를 본다** —
+# 그 조합은 "검색이 나쁘다" 와 구별되지 않는다(`require_queries` 가 잡으려는 것이
+# 정확히 그 상태다). 공개 코퍼스로 재려면 둘 다 같은 값이어야 한다:
+#   WIKILENS_VAULT=~/.wikilens/vault-onap ANALYZER=english ./bench/setup.sh up
+VAULT="${WIKILENS_VAULT:-$HOME/.wikilens/vault}"
 PORT=8790
 NAME=wikilens-bench
 IMAGE=wikilens-wikilens
@@ -119,11 +124,20 @@ up|server)
     echo "  ✗ 포트 $PORT 를 이미 누가 쓰고 있다 — 그대로 두면 벤치가 **엉뚱한 서버**를 잰다" >&2
     exit 1
   fi
-  docker run -d --name "$NAME" -p "$PORT:8787" \
-    -v "$VAULT":/home/wikilens/.wikilens/vault:ro \
-    -v "$HERE/srv-state":/home/wikilens/.wikilens/state \
-    -v "$HERE/srv-index":/home/wikilens/.wikilens/index \
-    -e WIKILENS_ADMIN_TOKEN=bench "$IMAGE" >/dev/null
+    # **컨테이너 쪽 경로를 이미지의 `HOME` 에 매달지 않는다.** 예전에는
+    # `/home/wikilens/.wikilens/…` 로 박아 뒀는데 이미지의 `HOME` 이 `/data` 로
+    # 바뀌면서(2026-08-26) 서버가 **빈 볼트를 보고 색인 0건**이 됐다 — 그 상태도
+    # `health` 는 200 이라 벤치가 조용히 0건짜리 서버를 잰다(조용히 실패 29 와 같은
+    # 계열인데, 여기는 **측정값이 통째로 거짓이 되는** 쪽이라 더 나쁘다).
+    # 아래는 기본 경로에 기대지 않고 `--wikilens.*` 로 직접 지정한다.
+    docker run -d --name "$NAME" -p "$PORT:8787" \
+      -v "$VAULT":/vault:ro \
+      -v "$HERE/srv-state":/state \
+      -v "$HERE/srv-index":/index \
+      -e WIKILENS_ADMIN_TOKEN=bench "$IMAGE" \
+      java --enable-native-access=ALL-UNNAMED -XX:MaxRAMPercentage=75 -jar /app/wikilens.jar \
+        --wikilens.vault-root=/vault --wikilens.state-dir=/state --wikilens.index-dir=/index \
+        --wikilens.analyzer="${ANALYZER:-korean}" >/dev/null
 
   for _ in $(seq 1 40); do
     [ "$(curl -s -m 2 -o /dev/null -w '%{http_code}' "localhost:$PORT/api/health" 2>/dev/null)" = "200" ] && break

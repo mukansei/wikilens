@@ -532,6 +532,15 @@ check "두 스킬이 같은 우선순위를 말함 (서버판 우선 · 배타�
 check "MCP 서버 이름이 .mcp.json·프록시·로컬 스킬에서 같음 (갈리면 판 우선순위가 뒤집힌다)" \
   'python3 contract/mcp_server_name.py'
 
+# **벤치도 그 이름을 쓴다 — 박아 두면 개명 때 측정이 통째로 거짓이 된다.**
+#
+# `--allowedTools` 가 없는 서버를 가리키면 C 케이스가 `read` 를 거부당하고 **`Bash` 로
+# 볼트를 직접 뒤진다.** 세션은 정상 종료하고 `answer` 까지 내므로 결과 파일만 봐서는
+# 모른다 — 실측 2026-08-28 에 45세션(약 $9)을 태우고서야 알았다. 파일에서 읽게 한다.
+check "벤치가 MCP 서버 이름을 .mcp.json 에서 읽음 (박아 두면 측정이 조용히 거짓)" \
+  '! code_has bench/agent.py "MCP_SERVER = .mcp__" \
+   && code_has bench/agent.py "mcpServers"'
+
 # **MCP 프록시는 셸을 안 쓴다 — 그것이 Windows 지원의 경계다.**
 #
 # D31 이 "Windows 는 Git for Windows 를 요구한다" 로 닫으면서, **서버판 사용자만은

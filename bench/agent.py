@@ -54,7 +54,20 @@ DENY = "WebFetch,WebSearch,Task,Edit,Write,NotebookEdit"
 
 #: C 케이스의 MCP 서버. `--allowedTools` 에 **서버 이름만** 주면 그 서버의 도구 전부가
 #: 허용된다 — 도구가 늘어도 여기를 안 고쳐도 된다.
-MCP_SERVER = "mcp__plugin_wikilens-client_wiki"
+#:
+#: **정본은 `.mcp.json` 의 키다.** 여기 이름을 박아 두면 개명 때 갈리는데, 그 실패가
+#: 조용하다 — 모델이 `read` 를 거부당하고 **`Bash` 로 우회해서 볼트를 직접 뒤진다.**
+#: 세션은 정상 종료하고 `answer` 까지 내므로 결과 파일만 봐서는 모른다(실측
+#: 2026-08-28: `wiki` → `librarian` 개명 뒤 45세션 측정에서 `read` 호출이 0이었고,
+#: 도구 분포가 `search 2 · Bash 16` 이었다). 그래서 읽지 않고 파일에서 가져온다.
+def _mcp_server() -> str:
+    import json
+    key = next(iter(json.loads(
+        (REPO / "plugin" / "client" / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]))
+    return f"mcp__plugin_wikilens-client_{key}"
+
+
+MCP_SERVER = _mcp_server()
 
 
 #: MCP 프록시가 `search` 결과 첫 줄에 찍는 `학습 힌트 N`. 형식이 바뀌면 여기도 바꿔야
@@ -125,7 +138,7 @@ def server_image() -> str:
         return "unknown"
 
 
-def run_once(argv: list[str]) -> dict:
+def run_once(argv: list[str], case: str = "") -> dict:
     env = dict(os.environ, WIKILENS_SERVER=SERVER, WIKILENS_USER=BENCH_USER)
     t = time.perf_counter()
     # **프로세스 그룹으로 띄운다.** `subprocess.run(timeout=)` 은 `claude` 만 죽이고
@@ -219,10 +232,40 @@ def run_once(argv: list[str]) -> dict:
         "calls": len(tools),
         # **이 세션이 받은 학습 힌트 총합.** 0 이면 warm 이어도 학습이 안 닿은 것이다.
         "hints": hints,
+        # **격리가 샜는지를 결과에 적는다.** 주석은 "어느 도구를 썼는지가 격리 검증"
+        # 이라고 오래 말해 왔는데 **그 검증을 하는 코드가 없었다** — 사람이 도구 목록을
+        # 눈으로 봐야 했다. 실측 2026-08-28: `--allowedTools` 가 옛 MCP 서버 이름을
+        # 가리켜 C 케이스가 `read` 를 거부당하고 **`Bash` 로 볼트를 직접 뒤졌는데**,
+        # 세션은 정상 종료하고 `answer` 까지 냈다. 45세션을 태우고서야 알았다.
+        "leak": _leak(case, tools),
         "extra": {"out_tokens": u.get("output_tokens", 0),
                   "cache_read": u.get("cache_read_input_tokens", 0),
                   "tools": tools, "args": args, "results": results},
     }
+
+
+def _leak(case: str, tools: list[str]) -> str:
+    """케이스가 자기 방식 밖의 도구를 썼으면 그 이름을 돌려준다(빈 문자열이면 깨끗).
+
+    **케이스의 정의가 곧 도구 집합이다.** C 는 MCP 로만, B 는 스킬+`Grep`/`Read` 로만,
+    A 는 `Bash` 로만 볼트에 닿아야 한다. 그 선을 넘으면 그 세션은 **다른 것을 잰 것**이다.
+    """
+    names = [t.rsplit("__", 1)[-1] for t in tools]
+    mcp = [t for t in tools if t.startswith("mcp__")]
+    if case.startswith("C"):
+        # 서버판은 MCP 만 쓴다. Bash·Grep·Read 로 볼트에 닿으면 격리가 샌 것이다.
+        bad = [n for n in names if n in ("Bash", "Grep", "Read", "Glob")]
+        if bad:
+            return f"C 가 {sorted(set(bad))} 를 썼다 (MCP {len(mcp)}회)"
+        if not mcp:
+            return "C 인데 MCP 호출이 0이다"
+    elif case.startswith("A"):
+        if mcp:
+            return f"A 가 MCP 를 썼다: {sorted({t.rsplit('__',1)[-1] for t in mcp})}"
+    elif case.startswith("B"):
+        if mcp:
+            return f"B 가 MCP 를 썼다: {sorted({t.rsplit('__',1)[-1] for t in mcp})}"
+    return ""
 
 
 def plan(groups: list, reps: int, pattern: str, per_group: int = 0) -> list[tuple]:
@@ -288,7 +331,7 @@ def warmup(w: Writer, g0: tuple, mode: str, budget: float,
         if spent >= budget:
             print(f"  ★ 예산 ${budget:.2f} 도달 — 워밍 중 멈춘다")
             return -1.0
-        r = run_once(builder(g0[3][0]))
+        r = run_once(builder(g0[3][0]), cname)
         spent += r.get("cost", 0.0)
         w.write(record(harness="agent", case=cname, group=g0[0], qi=0,
                        query=g0[3][0], gold=g0[1], rep=-1, warmup=True,
@@ -381,7 +424,7 @@ def main() -> int:
                           f"(이어받으려면 같은 명령을 다시)")
                     return 0
                 before = trajectory_count() if cname.startswith("C") else -1
-                r = run_once(builder(q))
+                r = run_once(builder(q), cname)
                 spent += r.get("cost", 0.0)
                 rec = record(harness="agent", case=cname, group=name, qi=qi,
                            query=q, gold=gold, rep=rep, mode=mode,
